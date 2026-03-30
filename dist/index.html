@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Business Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #f6f5f2;
+    --bg2:     #ffffff;
+    --bg3:     #f0eeea;
+    --bg4:     #e8e6e1;
+    --border:  rgba(0,0,0,0.07);
+    --border2: rgba(0,0,0,0.13);
+    --text:    #111110;
+    --text2:   #66655f;
+    --text3:   #aaa99f;
+    --coral:   #e8501a;
+    --coral2:  #ff6633;
+    --coral-bg: rgba(232,80,26,0.07);
+    --green:   #4a8a4a;
+    --green-bg: rgba(74,138,74,0.08);
+    --red:     #cc3333;
+    --red-bg:  rgba(204,51,51,0.08);
+    --blue:    #3366aa;
+    --blue-bg: rgba(51,102,170,0.08);
+    --amber:   #a86e28;
+    --amber-bg:rgba(168,110,40,0.08);
+    --r: 8px; --rl: 12px; --rs: 5px;
+  }
+  body { font-family:'DM Sans',-apple-system,sans-serif; background:var(--bg); color:var(--text); display:flex; height:100vh; overflow:hidden; font-size:14px; }
+
+  /* SIDEBAR */
+  .sb { width:230px; background:var(--text); display:flex; flex-direction:column; flex-shrink:0; }
+  .sb-logo { padding:16px 14px 16px; border-bottom:1px solid rgba(255,255,255,0.07); display:flex; align-items:center; justify-content:center; }
+  /* Legacy text-brand classes kept for possible reuse; sidebar uses .sb-brand-img. */
+  .sb-idm { font-size:28px; font-weight:600; color:#fff; letter-spacing:-0.03em; line-height:1; }
+  .sb-sub { font-size:9px; color:rgba(255,255,255,0.3); text-transform:uppercase; letter-spacing:0.05em; line-height:1.4; font-weight:400; }
+  .sb-brand-img { width:100%; height:auto; display:block; border-radius:8px; }
+  .sb-nav { flex:1; display:flex; flex-direction:column; padding:14px 10px; gap:2px; overflow-y:auto; }
+  .nav-lbl { font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.1em; color:rgba(255,255,255,0.2); padding:10px 10px 5px; }
+  .ni { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:var(--rs); cursor:pointer; color:rgba(255,255,255,0.42); font-size:13.5px; font-weight:400; transition:all .15s; user-select:none; }
+  .ni:hover { background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.75); }
+  .ni.active { background:var(--coral); color:#fff; font-weight:500; }
+  .ni svg { width:15px; height:15px; flex-shrink:0; }
+  .sb-spacer { flex:1; }
+  .sb-div { height:1px; background:rgba(255,255,255,0.07); margin:6px 0; }
+  .sb-user { display:flex; align-items:center; gap:10px; padding:14px 20px 18px; border-top:1px solid rgba(255,255,255,0.07); color:rgba(255,255,255,0.4); font-size:13px; cursor:pointer; }
+  .sb-user:hover { color:rgba(255,255,255,0.65); }
+  .avatar { width:28px; height:28px; border-radius:50%; background:var(--coral); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; flex-shrink:0; }
+
+  /* MAIN */
+  .main { flex:1; overflow-y:auto; }
+  .main::-webkit-scrollbar { width:4px; }
+  .main::-webkit-scrollbar-thumb { background:var(--bg4); border-radius:2px; }
+
+  /* PAGES */
+  .pg { display:none; padding:28px 32px; min-height:100%; }
+  .pg.on { display:block; }
+  .ph { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:26px; }
+  .pt { font-size:22px; font-weight:600; letter-spacing:-0.02em; }
+  .ps { font-size:13px; color:var(--text3); margin-top:3px; }
+  .hr { display:flex; gap:8px; align-items:center; }
+
+  /* BTN */
+  .btn { padding:8px 18px; border-radius:50px; border:1px solid var(--border2); background:var(--bg2); color:var(--text2); font-size:13px; font-family:'DM Sans',sans-serif; cursor:pointer; transition:all .15s; font-weight:400; }
+  .btn:hover { border-color:var(--text3); color:var(--text); }
+  .btn-p { background:var(--coral); border-color:var(--coral); color:#fff; font-weight:500; }
+  .btn-p:hover { background:var(--coral2); border-color:var(--coral2); }
+
+  /* CARD */
+  .card { background:var(--bg2); border:1px solid var(--border); border-radius:var(--rl); padding:22px 24px; }
+
+  /* KPI */
+  .kg { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
+  .kc { background:var(--bg2); border:1px solid var(--border); border-radius:var(--rl); padding:20px 22px; }
+  .kc.hi { background:var(--coral); border-color:var(--coral); }
+  .kc.hi .kl { color:rgba(255,255,255,0.6); }
+  .kc.hi .kv { color:#fff; }
+  .kl { font-size:12px; color:var(--text3); margin-bottom:8px; }
+  .kv { font-size:28px; font-weight:600; letter-spacing:-0.03em; line-height:1; margin-bottom:8px; }
+  .kb { display:inline-flex; align-items:center; font-size:11px; padding:3px 9px; border-radius:20px; font-weight:500; }
+  .bu { background:var(--green-bg); color:var(--green); }
+  .bd { background:var(--red-bg); color:var(--red); }
+  .bn { background:var(--bg3); color:var(--text3); }
+  .bw { background:rgba(255,255,255,0.18); color:#fff; }
+  .bc { background:var(--coral-bg); color:var(--coral); }
+
+  /* LAYOUT */
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:14px; }
+  .gm { display:grid; grid-template-columns:2fr 1fr; gap:14px; margin-bottom:14px; }
+  .mb { margin-bottom:14px; }
+  .cw { position:relative; width:100%; height:220px; }
+
+  /* SECTION HEAD */
+  .sh { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .st { font-size:14px; font-weight:600; letter-spacing:-0.01em; }
+  .ss { font-size:12px; color:var(--text3); }
+
+  /* TABLE */
+  .dt { width:100%; border-collapse:collapse; font-size:13px; }
+  .dt th { text-align:left; padding:8px 10px; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.06em; color:var(--text3); border-bottom:1px solid var(--border); }
+  .dt td { padding:11px 10px; border-bottom:1px solid var(--border); color:var(--text2); }
+  .dt tr:last-child td { border-bottom:none; }
+  .dt tr:hover td { background:var(--bg3); }
+  .tdp { color:var(--text) !important; font-weight:500; }
+
+  /* PILL */
+  .pl { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:500; }
+  .pg-g { background:var(--green-bg); color:var(--green); }
+  .pg-r { background:var(--red-bg); color:var(--red); }
+  .pg-a { background:var(--amber-bg); color:var(--amber); }
+  .pg-b { background:var(--blue-bg); color:var(--blue); }
+  .pg-c { background:var(--coral-bg); color:var(--coral); }
+
+  /* FIN ROWS */
+  .fr { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .fr:last-child { border-bottom:none; }
+  .fr.tot { font-weight:600; color:var(--text); font-size:14px; padding-top:11px; border-top:1px solid var(--border2); border-bottom:none; }
+  .fr.hdr { font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.08em; color:var(--text3); padding-top:14px; border-bottom:none; }
+  .fr .lbl { color:var(--text2); }
+  .fr .val { color:var(--text); font-variant-numeric:tabular-nums; }
+  .fr .val.neg { color:var(--red); }
+  .fr .val.pos { color:var(--green); }
+
+  /* PROGRESS */
+  .pb { height:5px; background:var(--bg3); border-radius:3px; overflow:hidden; margin-top:4px; }
+  .pf { height:100%; border-radius:3px; transition:width .4s; }
+
+  /* FORM */
+  .fg { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .fgp { display:flex; flex-direction:column; gap:5px; }
+  .fl { font-size:12px; color:var(--text3); font-weight:500; }
+  .fi { background:var(--bg3); border:1px solid var(--border); border-radius:var(--r); padding:9px 12px; color:var(--text); font-size:13px; font-family:'DM Sans',sans-serif; outline:none; transition:border-color .15s; width:100%; }
+  .fi:focus { border-color:var(--coral); background:var(--bg2); }
+  .fst { font-size:13px; font-weight:600; color:var(--text); margin-bottom:14px; margin-top:4px; }
+
+  /* MODAL */
+  .mo { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:100; align-items:center; justify-content:center; }
+  .mo.on { display:flex; }
+  .md { background:var(--bg2); border:1px solid var(--border); border-radius:var(--rl); padding:30px; width:520px; max-width:95vw; max-height:88vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.1); }
+  .mt { font-size:17px; font-weight:600; margin-bottom:22px; letter-spacing:-0.02em; }
+  .mf { display:flex; gap:8px; justify-content:flex-end; margin-top:22px; padding-top:18px; border-top:1px solid var(--border); }
+
+  /* Stub / coming-soon popup */
+  .mo.stub-pop { z-index: 120; }
+  .stub-pop .md { width: 400px; padding: 24px 28px; }
+  .stub-pop .mt { margin-bottom: 10px; font-size: 16px; }
+  .stub-pop .stub-body { font-size: 14px; color: var(--text2); line-height: 1.55; margin-bottom: 20px; }
+
+  /* Internal-only mode: visibility toggles (PUBLIC_MODE uses defaults below). Do not delete rules. */
+  .ui-internal-facing { display: none; }
+  body.internal-mode .ui-public-facing { display: none !important; }
+  body.internal-mode .ui-internal-facing { display: block !important; }
+  body.internal-mode .nav-public-facing { display: none !important; }
+  /* Hidden for internal-only mode. Do not delete (sidebar chrome returns when INTERNAL_MODE is false). */
+  body.internal-mode #btn-workspaces { display: none !important; }
+  body.internal-mode #sidebar-workspace-label { display: none !important; }
+  body.internal-mode #workspace-current-label { display: none !important; }
+  body.internal-mode #cloud-sidebar-section { display: none !important; }
+
+  /* Mandatory auth gate (main bundle loads only after session) */
+  #auth-loading { position:fixed; inset:0; z-index:10001; display:flex; align-items:center; justify-content:center; background:var(--bg); font-size:15px; color:var(--text2); }
+  #auth-login-shell { position:fixed; inset:0; z-index:10000; display:none; flex-direction:column; align-items:center; justify-content:center; background:var(--bg); padding:24px; }
+  #auth-login-shell .gate-card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:28px 32px; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.08); }
+  #app-shell { display:none; flex:1; min-height:0; min-width:0; width:100%; flex-direction:row; align-items:stretch; }
+  #app-shell.on { display:flex !important; }
+</style>
+</head>
+<body>
+
+<div id="auth-loading"><span>Verifying session…</span></div>
+<script type="application/json" id="bizdash-supabase-config">{"url":"https://gykbtvztjgcynawzpqwq.supabase.co","anonKey":"sb_publishable_RR6hAWo4m5DAQMyFD167XQ_FBbDRHMH"}</script>
+<div id="auth-login-shell">
+  <div class="gate-card">
+    <div class="pt" style="margin-bottom:8px;">Sign in</div>
+    <p style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Sign in to use the dashboard.</p>
+    <div class="fg" style="grid-template-columns:1fr;gap:10px;margin-bottom:12px;">
+      <div class="fgp"><label class="fl">Email</label><input class="fi" id="gate-email" type="email" autocomplete="email" placeholder="you@company.com" /></div>
+      <div class="fgp"><label class="fl">Password</label><input class="fi" id="gate-password" type="password" autocomplete="current-password" placeholder="••••••••" /></div>
+    </div>
+    <div id="gate-auth-error" style="font-size:13px;color:var(--red);margin-bottom:12px;min-height:1.2em;"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <button type="button" class="btn btn-p" id="gate-signin">Sign in</button>
+      <button type="button" class="btn" id="gate-signup">Sign up</button>
+    </div>
+    <button type="button" class="btn" id="gate-github" style="width:100%;">Continue with GitHub</button>
+  </div>
+</div>
+
+<div id="app-shell">
+<div class="sb">
+    <div class="sb-logo">
+    <img class="sb-brand-img" src="/idm-logo.png" width="400" height="120" alt="ives deutschmann marketing" loading="eager" decoding="async" />
+  </div>
+  <div style="padding:0 18px 14px;border-bottom:1px solid rgba(255,255,255,0.07);">
+    <div id="sidebar-workspace-label" style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.25);margin-bottom:6px;">Workspace</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="workspace-current-label">—</div>
+    <button type="button" class="btn" id="btn-workspaces" style="width:100%;justify-content:center;font-size:12px;padding:7px 12px;border-color:rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.85);font-family:inherit;">Switch or add workspace</button>
+    <div id="cloud-sidebar-section" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);">
+      <div id="cloud-section-label" style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.25);margin-bottom:6px;">Cloud</div>
+      <div id="cloud-status" style="font-size:11px;color:rgba(255,255,255,0.45);margin-bottom:7px;">Cloud: not configured</div>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="btn" id="btn-cloud-auth" style="flex:1;font-size:11px;padding:6px 10px;border-color:rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.85);font-family:inherit;">Sign in</button>
+        <button type="button" class="btn" id="btn-cloud-sync" style="flex:1;font-size:11px;padding:6px 10px;border-color:rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.85);font-family:inherit;" disabled>Sync</button>
+      </div>
+    </div>
+  </div>
+  <nav class="sb-nav">
+    <div class="nav-lbl">Overview</div>
+    <div class="ni active" data-nav="dashboard" onclick="nav('dashboard',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard
+    </div>
+    <div class="ni" data-nav="customers" onclick="nav('customers',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Customers
+    </div>
+    <div class="ni" data-nav="revenue" onclick="nav('revenue',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Income
+    </div>
+    <div class="ni" data-nav="expenses" onclick="nav('expenses',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Expenses
+    </div>
+    <div class="nav-lbl">Analytics</div>
+    <div class="ni" data-nav="performance" onclick="nav('performance',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Performance
+    </div>
+    <div class="ni" data-nav="retention" onclick="nav('retention',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>Retention
+    </div>
+    <div class="ni" data-nav="insights" onclick="nav('insights',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Insights
+    </div>
+    <!-- Hidden in internal-mode via .nav-public-facing (route/page kept). -->
+    <div class="ni nav-public-facing" data-nav="marketing" onclick="nav('marketing',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Marketing
+    </div>
+    <div class="sb-spacer"></div>
+    <div class="sb-div"></div>
+    <div class="ni" data-nav="settings" onclick="nav('settings',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings
+    </div>
+  </nav>
+  <div class="sb-user" id="sb-user-menu" title="Account" data-public-title="Account">
+    <div class="avatar" id="user-avatar">?</div>
+    <div>
+      <div id="user-name" style="font-size:13px;color:rgba(255,255,255,0.65);font-weight:500;">—</div>
+      <div id="user-role" style="font-size:11px;color:rgba(255,255,255,0.28);">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- DASHBOARD -->
+  <div class="pg on" id="page-dashboard">
+    <div class="ph">
+      <div><div class="pt">Business Performance</div><div class="ps" id="dash-subtitle">—</div></div>
+      <div class="hr">
+        <select class="fi" id="dash-period-select" style="width:140px;border-radius:50px;padding:8px 12px;" title="Reporting period">
+          <option>March 2026</option><option>February 2026</option><option>January 2026</option>
+        </select>
+        <button type="button" class="btn" id="btn-open-transaction">+ Add transaction</button>
+        <button type="button" class="btn btn-p" id="btn-open-input">Update totals</button>
+      </div>
+    </div>
+    <div class="kg">
+      <div class="kc hi"><div class="kl">Total Revenue</div><div class="kv" id="kpi-rev">$0</div><div class="kb bn" id="kpi-rev-badge">—</div></div>
+      <div class="kc"><div class="kl">Net Profit</div><div class="kv" id="kpi-pft">$0</div><div class="kb bn" id="kpi-pft-badge">—</div></div>
+      <div class="kc"><div class="kl">Total Expenses</div><div class="kv" id="kpi-exp">$0</div><div class="kb bn" id="kpi-exp-badge">—</div></div>
+      <div class="kc"><div class="kl">Outstanding AR</div><div class="kv" id="kpi-ar">$0</div><div class="kb bn" id="kpi-ar-badge">—</div></div>
+    </div>
+    <div class="gm">
+      <div class="card">
+        <div class="sh"><div class="st">Revenue vs Expenses</div><div class="ss">Last 6 months</div></div>
+        <div class="cw"><canvas id="cRevExp"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="sh"><div class="st">Expense Breakdown</div></div>
+        <div class="cw" style="height:175px;"><canvas id="cExp"></canvas></div>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:7px;" id="exp-leg"></div>
+      </div>
+    </div>
+    <div class="g2">
+      <div class="card">
+        <div class="sh"><div class="st">Accounts Receivable</div><button type="button" class="btn" style="font-size:11px;padding:4px 12px;" onclick="nav('revenue')">View all →</button></div>
+        <div id="dash-ar-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No receivables yet.</div>
+        <table class="dt" id="dash-ar-table" style="display:none;">
+          <thead><tr><th>Client</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead>
+          <tbody id="dash-ar-body"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="sh"><div class="st">Income statement</div><div class="ss" id="income-statement-hint"></div></div>
+        <div id="dashboard-ops-statement" style="display:none;">
+          <div class="fr hdr"><span>Income (by category)</span></div>
+          <div id="dashboard-revenue-lines"></div>
+          <div class="fr tot"><span>Gross revenue</span><span class="val pos" id="f-gro">$0</span></div>
+          <div class="fr hdr"><span>Expenses (by category)</span></div>
+          <div id="dashboard-expense-lines"></div>
+          <div class="fr tot"><span>Net profit</span><span class="val pos" id="f-net">$0</span></div>
+        </div>
+        <div id="dashboard-legacy-statement">
+          <div class="fr hdr"><span>Revenue (manual buckets)</span></div>
+          <div class="fr"><span class="lbl">Services</span><span class="val" id="f-svc">$0</span></div>
+          <div class="fr"><span class="lbl">Retainers</span><span class="val" id="f-ret">$0</span></div>
+          <div class="fr tot"><span>Gross revenue</span><span class="val pos" id="f-gro-legacy">$0</span></div>
+          <div class="fr hdr"><span>Expenses (manual buckets)</span></div>
+          <div class="fr"><span class="lbl">Labor</span><span class="val neg" id="f-lab">−$0</span></div>
+          <div class="fr"><span class="lbl">Software & Tools</span><span class="val neg" id="f-sw">−$0</span></div>
+          <div class="fr"><span class="lbl">Advertising</span><span class="val neg" id="f-ads">−$0</span></div>
+          <div class="fr"><span class="lbl">Other</span><span class="val neg" id="f-oth">−$0</span></div>
+          <div class="fr tot"><span>Net profit</span><span class="val pos" id="f-net-legacy">$0</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card mb" style="margin-bottom:14px;">
+      <div class="sh">
+        <div>
+          <div class="st">Transaction log</div>
+          <div class="ss">Add entries one at a time; amounts roll into the totals and charts above</div>
+        </div>
+        <button type="button" class="btn btn-p" id="btn-open-transaction-2" style="font-size:12px;">+ Add transaction</button>
+      </div>
+      <div id="transaction-log-empty" style="font-size:13px;color:var(--text3);padding:4px 0 8px;">No transactions yet. Use “Add transaction” to record income or expenses.</div>
+      <table class="dt" id="transaction-log-table" style="display:none;">
+        <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Note</th><th style="width:88px;"></th></tr></thead>
+        <tbody id="transaction-log-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CUSTOMERS -->
+  <div class="pg" id="page-customers">
+    <div class="ph"><div><div class="pt">Customers</div><div class="ps">All active clients and pipeline</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
+    <div class="kg" style="grid-template-columns:repeat(3,1fr);">
+      <div class="kc"><div class="kl">Total Clients</div><div class="kv" id="cust-kpi-1">0</div><div class="kb bn" id="cust-kpi-1b">—</div></div>
+      <div class="kc hi"><div class="kl">Active Retainers</div><div class="kv" id="cust-kpi-2">0</div><div class="kb bn" id="cust-kpi-2b">—</div></div>
+      <div class="kc"><div class="kl">Avg. Project Value</div><div class="kv" id="cust-kpi-3">$0</div><div class="kb bn" id="cust-kpi-3b">—</div></div>
+    </div>
+    <div class="card">
+      <div id="customers-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No customers yet.</div>
+      <table class="dt" id="customers-table" style="display:none;">
+        <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th>Projects</th><th>Revenue</th><th style="width:140px;">Actions</th></tr></thead>
+        <tbody id="customers-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- INCOME (revenue records) -->
+  <div class="pg" id="page-revenue">
+    <div class="ph"><div><div class="pt">Income</div><div class="ps">Recorded income drives dashboard totals when present</div></div><button type="button" class="btn btn-p" id="btn-add-income">+ Add income</button></div>
+    <div class="kg">
+      <div class="kc hi"><div class="kl">Collected This Month</div><div class="kv" id="rev-kpi-1">$0</div><div class="kb bn" id="rev-kpi-1b">—</div></div>
+      <div class="kc"><div class="kl">Outstanding</div><div class="kv" id="rev-kpi-2">$0</div><div class="kb bn" id="rev-kpi-2b">—</div></div>
+      <div class="kc"><div class="kl">Invoices Sent</div><div class="kv" id="rev-kpi-3">0</div><div class="kb bn" id="rev-kpi-3b">—</div></div>
+      <div class="kc"><div class="kl">Avg. Days to Pay</div><div class="kv" id="rev-kpi-4">—</div><div class="kb bn" id="rev-kpi-4b">—</div></div>
+    </div>
+    <div class="gm mb">
+      <div class="card"><div class="sh"><div class="st">Revenue Trend</div><div class="ss">Last 6 months</div></div><div class="cw"><canvas id="cRevT"></canvas></div></div>
+      <div class="card">
+        <div class="sh"><div class="st">AR Aging</div></div>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:4px;">
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>Current (0–30 days)</span><span style="color:var(--green);">$0</span></div><div class="pb"><div class="pf" style="width:0%;background:var(--green);"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>31–60 days</span><span style="color:var(--amber);">$0</span></div><div class="pb"><div class="pf" style="width:0%;background:var(--amber);"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>61–90 days</span><span style="color:var(--red);">$0</span></div><div class="pb"><div class="pf" style="width:0%;background:var(--red);"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>90+ days</span><span style="color:var(--red);">$0</span></div><div class="pb"><div class="pf" style="width:0%;background:#900;"></div></div></div>
+        </div>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px;font-weight:600;">
+          <span>Total Outstanding</span><span style="color:var(--text2);">$0</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="sh"><div class="st">Income entries</div></div>
+      <div id="income-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No income recorded yet.</div>
+      <table class="dt" id="income-table" style="display:none;">
+        <thead><tr><th>Date</th><th>Source</th><th>Client</th><th>Project</th><th>Category</th><th>Amount</th><th style="width:140px;">Actions</th></tr></thead>
+        <tbody id="income-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- EXPENSES -->
+  <div class="pg" id="page-expenses">
+    <div class="ph"><div><div class="pt">Expenses</div><div class="ps">Track costs; totals roll into the dashboard when you use operational records</div></div><button type="button" class="btn btn-p" id="btn-add-expense">+ Add expense</button></div>
+    <div class="card">
+      <div id="expenses-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No expenses yet.</div>
+      <table class="dt" id="expenses-table" style="display:none;">
+        <thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Amount</th><th>Vendor</th><th>Recurring</th><th style="width:140px;">Actions</th></tr></thead>
+        <tbody id="expenses-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PERFORMANCE -->
+  <div class="pg" id="page-performance">
+    <div class="ph"><div><div class="pt">Projects</div><div class="ps">Delivery pipeline and client work</div></div><div class="hr"><button type="button" class="btn" id="btn-manage-statuses">Manage statuses</button><button type="button" class="btn btn-p" id="btn-add-project">+ Add project</button></div></div>
+    <div class="kg">
+      <div class="kc hi"><div class="kl">Projects Delivered</div><div class="kv" id="perf-kpi-1">0</div><div class="kb bn" id="perf-kpi-1b">—</div></div>
+      <div class="kc"><div class="kl">On-Time Rate</div><div class="kv" id="perf-kpi-2">—</div><div class="kb bn" id="perf-kpi-2b">—</div></div>
+      <div class="kc"><div class="kl">Avg. Duration</div><div class="kv" id="perf-kpi-3">—</div><div class="kb bn" id="perf-kpi-3b">—</div></div>
+      <div class="kc"><div class="kl">Client Satisfaction</div><div class="kv" id="perf-kpi-4">—</div><div class="kb bn" id="perf-kpi-4b">—</div></div>
+    </div>
+    <div class="g2 mb">
+      <div class="card"><div class="sh"><div class="st">Projects by Service Type</div></div><div class="cw"><canvas id="cSvc"></canvas></div></div>
+      <div class="card"><div class="sh"><div class="st">Monthly Deliverables</div></div><div class="cw"><canvas id="cDel"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="sh"><div class="st">Active Projects</div></div>
+      <div id="projects-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No projects yet.</div>
+      <table class="dt" id="projects-table" style="display:none;">
+        <thead><tr><th>Project</th><th>Client</th><th>Type</th><th>Description</th><th>Due</th><th>Value</th><th>Status</th><th style="width:160px;">Actions</th></tr></thead>
+        <tbody id="projects-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- RETENTION -->
+  <div class="pg" id="page-retention">
+    <div class="ph"><div><div class="pt">Retention</div><div class="ps">Churn, retainers, and lifetime value</div></div></div>
+    <div class="kg" style="grid-template-columns:repeat(3,1fr);">
+      <div class="kc hi"><div class="kl">Retention Rate</div><div class="kv" id="ret-kpi-1">—</div><div class="kb bn" id="ret-kpi-1b">—</div></div>
+      <div class="kc"><div class="kl">Avg. Client LTV</div><div class="kv" id="ret-kpi-2">$0</div><div class="kb bn" id="ret-kpi-2b">—</div></div>
+      <div class="kc"><div class="kl">Churned This Month</div><div class="kv" id="ret-kpi-3">0</div><div class="kb bn" id="ret-kpi-3b">—</div></div>
+    </div>
+    <div class="gm mb">
+      <div class="card"><div class="sh"><div class="st">Retention Trend</div></div><div class="cw"><canvas id="cRet"></canvas></div></div>
+      <div class="card">
+        <div class="sh"><div class="st">Retainer Clients</div></div>
+        <div id="retainers-empty" style="font-size:13px;color:var(--text3);padding:12px 0;">No retainer clients yet.</div>
+        <div id="retainers-list" style="display:none;flex-direction:column;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INSIGHTS -->
+  <div class="pg" id="page-insights">
+    <div class="ph"><div><div class="pt">Insights</div><div class="ps" id="insights-sub">—</div></div></div>
+    <!-- Removed mock data. App now starts from a true empty state. -->
+    <div class="card mb">
+      <div class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.55;">No insights yet. Connect data sources to generate recommendations.</div>
+      <div class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.55;">No insights yet.</div>
+    </div>
+    <div class="card"><div class="sh"><div class="st">Revenue by Vertical</div></div><div class="cw" style="height:190px;"><canvas id="cVert"></canvas></div></div>
+  </div>
+
+  <!-- MARKETING (nav hidden in internal mode; route kept). -->
+  <div class="pg" id="page-marketing">
+    <div class="ui-public-facing">
+    <div class="ph"><div><div class="pt">Marketing</div><div class="ps">Campaigns, leads, and pipeline</div></div><button type="button" class="btn btn-p" id="btn-new-campaign">+ New Campaign</button></div>
+    <div class="kg" style="grid-template-columns:repeat(3,1fr);">
+      <div class="kc hi"><div class="kl">Leads This Month</div><div class="kv" id="mkt-kpi-1">0</div><div class="kb bn" id="mkt-kpi-1b">—</div></div>
+      <div class="kc"><div class="kl">Close Rate</div><div class="kv" id="mkt-kpi-2">—</div><div class="kb bn" id="mkt-kpi-2b">—</div></div>
+      <div class="kc"><div class="kl">Pipeline Value</div><div class="kv" id="mkt-kpi-3">$0</div><div class="kb bn" id="mkt-kpi-3b">—</div></div>
+    </div>
+    <div class="g2 mb">
+      <div class="card"><div class="sh"><div class="st">Lead Sources</div></div><div class="cw" style="height:200px;"><canvas id="cLead"></canvas></div></div>
+      <div class="card">
+        <div class="sh"><div class="st">Active Pipeline</div></div>
+        <div style="font-size:13px;color:var(--text3);padding:8px 0;">No pipeline deals yet.</div>
+      </div>
+    </div>
+    </div>
+    <div class="ui-internal-facing ph" style="margin-bottom:0;"><div><div class="pt">Marketing</div><div class="ps">Campaigns, leads, and pipeline</div></div></div>
+    <div class="ui-internal-facing card"><div style="font-size:13px;color:var(--text2);line-height:1.55;">No marketing data yet. Use Dashboard and Revenue for operational numbers.</div></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="pg" id="page-settings">
+    <div class="ph"><div><div class="pt">Settings</div><div class="ps">Business profile and preferences</div></div><button type="button" class="btn btn-p" id="btn-save-settings">Save Changes</button></div>
+    <div class="g2">
+      <div class="card">
+        <div class="fst">Business Info</div>
+        <div class="fg">
+          <div class="fgp"><label class="fl">Business Name</label><input class="fi" id="setting-name" /></div>
+          <div class="fgp"><label class="fl">Owner Name</label><input class="fi" id="setting-owner" /></div>
+          <div class="fgp"><label class="fl">Email</label><input class="fi" id="setting-email" type="email" /></div>
+          <div class="fgp"><label class="fl">Phone</label><input class="fi" id="setting-phone" /></div>
+          <div class="fgp" style="grid-column:1/-1;"><label class="fl">Address</label><input class="fi" id="setting-address" /></div>
+          <div class="fgp"><label class="fl">Dashboard period label</label><input class="fi" id="setting-period" placeholder="e.g. March 2026" /></div>
+          <div class="fgp"><label class="fl">Accent color</label><input class="fi" id="setting-accent" type="color" value="#e8501a" style="min-height:40px;padding:4px 8px;" /></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="fst">Financial Defaults</div>
+        <div class="fg">
+          <div class="fgp"><label class="fl">Invoice Terms (days)</label><input class="fi" id="setting-terms" type="number" value="30" /></div>
+          <div class="fgp"><label class="fl">Default Tax Rate (%)</label><input class="fi" id="setting-tax" type="number" value="0" /></div>
+          <div class="fgp"><label class="fl">Currency</label><select class="fi" id="setting-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option></select></div>
+          <div class="fgp"><label class="fl">Fiscal Year Start</label><select class="fi" id="setting-fiscal"><option>January</option><option>October</option></select></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="fst">Cloud Sync</div>
+        <div class="fg">
+          <div id="settings-cloud-status" style="font-size:11px;color:var(--text3);margin-bottom:10px;">Cloud: not configured</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button type="button" class="btn btn-p" id="settings-btn-cloud-auth" style="flex:1;font-size:11px;padding:7px 10px;">Sign in</button>
+            <button type="button" class="btn" id="settings-btn-cloud-sync" style="flex:1;font-size:11px;padding:7px 10px;" disabled>Sync</button>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-top:10px;">
+            Uses Supabase auth; your workspace payload is stored per-user and synced to localStorage.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Add single transaction -->
+<div class="mo" id="transactionModal">
+  <div class="md">
+    <div class="mt">Add transaction</div>
+    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Record one line of revenue or expense. It is added to your running totals for this workspace.</p>
+    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Internal: add a line to this workspace’s local totals (browser storage).</p>
+    <div class="fg" style="margin-bottom:16px;">
+      <div class="fgp"><label class="fl">Date</label><input class="fi" id="tx-date" type="date" /></div>
+      <div class="fgp"><label class="fl">Amount</label><input class="fi" id="tx-amount" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Category</label>
+        <select class="fi" id="tx-category">
+          <option value="svc">Services revenue</option>
+          <option value="ret">Retainer revenue</option>
+          <option value="lab">Labor (expense)</option>
+          <option value="sw">Software &amp; tools (expense)</option>
+          <option value="ads">Advertising (expense)</option>
+          <option value="oth">Other expense</option>
+        </select>
+      </div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Note (optional)</label><input class="fi" id="tx-note" placeholder="e.g. Client invoice #104" /></div>
+    </div>
+    <div class="mf" style="border-top:none;padding-top:0;margin-top:0;">
+      <button type="button" class="btn" id="btn-tx-cancel">Cancel</button>
+      <button type="button" class="btn btn-p" id="btn-tx-save">Add transaction</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="mo" id="inputModal">
+  <div class="md">
+    <div class="mt">Update all totals</div>
+    <p style="font-size:12px;color:var(--text3);line-height:1.45;margin:-12px 0 18px;">Sets revenue and expense buckets directly. Saving here clears your transaction log so numbers stay in sync.</p>
+    <div class="fst">Revenue</div>
+    <div class="fg" style="margin-bottom:20px;">
+      <div class="fgp"><label class="fl">Services Revenue ($)</label><input class="fi" id="i-svc" type="number" value="0" /></div>
+      <div class="fgp"><label class="fl">Retainer Revenue ($)</label><input class="fi" id="i-ret" type="number" value="0" /></div>
+    </div>
+    <div class="fst">Expenses</div>
+    <div class="fg">
+      <div class="fgp"><label class="fl">Labor ($)</label><input class="fi" id="i-lab" type="number" value="0" /></div>
+      <div class="fgp"><label class="fl">Software & Tools ($)</label><input class="fi" id="i-sw" type="number" value="0" /></div>
+      <div class="fgp"><label class="fl">Advertising ($)</label><input class="fi" id="i-ads" type="number" value="0" /></div>
+      <div class="fgp"><label class="fl">Other Expenses ($)</label><input class="fi" id="i-oth" type="number" value="0" /></div>
+    </div>
+    <div class="mf">
+      <button type="button" class="btn" id="btn-close-input">Cancel</button>
+      <button type="button" class="btn btn-p" id="btn-apply-input">Update Dashboard</button>
+    </div>
+  </div>
+</div>
+
+<!-- Workspaces -->
+<div class="mo" id="workspaceModal">
+  <div class="md">
+    <div class="mt" id="workspace-modal-heading">Workspaces</div>
+    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:16px;">Each company has its own saved data in this browser. Open a link with <code style="font-size:12px;color:var(--text);">?w=your-workspace-id</code> to jump directly.</p>
+    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:16px;">Internal: switch between workspace records stored in this browser. Deep link with <code style="font-size:12px;color:var(--text);">?w=slug</code> when sharing a view with teammates.</p>
+    <div id="workspace-list"></div>
+    <div class="mf" style="border-top:none;padding-top:0;margin-top:8px;">
+      <button type="button" class="btn btn-p" id="btn-workspace-add-another" onclick="addAnotherWorkspace()">+ Add workspace</button>
+      <button type="button" class="btn" onclick="document.getElementById('workspaceModal').classList.remove('on')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Non-functional action notice -->
+<div class="mo stub-pop" id="stubFeatureModal" onclick="if (event.target === this) this.classList.remove('on')">
+  <div class="md" onclick="event.stopPropagation()">
+    <div class="mt" id="stubFeatureTitle">Coming soon</div>
+    <p class="stub-body" id="stubFeatureBody">This action is not available in this version yet.</p>
+    <div class="mf" style="border-top:none;padding-top:0;margin-top:0;">
+      <button type="button" class="btn btn-p" id="stubFeatureOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cloud auth -->
+<div class="mo" id="cloudAuthModal">
+  <div class="md" style="max-width:420px;">
+    <div class="mt" id="cloud-auth-heading">Sign in to cloud sync</div>
+    <div class="fg" style="grid-template-columns:1fr;gap:10px;">
+      <div class="fgp"><label class="fl">Email</label><input class="fi" id="cloud-auth-email" type="email" placeholder="you@company.com" /></div>
+      <div class="fgp"><label class="fl">Password</label><input class="fi" id="cloud-auth-password" type="password" placeholder="••••••••" /></div>
+    </div>
+    <div class="mf" style="margin-top:16px;">
+      <button type="button" class="btn" id="btn-cloud-auth-cancel">Cancel</button>
+      <button type="button" class="btn" id="btn-cloud-auth-signup">Sign up</button>
+      <button type="button" class="btn btn-p" id="btn-cloud-auth-signin">Sign in</button>
+      <button type="button" class="btn btn-p" id="btn-cloud-auth-github" style="flex:1;">Continue with GitHub</button>
+    </div>
+  </div>
+</div>
+
+<!-- Client CRUD -->
+<div class="mo" id="clientModal">
+  <div class="md">
+    <div class="mt" id="client-modal-title">Add client</div>
+    <input type="hidden" id="client-edit-id" value="" />
+    <div class="fg" style="margin-bottom:16px;">
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Company name *</label><input class="fi" id="client-company" /></div>
+      <div class="fgp"><label class="fl">Contact name</label><input class="fi" id="client-contact" /></div>
+      <div class="fgp"><label class="fl">Status</label><input class="fi" id="client-status" placeholder="e.g. Active, Lead" /></div>
+      <div class="fgp"><label class="fl">Email</label><input class="fi" id="client-email" type="email" /></div>
+      <div class="fgp"><label class="fl">Phone</label><input class="fi" id="client-phone" /></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Notes</label><textarea class="fi" id="client-notes" rows="2" style="min-height:56px;resize:vertical;"></textarea></div>
+    </div>
+    <div class="mf" style="border-top:none;padding-top:0;margin-top:0;">
+      <button type="button" class="btn" id="btn-client-cancel">Cancel</button>
+      <button type="button" class="btn btn-p" id="btn-client-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Project CRUD -->
+<div class="mo" id="projectModal">
+  <div class="md" style="max-width:560px;">
+    <div class="mt" id="project-modal-title">Add project</div>
+    <input type="hidden" id="project-edit-id" value="" />
+    <div class="fg" style="margin-bottom:16px;">
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Project name *</label><input class="fi" id="project-name" /></div>
+      <div class="fgp"><label class="fl">Client</label><select class="fi" id="project-client"><option value="">— None —</option></select></div>
+      <div class="fgp"><label class="fl">Status</label><select class="fi" id="project-status"></select></div>
+      <div class="fgp"><label class="fl">Type / category</label><input class="fi" id="project-category" placeholder="e.g. Web, Branding" /></div>
+      <div class="fgp"><label class="fl">Start date</label><input class="fi" id="project-start" type="date" /></div>
+      <div class="fgp"><label class="fl">Due date</label><input class="fi" id="project-due" type="date" /></div>
+      <div class="fgp"><label class="fl">Value / revenue ($)</label><input class="fi" id="project-value" type="number" min="0" step="0.01" /></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Description</label><textarea class="fi" id="project-desc" rows="2" style="min-height:56px;resize:vertical;"></textarea></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Notes</label><textarea class="fi" id="project-notes" rows="2" style="min-height:56px;resize:vertical;"></textarea></div>
+      <div class="fgp" style="grid-column:1/-1;display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="project-archived" /><label class="fl" for="project-archived" style="margin:0;">Archived / closed</label>
+      </div>
+    </div>
+    <div class="mf" style="border-top:none;padding-top:0;margin-top:0;">
+      <button type="button" class="btn" id="btn-project-cancel">Cancel</button>
+      <button type="button" class="btn btn-p" id="btn-project-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Expense CRUD -->
+<div class="mo" id="expenseModal">
+  <div class="md">
+    <div class="mt" id="expense-modal-title">Add expense</div>
+    <input type="hidden" id="expense-edit-id" value="" />
+    <div class="fg" style="margin-bottom:16px;">
+      <div class="fgp"><label class="fl">Title</label><input class="fi" id="expense-title" /></div>
+      <div class="fgp"><label class="fl">Category</label><input class="fi" id="expense-category" placeholder="e.g. Software, Travel" /></div>
+      <div class="fgp"><label class="fl">Amount *</label><input class="fi" id="expense-amount" type="number" min="0" step="0.01" /></div>
+      <div class="fgp"><label class="fl">Date</label><input class="fi" id="expense-date" type="date" /></div>
+      <div class="fgp"><label class="fl">Vendor / payee</label><input class="fi" id="expense-vendor" /></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Notes</label><textarea class="fi" id="expense-notes" rows="2"></textarea></div>
+      <div class="fgp" style="grid-column:1/-1;display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="expense-recurring" /><label class="fl" for="expense-recurring" style="margin:0;">Recurring</label>
+      </div>
+    </div>
+    <div class="mf" style="border-top:none;padding-top:0;">
+      <button type="button" class="btn" id="btn-expense-cancel">Cancel</button>
+      <button type="button" class="btn btn-p" id="btn-expense-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Income CRUD -->
+<div class="mo" id="incomeModal">
+  <div class="md">
+    <div class="mt" id="income-modal-title">Add income</div>
+    <input type="hidden" id="income-edit-id" value="" />
+    <div class="fg" style="margin-bottom:16px;">
+      <div class="fgp"><label class="fl">Source / description</label><input class="fi" id="income-source" /></div>
+      <div class="fgp"><label class="fl">Amount *</label><input class="fi" id="income-amount" type="number" min="0" step="0.01" /></div>
+      <div class="fgp"><label class="fl">Date</label><input class="fi" id="income-date" type="date" /></div>
+      <div class="fgp"><label class="fl">Category</label><input class="fi" id="income-category" /></div>
+      <div class="fgp"><label class="fl">Client</label><select class="fi" id="income-client"><option value="">— None —</option></select></div>
+      <div class="fgp"><label class="fl">Project</label><select class="fi" id="income-project"><option value="">— None —</option></select></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Notes</label><textarea class="fi" id="income-notes" rows="2"></textarea></div>
+    </div>
+    <div class="mf" style="border-top:none;padding-top:0;">
+      <button type="button" class="btn" id="btn-income-cancel">Cancel</button>
+      <button type="button" class="btn btn-p" id="btn-income-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Project statuses -->
+<div class="mo" id="statusModal">
+  <div class="md" style="max-width:420px;">
+    <div class="mt">Project statuses</div>
+    <p style="font-size:12px;color:var(--text3);margin:-8px 0 12px;">Customize labels for the project status dropdown. Removing a status does not delete projects using it.</p>
+    <div id="status-list" style="max-height:240px;overflow-y:auto;margin-bottom:12px;"></div>
+    <div class="fg" style="grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:8px;">
+      <div class="fgp"><label class="fl">New status</label><input class="fi" id="status-new-label" placeholder="e.g. In review" /></div>
+      <button type="button" class="btn btn-p" id="btn-status-add" style="height:40px;">Add</button>
+    </div>
+    <div class="mf" style="border-top:none;padding-top:0;">
+      <button type="button" class="btn" id="btn-status-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- First-time workspace -->
+<div class="mo" id="onboardModal">
+  <div class="md">
+    <div class="mt" id="onboard-heading">Create your workspace</div>
+    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">This dashboard is for your agency or business. Your data stays in this browser unless you add a backend later.</p>
+    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Internal tool: add a labeled workspace for this browser. This is not a public signup or customer onboarding flow.</p>
+    <div class="fg" style="margin-bottom:20px;">
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Company name *</label><input class="fi" id="ob-name" placeholder="e.g. Acme Agency" /></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Tagline (optional, two lines)</label><textarea class="fi" id="ob-tagline" rows="2" placeholder="Line one&#10;Line two" style="min-height:64px;resize:vertical;"></textarea></div>
+      <div class="fgp"><label class="fl">Your name</label><input class="fi" id="ob-owner" placeholder="Jane Doe" /></div>
+      <div class="fgp"><label class="fl">Your role</label><input class="fi" id="ob-role" value="" placeholder="Role" /></div>
+      <div class="fgp"><label class="fl">Accent color</label><input class="fi" id="ob-accent" type="color" value="#e8501a" style="min-height:40px;padding:4px 8px;" /></div>
+    </div>
+    <div class="mf" style="border-top:none;padding-top:0;">
+      <button type="button" class="btn btn-p" id="onboard-submit-btn">Create workspace</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- #app-shell -->
+
+<script>
+  document.getElementById('btn-close-input')?.addEventListener('click', function () {
+    document.getElementById('inputModal').classList.remove('on');
+  });
+  document.getElementById('btn-apply-input')?.addEventListener('click', function () {
+    if (window.updateData) window.updateData();
+  });
+</script>
+<script type="module" src="/assets/auth-gate.js"></script>
+</body>
+</html>
