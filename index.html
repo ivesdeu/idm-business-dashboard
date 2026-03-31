@@ -436,8 +436,8 @@
     <div class="ph">
       <div><div class="pt">Business Performance</div><div class="ps" id="dash-subtitle">—</div></div>
       <div class="hr">
-        <select class="fi" id="dash-period-select" style="width:140px;border-radius:50px;padding:8px 12px;" title="Reporting period">
-          <option>March 2026</option><option>February 2026</option><option>January 2026</option>
+        <select class="fi" id="dash-period-select" style="width:160px;border-radius:50px;padding:8px 12px;" title="Reporting period">
+          <option value="all">All-Time</option>
         </select>
         <button type="button" class="btn" id="btn-open-transaction">+ Add transaction</button>
         <button type="button" class="btn btn-p" id="btn-open-input">Update totals</button>
@@ -925,5 +925,6 @@
   });
 </script>
 <script type="module" src="/assets/auth-gate.js"></script>
+<script src="/assets/date-filter.js"></script>
 </body>
 </html>
