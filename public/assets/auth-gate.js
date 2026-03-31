@@ -41,7 +41,17 @@ async function showApp() {
   }
   if (!window.__bizdashMainLoaded) {
     window.__bizdashMainLoaded = true;
-    await import('/assets/index-jSIynU6K.js');
+    try {
+      await import('/assets/index-jSIynU6K.js');
+      // Ensure dashboard bootstrap code runs even when loaded after DOMContentLoaded
+      if (document.readyState !== 'loading') {
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+      }
+    } catch (err) {
+      console.error('[bizdash] Failed to load main bundle:', err);
+      setError('Could not load the dashboard code. Please refresh; if this keeps happening, contact support.');
+      window.__bizdashMainLoaded = false;
+    }
   }
 }
 
