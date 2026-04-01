@@ -5,13 +5,12 @@
   "scripts": {
     "dev": "vite preview --host localhost --port 5173 --strictPort",
     "build": "node scripts/build-static.mjs",
-    "preview": "vite preview",
-    "create-users": "node scripts/create-test-users.mjs"
+    "preview": "vite preview"
   },
   "devDependencies": {
     "vite": "^6.2.0"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.100.0"
+    "@supabase/supabase-js": "^2.101.1"
   }
 }

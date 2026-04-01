@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Business Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e8501a'/%3E%3Ctext x='50%25' y='52%25' text-anchor='middle' font-size='32' fill='white' font-family='sans-serif'%3EBD%3C/text%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap" rel="stylesheet">
 <style>
@@ -171,12 +172,42 @@
   body.internal-mode #workspace-current-label { display: none !important; }
   body.internal-mode #cloud-sidebar-section { display: none !important; }
 
-  /* Mandatory auth gate (main bundle loads only after session) */
-  #auth-loading { position:fixed; inset:0; z-index:10001; display:flex; align-items:center; justify-content:center; background:var(--bg); font-size:15px; color:var(--text2); }
-  #auth-login-shell { position:fixed; inset:0; z-index:10000; display:none; flex-direction:column; align-items:center; justify-content:center; background:var(--bg); padding:24px; }
-  #auth-login-shell .gate-card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:28px 32px; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.08); }
-  #app-shell { display:none; flex:1; min-height:0; min-width:0; width:100%; flex-direction:row; align-items:stretch; }
-  #app-shell.on { display:flex !important; }
+  /* Auth gate: app hidden until authenticated */
+  #auth-loading {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:40px 0;
+    font-size:14px;
+    color:var(--text2);
+  }
+  #auth-login-shell {
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:40px 0;
+  }
+  #auth-login-shell .gate-card {
+    background:var(--bg2);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:28px 32px;
+    max-width:420px;
+    width:100%;
+    box-shadow:0 20px 60px rgba(0,0,0,0.08);
+  }
+  #app-shell {
+    display:none;
+    flex:1;
+    min-height:0;
+    min-width:0;
+    width:100%;
+    flex-direction:row;
+    align-items:stretch;
+  }
+  #app-shell.on {
+    display:flex !important;
+  }
 
   /* Mobile layout */
   @media (max-width: 960px) {
@@ -222,7 +253,6 @@
 <body>
 
 <div id="auth-loading"><span>Verifying session…</span></div>
-<script type="application/json" id="bizdash-supabase-config">{"url":"https://gykbtvztjgcynawzpqwq.supabase.co","anonKey":"sb_publishable_RR6hAWo4m5DAQMyFD167XQ_FBbDRHMH"}</script>
 <div id="auth-login-shell">
   <div class="gate-card">
     <div class="pt" style="margin-bottom:8px;">Sign in</div>
@@ -417,13 +447,13 @@
       <div class="card">
         <div class="sh"><div class="st">AR Aging</div></div>
         <div style="display:flex;flex-direction:column;gap:12px;margin-top:4px;">
-          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>Current (0–30 days)</span><span style="color:var(--green);">$0</span></div><div class="pb"><div class="pf" style="width:0%;background:var(--green);"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>31–60 days</span><span style="color:var(--amber);">$0</span></div><div class="pb"><div class="pf" style="width:0%;background:var(--amber);"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>61–90 days</span><span style="color:var(--red);">$0</span></div><div class="pb"><div class="pf" style="width:0%;background:var(--red);"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>90+ days</span><span style="color:var(--red);">$0</span></div><div class="pb"><div class="pf" style="width:0%;background:#900;"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>Current (0–30 days)</span><span id="ar-current-amt" style="color:var(--green);">$0</span></div><div class="pb"><div class="pf" id="ar-current-bar" style="width:0%;background:var(--green);"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>31–60 days</span><span id="ar-31-60-amt" style="color:var(--amber);">$0</span></div><div class="pb"><div class="pf" id="ar-31-60-bar" style="width:0%;background:var(--amber);"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>61–90 days</span><span id="ar-61-90-amt" style="color:var(--red);">$0</span></div><div class="pb"><div class="pf" id="ar-61-90-bar" style="width:0%;background:var(--red);"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px;"><span>90+ days</span><span id="ar-90-plus-amt" style="color:var(--red);">$0</span></div><div class="pb"><div class="pf" id="ar-90-plus-bar" style="width:0%;background:#900;"></div></div></div>
         </div>
         <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px;font-weight:600;">
-          <span>Total Outstanding</span><span style="color:var(--text2);">$0</span>
+          <span>Total Outstanding</span><span id="ar-total-outstanding" style="color:var(--text2);">$0</span>
         </div>
       </div>
     </div>
@@ -431,7 +461,7 @@
       <div class="sh"><div class="st">Income entries</div></div>
       <div id="income-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No income recorded yet.</div>
       <table class="dt" id="income-table" style="display:none;">
-        <thead><tr><th>Date</th><th>Source</th><th>Client</th><th>Project</th><th>Category</th><th>Amount</th><th style="width:140px;">Actions</th></tr></thead>
+        <thead><tr><th>Date</th><th>Source</th><th>Client</th><th>Project</th><th>Category</th><th>Amount</th><th style="width:360px;">Actions</th></tr></thead>
         <tbody id="income-tbody"></tbody>
       </table>
     </div>
@@ -439,7 +469,7 @@
 
   <!-- EXPENSES -->
   <div class="pg" id="page-expenses">
-    <div class="ph"><div><div class="pt">Expenses</div><div class="ps">Expenses added from the dashboard transaction log appear here</div></div></div>
+    <div class="ph"><div><div class="pt">Expenses</div><div class="ps">Track costs; totals roll into the dashboard when you use operational records</div></div><button type="button" class="btn btn-p" id="btn-add-expense">+ Add expense</button></div>
     <div class="card">
       <div id="expenses-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No expenses yet.</div>
       <table class="dt" id="expenses-table" style="display:none;">
@@ -585,6 +615,14 @@
         </select>
       </div>
       <div class="fgp" style="grid-column:1/-1;"><label class="fl">Note (optional)</label><input class="fi" id="tx-note" placeholder="e.g. Client invoice #104" /></div>
+      <div class="fgp" id="tx-other-wrapper" style="grid-column:1/-1;">
+        <label class="fl">Other expense label (for “Other expense” category)</label>
+        <input class="fi" id="tx-other-label" placeholder="e.g. Travel, Training, Misc." />
+      </div>
+      <div class="fgp" id="tx-other-type-wrapper" style="grid-column:1/-1;">
+        <label class="fl">Other expense type</label>
+        <input class="fi" id="tx-other-type" placeholder="e.g. One-time, Subscription" />
+      </div>
     </div>
     <div class="mf" style="border-top:none;padding-top:0;margin-top:0;">
       <button type="button" class="btn" id="btn-tx-cancel">Cancel</button>
@@ -801,8 +839,8 @@
     if (window.updateData) window.updateData();
   });
 </script>
-<script type="module" src="/assets/auth-gate.js"></script>
-<script src="/assets/tx-expense-sync.js"></script>
-<script src="/assets/date-filter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/supabase-auth.js"></script>
+<script src="/assets/financial-core.js"></script>
 </body>
 </html>
