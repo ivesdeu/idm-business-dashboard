@@ -147,6 +147,26 @@
 
   var invoices = [];
 
+  // Marketing campaigns (local only)
+  var CAMPAIGNS_KEY = 'bizdash:campaigns:v1';
+
+  function loadCampaigns() {
+    try {
+      var raw = localStorage.getItem(CAMPAIGNS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveCampaigns(list) {
+    try {
+      localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(list));
+    } catch (_) {}
+  }
+
+  var campaigns = [];
+
   function getInvoiceByIncomeTxId(txId) {
     return invoices.find(function (inv) { return inv.incomeTxId === txId; }) || null;
   }
@@ -166,13 +186,17 @@
 
   // Match Supabase `transactions` table: id, user_id, date, amount, category, description, created_at.
   function transactionRowForDb(tx, userId) {
+    var line = tx.description || tx.title || tx.note || null;
+    if (!line && (tx.vendor || tx.notes)) {
+      line = [tx.title, tx.vendor, tx.notes].filter(function (s) { return s && String(s).trim(); }).join(' · ') || null;
+    }
     return {
       id: tx.id,
       user_id: userId,
       date: tx.date,
       category: tx.category,
       amount: tx.amount,
-      description: tx.description || tx.note || null,
+      description: line,
     };
   }
 
@@ -984,12 +1008,14 @@ var verticalChart = null;
         ads: 'Advertising',
         oth: 'Other',
       }[tx.category] || tx.category || 'Expense';
+      var titleText = (tx.title && String(tx.title).trim()) || (tx.description && String(tx.description).trim()) || '—';
+      var vendorText = (tx.vendor && String(tx.vendor).trim()) || '—';
       return '<tr>' +
         '<td>' + (tx.date || '—') + '</td>' +
-        '<td class="tdp">' + label + '</td>' +
+        '<td class="tdp">' + titleText + '</td>' +
         '<td>' + label + '</td>' +
         '<td>' + fmtCurrency(tx.amount) + '</td>' +
-        '<td>—</td>' +
+        '<td>' + vendorText + '</td>' +
         '<td>No</td>' +
         '<td style="white-space:nowrap;">' +
           '<button type="button" class="btn" data-exp-edit="' + tx.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">Edit</button>' +
@@ -1010,6 +1036,7 @@ var verticalChart = null;
     renderRevenueVsExpenses(c);
     renderIncomeSection(c);
     renderRevenueByVertical(c);
+    renderMarketing();
   }
 
   function renderRevenueByVertical(c) {
@@ -1065,6 +1092,91 @@ var verticalChart = null;
       verticalChart.data.labels = labels;
       verticalChart.data.datasets[0].data = data;
       verticalChart.update('none');
+    }
+  }
+
+  function renderMarketing() {
+    var empty = $('campaigns-empty');
+    var pipe = $('marketing-pipeline');
+    if (!empty || !pipe) return;
+
+    if (!campaigns.length) {
+      empty.style.display = 'block';
+      pipe.style.display = 'none';
+      pipe.innerHTML = '';
+    } else {
+      empty.style.display = 'none';
+      pipe.style.display = 'flex';
+      pipe.innerHTML = campaigns.slice().sort(function (a, b) {
+        return (b.startDate || '').localeCompare(a.startDate || '');
+      }).map(function (c) {
+        return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg2);">' +
+          '<div><div style="font-weight:600;font-size:14px;">' + (c.name || 'Untitled') + '</div>' +
+          '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + (c.channel || '—') + ' · ' + (c.startDate || '—') + '</div>' +
+          (c.notes ? '<div style="font-size:12px;color:var(--text3);margin-top:6px;">' + c.notes + '</div>' : '') +
+          '</div>' +
+          '<button type="button" class="btn" data-campaign-del="' + c.id + '" style="font-size:11px;padding:4px 10px;color:var(--red);flex-shrink:0;">Delete</button>' +
+          '</div>';
+      }).join('');
+    }
+
+    var now = new Date();
+    var monthKey = now.getFullYear() + '-' + now.getMonth();
+    var startedThisMonth = campaigns.filter(function (c) {
+      if (!c.startDate) return false;
+      var d = new Date(c.startDate + 'T12:00:00');
+      if (isNaN(d.getTime())) return false;
+      return d.getFullYear() + '-' + d.getMonth() === monthKey;
+    }).length;
+    setText('mkt-kpi-1', String(startedThisMonth));
+  }
+
+  function openCampaignModal() {
+    var m = $('campaignModal');
+    if (!m) return;
+    if ($('campaign-name')) $('campaign-name').value = '';
+    if ($('campaign-channel')) $('campaign-channel').value = '';
+    if ($('campaign-start')) $('campaign-start').value = todayISO();
+    if ($('campaign-notes')) $('campaign-notes').value = '';
+    m.classList.add('on');
+  }
+
+  function closeCampaignModal() {
+    var m = $('campaignModal');
+    if (m) m.classList.remove('on');
+  }
+
+  function wireMarketingCampaign() {
+    var btn = $('btn-new-campaign');
+    var modal = $('campaignModal');
+    var btnCancel = $('btn-campaign-cancel');
+    var btnSave = $('btn-campaign-save');
+    if (btn) btn.addEventListener('click', openCampaignModal);
+    if (btnCancel) btnCancel.addEventListener('click', closeCampaignModal);
+    if (btnSave) {
+      btnSave.addEventListener('click', function () {
+        var name = ($('campaign-name') && $('campaign-name').value || '').trim();
+        if (!name) {
+          alert('Campaign name is required.');
+          return;
+        }
+        campaigns.push({
+          id: uuid(),
+          name: name,
+          channel: ($('campaign-channel') && $('campaign-channel').value || '').trim(),
+          startDate: ($('campaign-start') && $('campaign-start').value) || todayISO(),
+          notes: ($('campaign-notes') && $('campaign-notes').value || '').trim(),
+          createdAt: Date.now(),
+        });
+        saveCampaigns(campaigns);
+        closeCampaignModal();
+        renderMarketing();
+      });
+    }
+    if (modal) {
+      modal.addEventListener('click', function (ev) {
+        if (ev.target === modal) closeCampaignModal();
+      });
     }
   }
 
@@ -1624,10 +1736,10 @@ var verticalChart = null;
       if (editId) editId.value = existingTx.id || '';
       if (fDate) fDate.value = existingTx.date || todayISO();
       if (fAmount) fAmount.value = existingTx.amount != null ? String(existingTx.amount) : '';
-      if (fTitle) fTitle.value = existingTx.title || '';
+      if (fTitle) fTitle.value = (existingTx.title != null && existingTx.title !== '') ? existingTx.title : (existingTx.description || '');
       if (fCat) fCat.value = existingTx.categoryLabel || '';
       if (fVendor) fVendor.value = existingTx.vendor || '';
-      if (fNotes) fNotes.value = existingTx.notes || existingTx.description || '';
+      if (fNotes) fNotes.value = existingTx.notes != null ? existingTx.notes : '';
     } else {
       if (editId) editId.value = '';
       if (fDate) fDate.value = todayISO();
@@ -1852,7 +1964,10 @@ var verticalChart = null;
         var vendor = $('expense-vendor').value || '';
         var notes = $('expense-notes').value || '';
         var cat = mapExpenseCategory(catText);
-        var desc = title || vendor || notes;
+        var titleTrim = (title || '').trim();
+        var vendorTrim = (vendor || '').trim();
+        var notesTrim = (notes || '').trim();
+        var desc = titleTrim || vendorTrim || notesTrim;
 
         var editId = $('expense-edit-id') ? $('expense-edit-id').value : '';
         if (editId) {
@@ -1862,6 +1977,9 @@ var verticalChart = null;
             return {
               id: tx.id,
               date: date,
+              title: titleTrim,
+              vendor: vendorTrim,
+              notes: notesTrim,
               description: desc,
               amount: amount,
               category: cat,
@@ -1869,11 +1987,16 @@ var verticalChart = null;
           });
           saveTransactions(state.transactions);
           recomputeAndRender();
+          var updated = state.transactions.find(function (t) { return t.id === editId; });
+          if (updated) persistTransactionToSupabase(updated);
         } else {
           // Create new expense transaction
           addTransaction({
             id: uuid(),
             date: date,
+            title: titleTrim,
+            vendor: vendorTrim,
+            notes: notesTrim,
             description: desc,
             amount: amount,
             category: cat,
@@ -2057,9 +2180,10 @@ var verticalChart = null;
             date: tx.date,
             amount: tx.amount,
             categoryLabel: labelMap[tx.category] || tx.category || '',
-            title: '',
-            vendor: '',
-            notes: tx.description || '',
+            title: tx.title,
+            vendor: tx.vendor,
+            notes: tx.notes,
+            description: tx.description,
           });
           return;
         }
@@ -2071,6 +2195,19 @@ var verticalChart = null;
         if (confirm('Delete this expense transaction?')) {
           deleteTransaction(id);
         }
+      });
+    }
+
+    var mktPipe = $('marketing-pipeline');
+    if (mktPipe) {
+      mktPipe.addEventListener('click', function (ev) {
+        var delBtn = ev.target.closest('[data-campaign-del]');
+        if (!delBtn) return;
+        var id = delBtn.getAttribute('data-campaign-del');
+        if (!id || !confirm('Remove this campaign?')) return;
+        campaigns = campaigns.filter(function (c) { return c.id !== id; });
+        saveCampaigns(campaigns);
+        renderMarketing();
       });
     }
 
@@ -2538,6 +2675,7 @@ var verticalChart = null;
       clients = loadClients();
       projects = loadProjects();
       invoices = loadInvoices();
+      campaigns = loadCampaigns();
       normalizeLocalIdsForSupabase();
 
       if (supabase && currentUser) {
@@ -2587,6 +2725,7 @@ var verticalChart = null;
       clients = loadClients();
       projects = loadProjects();
       invoices = loadInvoices();
+      campaigns = loadCampaigns();
       state.computed = compute(state.filter);
       renderAll();
       if (typeof renderClients === 'function') {
@@ -2610,6 +2749,7 @@ var verticalChart = null;
     wireInvoicePreviewModal();
     wireProjectsAndStatuses();
     wireFilter();
+    wireMarketingCampaign();
 
     // Simple page navigation wiring to replace the original bundle's nav().
     // Exposed globally so existing onclick="nav('dashboard', this)" continues to work.
