@@ -8,6 +8,19 @@
   var supabase = window.supabaseClient || null;
   var currentUser = window.currentUser || null;
 
+  // Debug ingest: only on localhost — public origins cannot reach 127.0.0.1 (browser blocks loopback from HTTPS sites).
+  function debugAgentLog(entry) {
+    try {
+      var h = window.location && window.location.hostname;
+      if (h !== 'localhost' && h !== '127.0.0.1') return;
+      fetch('http://127.0.0.1:7475/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c7d7dd' },
+        body: JSON.stringify(Object.assign({ sessionId: 'c7d7dd', timestamp: Date.now() }, entry)),
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
   var STORAGE_KEY = 'bizdash:transactions:v1';
 
   // ---------- Data model ----------
@@ -175,7 +188,7 @@
     var payload = transactionRowForDb(tx, currentUser.id);
 
     // #region agent log
-    fetch('http://127.0.0.1:7475/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c7d7dd' }, body: JSON.stringify({ sessionId: 'c7d7dd', runId: 'run1', hypothesisId: 'H1', location: 'financial-core.js:persistTransactionToSupabase', message: 'tx upsert payload shape', data: { keys: Object.keys(payload), hasClientIdKey: Object.prototype.hasOwnProperty.call(payload, 'client_id') }, timestamp: Date.now() }) }).catch(function () {});
+    debugAgentLog({ runId: 'run1', hypothesisId: 'H1', location: 'financial-core.js:persistTransactionToSupabase', message: 'tx upsert payload shape', data: { keys: Object.keys(payload), hasClientIdKey: Object.prototype.hasOwnProperty.call(payload, 'client_id') } });
     // #endregion
 
     try {
@@ -335,7 +348,7 @@
       return transactionRowForDb(tx, currentUser.id);
     });
     // #region agent log
-    fetch('http://127.0.0.1:7475/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c7d7dd' }, body: JSON.stringify({ sessionId: 'c7d7dd', runId: 'run1', hypothesisId: 'H1', location: 'financial-core.js:uploadTransactionsToSupabase', message: 'bulk tx upsert first row keys', data: { count: payload.length, firstKeys: payload[0] ? Object.keys(payload[0]) : [], firstHasClientId: payload[0] ? Object.prototype.hasOwnProperty.call(payload[0], 'client_id') : null }, timestamp: Date.now() }) }).catch(function () {});
+    debugAgentLog({ runId: 'run1', hypothesisId: 'H1', location: 'financial-core.js:uploadTransactionsToSupabase', message: 'bulk tx upsert first row keys', data: { count: payload.length, firstKeys: payload[0] ? Object.keys(payload[0]) : [], firstHasClientId: payload[0] ? Object.prototype.hasOwnProperty.call(payload[0], 'client_id') : null } });
     // #endregion
     try {
       var result = await supabase.from('transactions').upsert(payload, { onConflict: 'id' });
@@ -2546,7 +2559,7 @@ var verticalChart = null;
         if (remoteClients.length) clients = remoteClients;
 
         // #region agent log
-        fetch('http://127.0.0.1:7475/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c7d7dd' }, body: JSON.stringify({ sessionId: 'c7d7dd', runId: 'run1', hypothesisId: 'H2', location: 'financial-core.js:initDataFromSupabase', message: 'after remote load', data: { remoteTxCount: remoteTxs.length, remoteClientCount: remoteClients.length, appliedRemoteTx: !!remoteTxs.length, appliedRemoteClients: !!remoteClients.length }, timestamp: Date.now() }) }).catch(function () {});
+        debugAgentLog({ runId: 'run1', hypothesisId: 'H2', location: 'financial-core.js:initDataFromSupabase', message: 'after remote load', data: { remoteTxCount: remoteTxs.length, remoteClientCount: remoteClients.length, appliedRemoteTx: !!remoteTxs.length, appliedRemoteClients: !!remoteClients.length } });
         // #endregion
 
         // Cache in localStorage so existing browser keeps a copy.
