@@ -801,26 +801,10 @@ var verticalChart = null;
     var canvas = document.getElementById('cRevExp');
     if (!canvas || !window.Chart) return;
 
-    // Group by month key YYYY-MM
-    var revByMonth = {};
-    var expByMonth = {};
+    var revTotal = c.revenueTotal || 0;
+    var expTotal = c.expenseTotal || 0;
 
-    c.txs.forEach(function (tx) {
-      var d = parseDate(tx.date);
-      if (!d) return;
-      var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-      var amt = +tx.amount || 0;
-      if (amt <= 0) return;
-      if (tx.category === 'svc' || tx.category === 'ret') {
-        revByMonth[key] = (revByMonth[key] || 0) + amt;
-      } else if (['lab','sw','ads','oth'].indexOf(tx.category) !== -1) {
-        expByMonth[key] = (expByMonth[key] || 0) + amt;
-      }
-    });
-
-    var keys = Object.keys(revByMonth).concat(Object.keys(expByMonth));
-    if (!keys.length) {
-      // No data; clear chart if it exists.
+    if (revTotal < 0.01 && expTotal < 0.01) {
       if (revExpChart) {
         revExpChart.data.labels = [];
         revExpChart.data.datasets[0].data = [];
@@ -830,21 +814,9 @@ var verticalChart = null;
       return;
     }
 
-    // Unique + sort ascending, then keep last 6
-    keys = Array.from(new Set(keys)).sort();
-    if (keys.length > 6) {
-      keys = keys.slice(keys.length - 6);
-    }
-
-    var labels = keys.map(function (key) {
-      var parts = key.split('-').map(Number);
-      return new Date(parts[0], parts[1] - 1, 1).toLocaleString('en-US', {
-        month: 'short',
-        year: '2-digit',
-      });
-    });
-    var revData = keys.map(function (key) { return revByMonth[key] || 0; });
-    var expData = keys.map(function (key) { return expByMonth[key] || 0; });
+    var labels = ['Revenue', 'Expenses'];
+    var revData = [revTotal, null];
+    var expData = [null, expTotal];
 
     if (!revExpChart) {
       revExpChart = new Chart(canvas, {
