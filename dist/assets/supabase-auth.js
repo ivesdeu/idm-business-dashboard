@@ -8,6 +8,9 @@
   var SUPABASE_URL = 'https://ausivxesedagohjlthiy.supabase.co';
   var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1c2l2eGVzZWRhZ29oamx0aGl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTU3MTEsImV4cCI6MjA5MDYzMTcxMX0.H5PRdJVXCq8_9CbB12F6xFzy0ljqz1-aiVZmguErLxk';
 
+  var SESSION_MAX_MS = 8 * 60 * 60 * 1000; // 8 hours from sign-in
+  var SESSION_START_KEY = 'bizdash:auth-session-start:v1';
+
   if (!window.supabase) {
     console.error('Supabase JS not loaded. Check CDN <script> tag.');
     return;
@@ -16,19 +19,111 @@
   var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   window.supabaseClient = supabase;
 
-  // OAuth and token refresh can resolve after the first getSession(); reload data when auth settles.
-  supabase.auth.onAuthStateChange(function (event, session) {
-    if (event === 'SIGNED_OUT') {
-      setCurrentUser(null);
-      showLogin();
+  var sessionCheckTimer = null;
+
+  function loadSessionStart() {
+    try {
+      var raw = localStorage.getItem(SESSION_START_KEY);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || typeof o.uid !== 'string' || typeof o.t !== 'number') return null;
+      return o;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function markSessionStart(userId) {
+    if (!userId) return;
+    try {
+      localStorage.setItem(SESSION_START_KEY, JSON.stringify({ uid: userId, t: Date.now() }));
+    } catch (_) {}
+  }
+
+  function clearSessionStart() {
+    try {
+      localStorage.removeItem(SESSION_START_KEY);
+    } catch (_) {}
+  }
+
+  function stopSessionMaxAgeTicker() {
+    if (sessionCheckTimer) {
+      clearInterval(sessionCheckTimer);
+      sessionCheckTimer = null;
+    }
+  }
+
+  function startSessionMaxAgeTicker() {
+    stopSessionMaxAgeTicker();
+    sessionCheckTimer = setInterval(function () {
+      void enforceSessionMaxAgeFromRemote();
+    }, 60 * 1000);
+  }
+
+  async function enforceSessionMaxAgeFromRemote() {
+    try {
+      var r = await supabase.auth.getSession();
+      var session = r.data.session;
+      if (!session || !session.user) return;
+      await ensureSessionWithinMaxAge(session);
+      var r2 = await supabase.auth.getSession();
+      if (!r2.data.session || !r2.data.user) {
+        setCurrentUser(null);
+        stopSessionMaxAgeTicker();
+        showLogin();
+      }
+    } catch (err) {
+      console.error('session max-age check error', err);
+    }
+  }
+
+  /**
+   * If session is older than SESSION_MAX_MS from recorded sign-in, sign out.
+   * New sign-in (SIGNED_IN) should call markSessionStart first to reset the clock.
+   */
+  async function ensureSessionWithinMaxAge(session) {
+    if (!session || !session.user) return;
+    var uid = session.user.id;
+    var rec = loadSessionStart();
+    if (!rec || rec.uid !== uid) {
+      markSessionStart(uid);
       return;
     }
-    if (session && session.user) {
-      setCurrentUser(session.user);
-      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        showApp(session.user);
-      }
+    if (Date.now() - rec.t >= SESSION_MAX_MS) {
+      clearSessionStart();
+      await supabase.auth.signOut();
     }
+  }
+
+  // OAuth and token refresh can resolve after the first getSession(); reload data when auth settles.
+  supabase.auth.onAuthStateChange(function (event, session) {
+    void (async function () {
+      if (event === 'SIGNED_OUT') {
+        clearSessionStart();
+        stopSessionMaxAgeTicker();
+        setCurrentUser(null);
+        showLogin();
+        return;
+      }
+      if (session && session.user) {
+        if (event === 'SIGNED_IN') {
+          markSessionStart(session.user.id);
+        }
+        await ensureSessionWithinMaxAge(session);
+        var r2 = await supabase.auth.getSession();
+        var s2 = r2.data.session;
+        if (!s2 || !s2.user) {
+          setCurrentUser(null);
+          stopSessionMaxAgeTicker();
+          showLogin();
+          return;
+        }
+        setCurrentUser(s2.user);
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          showApp(s2.user);
+        }
+      }
+    })();
   });
 
   function setCurrentUser(user) {
@@ -49,6 +144,7 @@
   }
 
   function showLogin() {
+    stopSessionMaxAgeTicker();
     var loading = $('auth-loading');
     var shell = $('auth-login-shell');
     var app = $('app-shell');
@@ -76,6 +172,8 @@
       }
     }
 
+    startSessionMaxAgeTicker();
+
     // Once the app shell is visible, let the data layer pull from Supabase.
     if (window.initDataFromSupabase) {
       window.initDataFromSupabase();
@@ -88,10 +186,16 @@
       var result = await supabase.auth.getSession();
       var session = result.data.session;
       if (session && session.user) {
+        await ensureSessionWithinMaxAge(session);
+        result = await supabase.auth.getSession();
+        session = result.data.session;
+      }
+      if (session && session.user) {
         setCurrentUser(session.user);
         showApp(session.user);
       } else {
         setCurrentUser(null);
+        clearSessionStart();
         showLogin();
       }
     } catch (err) {
@@ -128,6 +232,9 @@
           if (res.error) {
             setError(res.error.message || 'Could not sign in.');
             return;
+          }
+          if (res.data.user) {
+            markSessionStart(res.data.user.id);
           }
           setCurrentUser(res.data.user);
           showApp(res.data.user);
@@ -182,14 +289,22 @@
     }
   }
 
+  function wireSessionVisibilityCheck() {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible') return;
+      void enforceSessionMaxAgeFromRemote();
+    });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       wireAuthForm();
+      wireSessionVisibilityCheck();
       bootstrapSession();
     });
   } else {
     wireAuthForm();
+    wireSessionVisibilityCheck();
     bootstrapSession();
   }
 })();
-

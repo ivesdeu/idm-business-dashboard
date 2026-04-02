@@ -1224,6 +1224,7 @@ var leadSourceChart = null;
     renderRevenueVsExpenses(c);
     renderIncomeSection(c);
     renderRevenueByVertical(c);
+    renderInsights();
     renderMarketing();
     renderDashAR();
     renderClients();
@@ -1282,6 +1283,326 @@ var leadSourceChart = null;
       verticalChart.data.labels = labels;
       verticalChart.data.datasets[0].data = data;
       verticalChart.update('none');
+    }
+  }
+
+  // ---------- Insights ----------
+
+  var insTrendChart = null;
+
+  function computeMonthlyRevenueSeries() {
+    var byMonth = {};
+    (state.transactions || []).forEach(function (tx) {
+      if (tx.category !== 'svc' && tx.category !== 'ret') return;
+      var amt = +tx.amount || 0;
+      if (amt <= 0 || !tx.date) return;
+      var key = tx.date.slice(0, 7);
+      byMonth[key] = (byMonth[key] || 0) + amt;
+    });
+    var keys = Object.keys(byMonth).sort();
+    return keys.map(function (k) { return { month: k, revenue: byMonth[k] }; });
+  }
+
+  function linearForecast(series) {
+    var n = series.length;
+    if (n < 2) return null;
+    var xs = series.map(function (_, i) { return i; });
+    var ys = series.map(function (s) { return s.revenue; });
+    var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    for (var i = 0; i < n; i++) { sumX += xs[i]; sumY += ys[i]; sumXY += xs[i] * ys[i]; sumXX += xs[i] * xs[i]; }
+    var denom = n * sumXX - sumX * sumX;
+    if (!denom) return null;
+    var slope = (n * sumXY - sumX * sumY) / denom;
+    var intercept = (sumY - slope * sumX) / n;
+    return { slope: slope, intercept: intercept, nextValue: Math.max(0, slope * n + intercept) };
+  }
+
+  function fmtMonthLabel(ym) {
+    var parts = ym.split('-');
+    var d = new Date(+parts[0], +parts[1] - 1, 1);
+    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  }
+
+  function nextMonthLabel(ym) {
+    var parts = ym.split('-');
+    var d = new Date(+parts[0], +parts[1], 1);
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }
+
+  function renderInsights() {
+    var allTxs = state.transactions || [];
+    var now = new Date();
+    var todayStr = dateYMD(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12));
+
+    // ---- Monthly revenue series ----
+    var series = computeMonthlyRevenueSeries();
+    var last3 = series.slice(-3);
+    var avg3 = last3.length ? last3.reduce(function (s, x) { return s + x.revenue; }, 0) / last3.length : 0;
+    var thisMonthKey = todayStr.slice(0, 7);
+    var thisMonthRev = (series.find(function (s) { return s.month === thisMonthKey; }) || {}).revenue || 0;
+
+    // ---- Expense totals ----
+    var expByCat = { lab: 0, sw: 0, ads: 0, oth: 0 };
+    var expLabels = { lab: 'Labor', sw: 'Software & Tools', ads: 'Advertising', oth: 'Other' };
+    allTxs.forEach(function (tx) {
+      var amt = +tx.amount || 0;
+      if (amt <= 0) return;
+      if (expByCat.hasOwnProperty(tx.category)) expByCat[tx.category] += amt;
+    });
+    var expTotal = expByCat.lab + expByCat.sw + expByCat.ads + expByCat.oth;
+
+    // ---- MRR from retainer clients ----
+    var retainerClients = clients.filter(clientIsRetainer);
+    var mrr = retainerClients.reduce(function (sum, c) {
+      var rev = clientRevenueFromTransactions(c.id);
+      return sum + (rev > 0 ? rev / Math.max(1, series.length) : 0);
+    }, 0);
+
+    // ---- Top client ----
+    var clientRevs = clients.map(function (c) {
+      return { client: c, rev: clientRevenueFromTransactions(c.id) };
+    }).filter(function (x) { return x.rev > 0; }).sort(function (a, b) { return b.rev - a.rev; });
+    var topClient = clientRevs[0] || null;
+
+    // ---- Churn risk: clients with income tx but none in 60 days ----
+    var churnRisk = clients.filter(function (c) {
+      var incomeTxs = allTxs.filter(function (tx) {
+        return tx.clientId === c.id && (tx.category === 'svc' || tx.category === 'ret') && tx.date;
+      });
+      if (!incomeTxs.length) return false;
+      var latestDate = incomeTxs.map(function (tx) { return tx.date; }).sort().pop();
+      var diff = (parseYMD(todayStr) - parseYMD(latestDate)) / 86400000;
+      return diff >= 60;
+    });
+
+    // ---- Forecast ----
+    var forecast = linearForecast(series);
+
+    // ---- Alerts ----
+    var alertsEl = document.getElementById('insights-alerts');
+    if (alertsEl) {
+      var alerts = [];
+      // Expense spike vs 3-month avg
+      var thisMonthExp = 0;
+      allTxs.forEach(function (tx) {
+        if (!tx.date || tx.date.slice(0, 7) !== thisMonthKey) return;
+        var amt = +tx.amount || 0;
+        if (expByCat.hasOwnProperty(tx.category) && amt > 0) thisMonthExp += amt;
+      });
+      var last3Exp = [];
+      for (var mi = 1; mi <= 3; mi++) {
+        var d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+        var mk = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        var mExp = 0;
+        allTxs.forEach(function (tx) {
+          if (!tx.date || tx.date.slice(0, 7) !== mk) return;
+          var amt = +tx.amount || 0;
+          if (expByCat.hasOwnProperty(tx.category) && amt > 0) mExp += amt;
+        });
+        last3Exp.push(mExp);
+      }
+      var avgExp3 = last3Exp.length ? last3Exp.reduce(function (a, b) { return a + b; }, 0) / last3Exp.length : 0;
+      if (avgExp3 > 0 && thisMonthExp > avgExp3 * 1.35) {
+        var pct = Math.round((thisMonthExp / avgExp3 - 1) * 100);
+        alerts.push({ type: 'warn', msg: 'Expenses this month are <strong>' + pct + '% above</strong> your 3-month average (' + fmtCurrency(thisMonthExp) + ' vs avg ' + fmtCurrency(avgExp3) + ').' });
+      }
+      // Revenue vs avg
+      if (avg3 > 0 && thisMonthRev > 0 && thisMonthRev < avg3 * 0.6) {
+        alerts.push({ type: 'warn', msg: 'Revenue this month (' + fmtCurrency(thisMonthRev) + ') is tracking <strong>below</strong> your 3-month average of ' + fmtCurrency(avg3) + '.' });
+      }
+      if (avg3 > 0 && thisMonthRev > avg3 * 1.25) {
+        var upPct = Math.round((thisMonthRev / avg3 - 1) * 100);
+        alerts.push({ type: 'good', msg: 'Revenue this month is <strong>' + upPct + '% above</strong> your 3-month average — great month!' });
+      }
+      // Churn
+      if (churnRisk.length) {
+        alerts.push({ type: 'warn', msg: churnRisk.length + ' client' + (churnRisk.length > 1 ? 's have' : ' has') + ' had no income in 60+ days: <strong>' + churnRisk.map(function (c) { return esc(c.companyName || c.contactName || 'Unknown'); }).join(', ') + '</strong>.' });
+      }
+      // No retainers
+      if (!retainerClients.length && clients.length > 0) {
+        alerts.push({ type: 'info', msg: 'You have no retainer clients yet. Retainers provide predictable monthly revenue.' });
+      }
+      if (!alerts.length && allTxs.length > 0) {
+        alerts.push({ type: 'good', msg: 'Everything looks healthy — no anomalies detected.' });
+      }
+      alertsEl.innerHTML = alerts.map(function (a) {
+        var bg = a.type === 'good' ? 'var(--green-bg)' : a.type === 'warn' ? 'var(--amber-bg)' : 'var(--blue-bg)';
+        var border = a.type === 'good' ? 'var(--green)' : a.type === 'warn' ? 'var(--amber)' : 'var(--blue)';
+        var icon = a.type === 'good' ? '✓' : a.type === 'warn' ? '⚠' : 'ℹ';
+        return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:var(--r);background:' + bg + ';border-left:3px solid ' + border + ';">' +
+          '<span style="font-size:14px;line-height:1.4;flex-shrink:0;">' + icon + '</span>' +
+          '<span style="font-size:13px;line-height:1.5;color:var(--text);">' + a.msg + '</span>' +
+          '</div>';
+      }).join('');
+    }
+
+    // ---- KPI cards ----
+    setText('ins-mrr', fmtCurrency(mrr));
+    if (topClient) {
+      setText('ins-top-client-rev', fmtCurrency(topClient.rev));
+      setText('ins-top-client-name', esc(topClient.client.companyName || topClient.client.contactName || '—'));
+    } else {
+      setText('ins-top-client-rev', '$0');
+      setText('ins-top-client-name', '—');
+    }
+    setText('ins-avg-monthly', fmtCurrency(avg3));
+    setText('ins-churn-count', String(churnRisk.length));
+
+    // ---- Trend badge ----
+    if (forecast && series.length >= 2) {
+      var lastRev = series[series.length - 1].revenue;
+      var trendPct = lastRev > 0 ? Math.round((forecast.slope / lastRev) * 100) : 0;
+      var trendBadge = document.getElementById('ins-trend-badge');
+      if (trendBadge) {
+        trendBadge.textContent = trendPct >= 0 ? '↑ ' + trendPct + '% trend' : '↓ ' + Math.abs(trendPct) + '% trend';
+        trendBadge.style.color = trendPct >= 0 ? 'var(--green)' : 'var(--red)';
+      }
+    }
+
+    // ---- Revenue trend chart ----
+    var trendCanvas = document.getElementById('cInsTrend');
+    if (trendCanvas && window.Chart) {
+      var trendLabels = series.map(function (s) { return fmtMonthLabel(s.month); });
+      var trendData = series.map(function (s) { return s.revenue; });
+      if (!insTrendChart) {
+        insTrendChart = new Chart(trendCanvas, {
+          type: 'line',
+          data: {
+            labels: trendLabels,
+            datasets: [{
+              label: 'Revenue',
+              data: trendData,
+              borderColor: '#e8501a',
+              backgroundColor: 'rgba(232,80,26,0.08)',
+              borderWidth: 2,
+              pointRadius: 3,
+              fill: true,
+              tension: 0.35,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { grid: { display: false }, ticks: { color: '#aaa99f', font: { size: 11 } } },
+              y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#aaa99f', font: { size: 11 }, callback: function (v) { return '$' + v.toLocaleString(); } } },
+            },
+          },
+        });
+      } else {
+        insTrendChart.data.labels = trendLabels;
+        insTrendChart.data.datasets[0].data = trendData;
+        insTrendChart.update('none');
+      }
+    }
+
+    // ---- Expense breakdown ----
+    var expBreakEl = document.getElementById('ins-expense-breakdown');
+    if (expBreakEl) {
+      var expPairs = Object.keys(expByCat).map(function (k) {
+        return [expLabels[k], expByCat[k]];
+      }).filter(function (p) { return p[1] > 0; }).sort(function (a, b) { return b[1] - a[1]; });
+      if (!expPairs.length) {
+        expBreakEl.innerHTML = '<div style="font-size:13px;color:var(--text3);">No expense data yet.</div>';
+      } else {
+        expBreakEl.innerHTML = expPairs.map(function (p) {
+          var pct = expTotal > 0 ? Math.round(p[1] / expTotal * 100) : 0;
+          return '<div>' +
+            '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">' +
+              '<span>' + esc(p[0]) + '</span>' +
+              '<span style="font-weight:600;">' + fmtCurrency(p[1]) + ' <span style="font-weight:400;color:var(--text3);">(' + pct + '%)</span></span>' +
+            '</div>' +
+            '<div style="height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;">' +
+              '<div style="height:100%;width:' + pct + '%;background:var(--coral);border-radius:3px;"></div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+    }
+
+    // ---- Forecast card ----
+    var forecastEl = document.getElementById('ins-forecast-body');
+    if (forecastEl) {
+      if (!forecast || series.length < 2) {
+        forecastEl.innerHTML = '<div style="font-size:13px;color:var(--text3);">Need at least 2 months of data for a forecast.</div>';
+      } else {
+        var nextLabel = nextMonthLabel(series[series.length - 1].month);
+        var lastActual = series[series.length - 1].revenue;
+        var delta = forecast.nextValue - lastActual;
+        var deltaColor = delta >= 0 ? 'var(--green)' : 'var(--red)';
+        var deltaSign = delta >= 0 ? '+' : '';
+        forecastEl.innerHTML =
+          '<div style="font-size:13px;color:var(--text3);margin-bottom:12px;">' + nextLabel + '</div>' +
+          '<div style="font-size:32px;font-weight:600;letter-spacing:-0.03em;margin-bottom:6px;">' + fmtCurrency(forecast.nextValue) + '</div>' +
+          '<div style="font-size:13px;color:' + deltaColor + ';font-weight:500;">' + deltaSign + fmtCurrency(delta) + ' vs last month</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5;">Based on a linear trend across ' + series.length + ' month' + (series.length > 1 ? 's' : '') + ' of data.</div>';
+      }
+    }
+
+    // ---- Client performance table ----
+    var clientsTbody = document.getElementById('ins-clients-tbody');
+    var clientsTable = document.getElementById('ins-clients-table');
+    var clientsEmpty = document.getElementById('ins-clients-empty');
+    if (clientsTbody) {
+      var sortedClients = clients.slice().sort(function (a, b) {
+        return clientRevenueFromTransactions(b.id) - clientRevenueFromTransactions(a.id);
+      });
+      if (!sortedClients.length) {
+        if (clientsEmpty) clientsEmpty.style.display = 'block';
+        if (clientsTable) clientsTable.style.display = 'none';
+      } else {
+        if (clientsEmpty) clientsEmpty.style.display = 'none';
+        if (clientsTable) clientsTable.style.display = 'table';
+        clientsTbody.innerHTML = sortedClients.map(function (c) {
+          var rev = clientRevenueFromTransactions(c.id);
+          var pcount = clientProjectCount(c.id);
+          var incomeTxs = allTxs.filter(function (tx) {
+            return tx.clientId === c.id && (tx.category === 'svc' || tx.category === 'ret') && tx.date;
+          });
+          var lastDate = incomeTxs.length ? incomeTxs.map(function (tx) { return tx.date; }).sort().pop() : null;
+          var daysSince = lastDate ? Math.floor((parseYMD(todayStr) - parseYMD(lastDate)) / 86400000) : null;
+          var activityLabel = daysSince === null ? '—' : daysSince === 0 ? 'Today' : daysSince + 'd ago';
+          var activityColor = daysSince === null ? 'var(--text3)' : daysSince >= 60 ? 'var(--red)' : daysSince >= 30 ? 'var(--amber)' : 'var(--green)';
+          var retainerBadge = clientIsRetainer(c) ? '<span class="pl pg-c">Retainer</span>' : '—';
+          var statusBadge = (c.status || '—');
+          return '<tr>' +
+            '<td class="tdp">' + esc(c.companyName || c.contactName || '—') + '</td>' +
+            '<td>' + fmtCurrency(rev) + '</td>' +
+            '<td>' + (pcount || '—') + '</td>' +
+            '<td>' + retainerBadge + '</td>' +
+            '<td style="color:' + activityColor + ';font-weight:500;">' + activityLabel + '</td>' +
+            '<td>' + esc(statusBadge) + '</td>' +
+          '</tr>';
+        }).join('');
+      }
+    }
+
+    // ---- Churn risk list ----
+    var churnList = document.getElementById('ins-churn-list');
+    var churnEmpty = document.getElementById('ins-churn-empty');
+    if (churnList) {
+      if (!churnRisk.length) {
+        if (churnEmpty) churnEmpty.style.display = 'block';
+        churnList.innerHTML = '';
+      } else {
+        if (churnEmpty) churnEmpty.style.display = 'none';
+        churnList.innerHTML = churnRisk.map(function (c) {
+          var incomeTxs = allTxs.filter(function (tx) {
+            return tx.clientId === c.id && (tx.category === 'svc' || tx.category === 'ret') && tx.date;
+          });
+          var lastDate = incomeTxs.map(function (tx) { return tx.date; }).sort().pop();
+          var daysSince = Math.floor((parseYMD(todayStr) - parseYMD(lastDate)) / 86400000);
+          var rev = clientRevenueFromTransactions(c.id);
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg2);">' +
+            '<div>' +
+              '<div style="font-weight:600;font-size:14px;">' + esc(c.companyName || c.contactName || '—') + '</div>' +
+              '<div style="font-size:12px;color:var(--text3);margin-top:3px;">Last income: ' + fmtDateDisplay(lastDate) + ' · Total revenue: ' + fmtCurrency(rev) + '</div>' +
+            '</div>' +
+            '<span class="pl pg-r">' + daysSince + 'd inactive</span>' +
+          '</div>';
+        }).join('');
+      }
     }
   }
 
@@ -3033,6 +3354,7 @@ var leadSourceChart = null;
           clients = clients.filter(function (c) { return c.id !== id; });
           saveClients(clients);
           renderClients();
+          if (state.computed) renderInsights();
           deleteClientRemote(id);
         }
       });
@@ -3052,6 +3374,7 @@ var leadSourceChart = null;
         proj.status = next;
         saveProjects(projects);
         renderProjectKpisAndCharts();
+        if (state.computed) renderInsights();
       });
       projTable.addEventListener('click', function (ev) {
         var editBtn = ev.target.closest('[data-project-edit]');
@@ -3091,6 +3414,7 @@ var leadSourceChart = null;
           saveProjects(projects);
           renderProjects();
           populateIncomeProjectOptions();
+          if (state.computed) renderInsights();
         }
       });
     }
@@ -3260,6 +3584,7 @@ var leadSourceChart = null;
         }
         saveClients(clients);
         renderClients();
+        if (state.computed) renderInsights();
         if (client) persistClientToSupabase(client);
         // Keep project / income dropdowns in sync with new client list
         populateProjectClientOptions();
@@ -3400,6 +3725,7 @@ var leadSourceChart = null;
         }
         saveProjects(projects);
         renderProjects();
+        if (state.computed) renderInsights();
         closeProjectModal();
       });
     }

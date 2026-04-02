@@ -637,13 +637,59 @@
 
   <!-- INSIGHTS -->
   <div class="pg" id="page-insights">
-    <div class="ph"><div><div class="pt">Insights</div><div class="ps" id="insights-sub">—</div></div></div>
-    <!-- Removed mock data. App now starts from a true empty state. -->
-    <div class="card mb">
-      <div class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.55;">No insights yet. Connect data sources to generate recommendations.</div>
-      <div class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.55;">No insights yet.</div>
+    <div class="ph"><div><div class="pt">Insights</div><div class="ps" id="insights-sub">Auto-generated from your transactions, clients &amp; projects</div></div></div>
+
+    <!-- Alerts / flags -->
+    <div id="insights-alerts" style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;"></div>
+
+    <!-- KPI row -->
+    <div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px;">
+      <div class="kc hi"><div class="kl">Est. MRR</div><div class="kv" id="ins-mrr">$0</div><div class="kb bw" id="ins-mrr-b">from retainers</div></div>
+      <div class="kc"><div class="kl">Top Client Revenue</div><div class="kv" id="ins-top-client-rev">$0</div><div class="kb bn" id="ins-top-client-name">—</div></div>
+      <div class="kc"><div class="kl">Avg Monthly Revenue</div><div class="kv" id="ins-avg-monthly">$0</div><div class="kb bn" id="ins-avg-monthly-b">last 3 months</div></div>
+      <div class="kc"><div class="kl">Churn Risk Clients</div><div class="kv" id="ins-churn-count">0</div><div class="kb bn" id="ins-churn-b">no activity 60d+</div></div>
     </div>
-    <div class="card"><div class="sh"><div class="st">Revenue by Vertical</div></div><div class="cw" style="height:190px;"><canvas id="cVert"></canvas></div></div>
+
+    <!-- Revenue trend + Vertical breakdown -->
+    <div class="g2 mb">
+      <div class="card">
+        <div class="sh"><div class="st">Monthly Revenue Trend</div><div class="ss" id="ins-trend-badge">—</div></div>
+        <div class="cw" style="height:200px;"><canvas id="cInsTrend"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="sh"><div class="st">Revenue by Vertical</div></div>
+        <div class="cw" style="height:200px;"><canvas id="cVert"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Expense breakdown + Forecast -->
+    <div class="g2 mb">
+      <div class="card">
+        <div class="sh"><div class="st">Top Expense Categories</div></div>
+        <div id="ins-expense-breakdown" style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"></div>
+      </div>
+      <div class="card">
+        <div class="sh"><div class="st">Next-Month Forecast</div><div class="ss">linear trend</div></div>
+        <div id="ins-forecast-body" style="margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <!-- Client performance table -->
+    <div class="card mb">
+      <div class="sh"><div class="st">Client Performance</div><div class="ss">all-time revenue from transactions</div></div>
+      <div id="ins-clients-empty" style="font-size:13px;color:var(--text3);padding:8px 0;display:none;">No client data yet.</div>
+      <table class="dt" id="ins-clients-table" style="display:none;">
+        <thead><tr><th>Client</th><th>Revenue</th><th>Projects</th><th>Retainer</th><th>Last Activity</th><th>Status</th></tr></thead>
+        <tbody id="ins-clients-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Churn risk list -->
+    <div class="card">
+      <div class="sh"><div class="st">Churn Risk</div><div class="ss">clients with no income in 60+ days</div></div>
+      <div id="ins-churn-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No churn risk detected.</div>
+      <div id="ins-churn-list" style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"></div>
+    </div>
   </div>
 
   <!-- MARKETING (nav hidden in internal mode; route kept). -->
@@ -1067,7 +1113,7 @@
   });
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="/assets/supabase-auth.js"></script>
-<script src="/assets/financial-core.js?v=20260403-tx-del-sync"></script>
+<script src="/assets/supabase-auth.js?v=20260403-session8h"></script>
+<script src="/assets/financial-core.js?v=20260403-insights-refresh"></script>
 </body>
 </html>
