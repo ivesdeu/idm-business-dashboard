@@ -22,6 +22,57 @@
   }
 
   var STORAGE_KEY = 'bizdash:transactions:v1';
+  // Ids the user deleted locally; applied after remote merge so a row does not reappear in the ledger (expenses + transaction log) if the server delete lags or fails once.
+  var TX_DELETED_IDS_KEY = 'bizdash:tx-deleted-ids:v1';
+
+  function loadDeletedTxIdMap() {
+    try {
+      var raw = localStorage.getItem(TX_DELETED_IDS_KEY);
+      var o = raw ? JSON.parse(raw) : {};
+      return o && typeof o === 'object' ? o : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveDeletedTxIdMap(map) {
+    try {
+      localStorage.setItem(TX_DELETED_IDS_KEY, JSON.stringify(map || {}));
+    } catch (_) {}
+  }
+
+  function markTransactionsDeletedLocally(ids) {
+    if (!ids || !ids.length) return;
+    var m = loadDeletedTxIdMap();
+    var ts = Date.now();
+    ids.forEach(function (id) {
+      if (id) m[id] = ts;
+    });
+    saveDeletedTxIdMap(m);
+  }
+
+  function pruneDeletedTxMarksAbsentFromRemote(remoteList) {
+    var remoteIds = {};
+    (remoteList || []).forEach(function (r) {
+      if (r && r.id) remoteIds[r.id] = true;
+    });
+    var m = loadDeletedTxIdMap();
+    var changed = false;
+    Object.keys(m).forEach(function (id) {
+      if (!remoteIds[id]) {
+        delete m[id];
+        changed = true;
+      }
+    });
+    if (changed) saveDeletedTxIdMap(m);
+  }
+
+  function omitLocallyDeletedTransactions(list) {
+    var m = loadDeletedTxIdMap();
+    return (list || []).filter(function (tx) {
+      return tx && tx.id && !m[tx.id];
+    });
+  }
 
   // ---------- Data model ----------
 
@@ -1970,6 +2021,7 @@ var leadSourceChart = null;
   }
 
   function deleteTransaction(id) {
+    markTransactionsDeletedLocally([id]);
     state.transactions = state.transactions.filter(function (tx) { return tx.id !== id; });
     invoices = invoices.filter(function (inv) { return inv.incomeTxId !== id; });
     saveTransactions(state.transactions);
@@ -1980,6 +2032,7 @@ var leadSourceChart = null;
 
   function deleteTransactionsByIds(ids) {
     if (!ids || !ids.length) return;
+    markTransactionsDeletedLocally(ids);
     var remove = {};
     ids.forEach(function (id) { remove[id] = true; });
     state.transactions = state.transactions.filter(function (tx) { return !remove[tx.id]; });
@@ -2153,22 +2206,29 @@ var leadSourceChart = null;
   }
 
   function expandRecurringExpenseInstances() {
+    var today = new Date();
+    var todayStr = dateYMD(new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0));
+    var futureInstanceIds = (state.transactions || []).filter(function (t) {
+      return t && t.expenseRecurrenceInstance && t.date && t.date > todayStr;
+    }).map(function (t) { return t.id; });
+    if (futureInstanceIds.length) deleteTransactionsByIds(futureInstanceIds);
+
     var leads = (state.transactions || []).filter(function (t) {
       return t && t.expenseRecurringLead && t.recurrence && t.recurrenceSeriesId &&
         ['lab', 'sw', 'ads', 'oth'].indexOf(t.category) !== -1;
     });
     if (!leads.length) return;
-    var today = new Date();
-    var horizon = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0);
-    horizon.setMonth(horizon.getMonth() + 24);
-    var horizonStr = dateYMD(horizon);
     var added = false;
 
     leads.forEach(function (lead) {
       var rule = Object.assign({}, lead.recurrence);
       rule.startDate = rule.startDate || lead.date;
-      var endCap = horizonStr;
-      if (rule.endDate && String(rule.endDate).trim() && rule.endDate < endCap) endCap = rule.endDate;
+      // Only materialize occurrences on or before today so future months do not appear until those dates arrive.
+      var materializeThrough = todayStr;
+      if (rule.endDate && String(rule.endDate).trim() && rule.endDate < materializeThrough) {
+        materializeThrough = rule.endDate;
+      }
+      var endCap = materializeThrough;
       var dates = rule.repeat === 'weekly'
         ? generateWeeklyOccurrenceDates(rule, rule.startDate, endCap)
         : generateMonthlyOccurrenceDates(rule, rule.startDate, endCap);
@@ -2858,7 +2918,8 @@ var leadSourceChart = null;
 
   function wireDeleteHandlers() {
     var txTable = $('transaction-log-table');
-    if (txTable) {
+    if (txTable && txTable.getAttribute('data-bizdash-del-wired') !== '1') {
+      txTable.setAttribute('data-bizdash-del-wired', '1');
       txTable.addEventListener('click', function (ev) {
         var btn = ev.target.closest('[data-tx-del]');
         if (!btn) return;
@@ -2871,7 +2932,8 @@ var leadSourceChart = null;
     }
 
     var expTable = $('expenses-table');
-    if (expTable) {
+    if (expTable && expTable.getAttribute('data-bizdash-del-wired') !== '1') {
+      expTable.setAttribute('data-bizdash-del-wired', '1');
       expTable.addEventListener('click', function (ev) {
         var editBtn = ev.target.closest('[data-exp-edit]');
         if (editBtn) {
@@ -3428,7 +3490,7 @@ var leadSourceChart = null;
       currentUser = window.currentUser || currentUser;
 
       // Start from local cache so we can migrate/backfill if remote is empty.
-      state.transactions = loadTransactions();
+      state.transactions = omitLocallyDeletedTransactions(loadTransactions());
       clients = loadClients();
       projects = loadProjects();
       invoices = loadInvoices();
@@ -3450,7 +3512,11 @@ var leadSourceChart = null;
         }
 
         // Prefer remote when available; otherwise keep local fallback.
-        if (remoteTxs.length) state.transactions = mergeTransactionsPreserveRecurrence(state.transactions, remoteTxs);
+        if (remoteTxs.length) {
+          state.transactions = mergeTransactionsPreserveRecurrence(state.transactions, remoteTxs);
+          state.transactions = omitLocallyDeletedTransactions(state.transactions);
+          pruneDeletedTxMarksAbsentFromRemote(remoteTxs);
+        }
         if (remoteClients.length) clients = mergeClientsPreserveRetainer(clients, remoteClients);
 
         // #region agent log
@@ -3473,11 +3539,10 @@ var leadSourceChart = null;
       state.computed = compute(state.filter);
       renderAll();
       renderProjects();
-      wireDeleteHandlers();
     } catch (err) {
       console.error('initDataFromSupabase error', err);
       // Fallback in case anything goes wrong.
-      state.transactions = loadTransactions();
+      state.transactions = omitLocallyDeletedTransactions(loadTransactions());
       clients = loadClients();
       projects = loadProjects();
       invoices = loadInvoices();
@@ -3486,7 +3551,6 @@ var leadSourceChart = null;
       state.computed = compute(state.filter);
       renderAll();
       renderProjects();
-      wireDeleteHandlers();
     }
   }
 
