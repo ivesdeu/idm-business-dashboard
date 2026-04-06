@@ -1,5 +1,7 @@
 node_modules/
 .vite/
+# App loads financial-core.js only; ignore stray Vite entry chunks in public/
+public/assets/index-*.js
 .env
 .env.*.local
 .DS_Store

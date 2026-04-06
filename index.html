@@ -146,6 +146,7 @@
 
   /* KPI */
   .kg { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
+  .kg-dash { grid-template-columns:repeat(5,minmax(0,1fr)); }
   .kc { background:var(--bg2); border:1px solid var(--border); border-radius:var(--rl); padding:20px 22px; box-shadow:none; }
   .kc.hi { background:var(--coral-bg); border-color:rgba(232,80,26,0.18); }
   .kc.hi .kl { color:var(--text2); }
@@ -158,6 +159,8 @@
   .bn { background:var(--bg3); color:var(--text3); }
   .bw { background:var(--bg2); color:var(--coral); border:1px solid rgba(232,80,26,0.2); }
   .bc { background:var(--coral-bg); color:var(--coral); }
+  #page-dashboard .kg .kb { font-size:0.6875rem; padding:3px 8px; min-height:20px; }
+  .kf { margin-top:6px; font-size:0.625rem; font-weight:400; line-height:1.35; color:var(--text3); letter-spacing:0.02em; text-transform:none; }
 
   /* LAYOUT */
   .g2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }
@@ -171,6 +174,28 @@
   .sh { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
   .st { font-size:0.9375rem; font-weight:600; letter-spacing:-0.02em; color:var(--text); }
   .ss { font-size:0.8125rem; font-weight:400; color:var(--text3); }
+
+  /* Insights alerts (revenue vs spending) */
+  .insights-alerts-wrap { margin-bottom: 18px; }
+  .insights-alerts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 28px;
+    align-items: start;
+  }
+  .insights-alerts-lbl {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text3);
+    margin-bottom: 8px;
+  }
+  .insights-alerts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
 
   /* TABLE */
   .dt { width:100%; border-collapse:collapse; font-size:0.875rem; font-weight:400; font-variant-numeric:tabular-nums; }
@@ -319,6 +344,8 @@
   /* Mobile layout */
   @media (max-width: 960px) {
     body { flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
+
+    .insights-alerts-row { grid-template-columns: 1fr; }
 
     #app-shell {
       flex-direction: column;
@@ -501,6 +528,8 @@
   .spend-kpi-lbl { font-size: 12px; color: var(--text3); margin-bottom: 10px; line-height: 1.35; }
   .spend-kpi-val { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; color: var(--text); font-variant-numeric: tabular-nums; }
   .spend-kpi-cents { font-size: 0.55em; font-weight: 500; color: var(--text2); margin-left: 1px; }
+  .spend-kpi-brk { font-size: 12px; font-weight: 500; color: var(--text2); margin-top: 8px; line-height: 1.4; font-variant-numeric: tabular-nums; display: none; }
+  .kc .kpi-exp-split { font-size: 12px; font-weight: 500; color: var(--text2); margin-top: 6px; line-height: 1.35; font-variant-numeric: tabular-nums; min-height: 1.35em; }
   .spend-chart-wrap { border: 1px solid var(--border); border-radius: var(--rl); background: var(--bg2); padding: 14px 16px 12px; }
   .spend-chart-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .spend-chart-spacer { flex: 1; }
@@ -516,6 +545,21 @@
   .spend-pill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .spend-cw { position: relative; width: 100%; height: 300px; }
   .spend-cw canvas { max-height: 300px; max-width: 100%; }
+
+  /* Top vendors by spend (Expenses insights) */
+  .spend-top-vendors-wrap { margin-bottom: 20px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--rl); background: var(--bg2); }
+  .spend-top-vendors-hdr { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; margin-bottom: 8px; }
+  .spend-top-vendors-summary { font-size: 14px; line-height: 1.55; color: var(--text2); margin: 0 0 14px; }
+  .spend-top-vendors-summary strong { color: var(--text); font-weight: 600; }
+  .spend-top-vendors-empty { font-size: 13px; color: var(--text3); margin: 0; }
+  .spend-tv-row { display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 10px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .spend-tv-row:last-of-type { border-bottom: none; padding-bottom: 2px; }
+  .spend-tv-rank { color: var(--text3); font-variant-numeric: tabular-nums; font-weight: 500; }
+  .spend-tv-name { color: var(--text); font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spend-tv-amt { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .spend-tv-pct { color: var(--text3); font-variant-numeric: tabular-nums; font-size: 12px; min-width: 3em; text-align: right; }
+  .spend-tv-bar { grid-column: 1 / -1; height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; margin-top: -2px; }
+  .spend-tv-bar-fill { height: 100%; border-radius: 2px; background: var(--coral); opacity: 0.85; transition: width .35s ease; }
 
   /* Budget vs. Actual */
   .bva-card { padding: 20px 22px 18px; }
@@ -626,10 +670,11 @@
         <button type="button" class="btn btn-p" id="btn-open-input">Update totals</button>
       </div>
     </div>
-    <div class="kg">
-      <div class="kc hi"><div class="kl">Total Revenue</div><div class="kv" id="kpi-rev">$0</div><div class="kb bn" id="kpi-rev-badge">—</div></div>
+    <div class="kg kg-dash">
+      <div class="kc"><div class="kl">Total Revenue</div><div class="kv" id="kpi-rev">$0</div><div class="kb bn" id="kpi-rev-badge">—</div></div>
+      <div class="kc hi"><div class="kl">Gross margin</div><div class="kv" id="kpi-gm">—</div><div class="kb bn" id="kpi-gm-badge">—</div><div class="kf">Revenue less labor (delivery)</div></div>
       <div class="kc"><div class="kl">Net Profit</div><div class="kv" id="kpi-pft">$0</div><div class="kb bn" id="kpi-pft-badge">—</div></div>
-      <div class="kc"><div class="kl">Total Expenses</div><div class="kv" id="kpi-exp">$0</div><div class="kb bn" id="kpi-exp-badge">—</div></div>
+      <div class="kc"><div class="kl">Total Expenses</div><div class="kv" id="kpi-exp">$0</div><div class="kpi-exp-split" id="kpi-exp-split"></div><div class="kb bn" id="kpi-exp-badge">—</div></div>
       <div class="kc"><div class="kl">Outstanding AR</div><div class="kv" id="kpi-ar">$0</div><div class="kb bn" id="kpi-ar-badge">—</div></div>
     </div>
     <div class="gm">
@@ -658,7 +703,10 @@
           <div class="fr hdr"><span>Income (by category)</span></div>
           <div id="dashboard-revenue-lines"></div>
           <div class="fr tot"><span>Gross revenue</span><span class="val pos" id="f-gro">$0</span></div>
-          <div class="fr hdr"><span>Expenses (by category)</span></div>
+          <div class="fr"><span class="lbl">Less: Labor (cost of delivery)</span><span class="val neg" id="f-cogs-lab">−$0</span></div>
+          <div class="fr tot"><span>Gross profit</span><span class="val pos" id="f-gp">$0</span></div>
+          <div class="fr"><span class="lbl">Gross margin</span><span class="val" id="f-gmpct">—</span></div>
+          <div class="fr hdr"><span>Operating expenses</span></div>
           <div id="dashboard-expense-lines"></div>
           <div class="fr tot"><span>Net profit</span><span class="val pos" id="f-net">$0</span></div>
         </div>
@@ -694,7 +742,7 @@
 
   <!-- CUSTOMERS -->
   <div class="pg" id="page-customers">
-    <div class="ph"><div><div class="pt">Customers</div><div class="ps">All active clients and pipeline</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
+    <div class="ph"><div><div class="pt">Customers</div><div class="ps">All active clients and pipeline. Allocated cost sums expenses you tag to each client on the Expenses page; untagged expenses are firm-wide only.</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
     <div class="kg" style="grid-template-columns:repeat(3,1fr);">
       <div class="kc"><div class="kl">Total Clients</div><div class="kv" id="cust-kpi-1">0</div><div class="kb bn" id="cust-kpi-1b">—</div></div>
       <div class="kc hi"><div class="kl">Active Retainers</div><div class="kv" id="cust-kpi-2">0</div><div class="kb bn" id="cust-kpi-2b">—</div></div>
@@ -703,7 +751,7 @@
     <div class="card">
       <div id="customers-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No customers yet.</div>
       <table class="dt" id="customers-table" style="display:none;">
-        <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th>Projects</th><th>Revenue</th><th style="width:140px;">Actions</th></tr></thead>
+        <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th style="width:140px;">Actions</th></tr></thead>
         <tbody id="customers-tbody"></tbody>
       </table>
     </div>
@@ -760,6 +808,7 @@
             <select class="fi spend-slice" id="spend-slice" title="Slice dimension">
               <option value="category">Category</option>
               <option value="vendor">Vendor</option>
+              <option value="client">Client</option>
             </select>
           </div>
           <div class="spend-dd">
@@ -780,6 +829,14 @@
               <option value="monthly">Monthly</option>
             </select>
           </div>
+          <div class="spend-dd">
+            <span class="spend-dd-lbl">Cost type</span>
+            <select class="fi spend-cost-type" id="spend-cost-type" title="Fixed recurring vs one-time">
+              <option value="all" selected>All (stacked)</option>
+              <option value="fixed">Fixed recurring</option>
+              <option value="variable">One-time</option>
+            </select>
+          </div>
           <button type="button" class="btn spend-download" id="spend-download" title="Download CSV" aria-label="Download CSV">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </button>
@@ -789,11 +846,18 @@
         <div class="spend-kpi">
           <div class="spend-kpi-lbl" id="spend-kpi-primary-lbl">Period spend</div>
           <div class="spend-kpi-val" id="spend-kpi-primary-val"><span class="spend-kpi-dollars">$0</span></div>
+          <div class="spend-kpi-brk" id="spend-kpi-primary-brk" aria-hidden="true"></div>
         </div>
         <div class="spend-kpi">
           <div class="spend-kpi-lbl" id="spend-kpi-secondary-lbl">Prior period</div>
           <div class="spend-kpi-val" id="spend-kpi-secondary-val"><span class="spend-kpi-dollars">$0</span></div>
+          <div class="spend-kpi-brk" id="spend-kpi-secondary-brk" aria-hidden="true"></div>
         </div>
+      </div>
+      <div class="spend-top-vendors-wrap" id="spend-top-vendors-wrap">
+        <div class="spend-top-vendors-hdr">Top vendors by spend</div>
+        <p class="spend-top-vendors-summary" id="spend-top-vendors-summary" aria-live="polite"></p>
+        <div id="spend-top-vendors-list"></div>
       </div>
       <div class="spend-chart-wrap">
         <div class="spend-chart-top">
@@ -827,7 +891,7 @@
     <div class="card">
       <div id="expenses-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No expenses yet.</div>
       <table class="dt" id="expenses-table" style="display:none;">
-        <thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Amount</th><th>Vendor</th><th>Recurring</th><th style="width:140px;">Actions</th></tr></thead>
+        <thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Amount</th><th>Vendor</th><th>Client</th><th>Recurring</th><th style="width:140px;">Actions</th></tr></thead>
         <tbody id="expenses-tbody"></tbody>
       </table>
     </div>
@@ -879,7 +943,19 @@
     <div class="ph"><div><div class="pt">Insights</div><div class="ps" id="insights-sub">Auto-generated from your transactions, clients &amp; projects</div></div></div>
 
     <!-- Alerts / flags -->
-    <div id="insights-alerts" style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;"></div>
+    <div id="insights-alerts-wrap" class="insights-alerts-wrap">
+      <div id="insights-alerts-healthy"></div>
+      <div id="insights-alerts-row" class="insights-alerts-row">
+        <div>
+          <div class="insights-alerts-lbl">Revenue &amp; retention</div>
+          <div id="insights-alerts-revenue" class="insights-alerts-list"></div>
+        </div>
+        <div>
+          <div class="insights-alerts-lbl">Spending &amp; savings</div>
+          <div id="insights-alerts-spend" class="insights-alerts-list"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- KPI row -->
     <div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px;">
@@ -911,6 +987,14 @@
         <div class="sh"><div class="st">Outlook</div><div class="ss">Revenue & expense trends · this month pace</div></div>
         <div id="ins-forecast-body" style="margin-top:4px;"></div>
       </div>
+    </div>
+
+    <div class="card mb">
+      <div class="sh"><div class="st">Forecast accuracy</div><div class="ss">Linear trend vs what happened (completed months only)</div></div>
+      <div id="ins-forecast-accuracy" style="padding-top:4px;">
+        <p style="font-size:13px;color:var(--text3);margin:0;">Loading…</p>
+      </div>
+      <div id="ins-budget-accuracy" style="margin-top:20px;padding-top:18px;border-top:1px solid var(--border);"></div>
     </div>
 
     <!-- Client performance table -->
@@ -1237,6 +1321,7 @@
       <div class="fgp"><label class="fl">Amount *</label><input class="fi" id="expense-amount" type="number" min="0" step="0.01" /></div>
       <div class="fgp"><label class="fl">Date</label><input class="fi" id="expense-date" type="date" /></div>
       <div class="fgp"><label class="fl">Vendor / payee</label><input class="fi" id="expense-vendor" /></div>
+      <div class="fgp"><label class="fl">Client</label><select class="fi" id="expense-client"><option value="">— None (unallocated) —</option></select></div>
       <div class="fgp" style="grid-column:1/-1;"><label class="fl">Notes</label><textarea class="fi" id="expense-notes" rows="2"></textarea></div>
       <div class="fgp" style="grid-column:1/-1;display:flex;align-items:center;gap:8px;">
         <input type="checkbox" id="expense-recurring" /><label class="fl" for="expense-recurring" style="margin:0;">Recurring</label>

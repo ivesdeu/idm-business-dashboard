@@ -255,6 +255,7 @@
   // ---------- Budgets store ----------
 
   var BUDGETS_KEY = 'bizdash:budgets:v1';
+  var BUDGET_MONTHS_KEY = 'bizdash:budget_months:v1';
 
   function loadBudgets() {
     try {
@@ -271,14 +272,44 @@
     }
   }
 
-  function saveBudgets(b) {
+  function loadBudgetMonthSnapshots() {
     try {
-      localStorage.setItem(BUDGETS_KEY, JSON.stringify({
-        lab: Math.max(0, Number(b.lab) || 0),
-        sw:  Math.max(0, Number(b.sw)  || 0),
-        ads: Math.max(0, Number(b.ads) || 0),
-        oth: Math.max(0, Number(b.oth) || 0),
-      }));
+      var raw = localStorage.getItem(BUDGET_MONTHS_KEY);
+      var o = raw ? JSON.parse(raw) : {};
+      return o && typeof o === 'object' ? o : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function budgetSnapshotTotal(s) {
+    if (!s || typeof s !== 'object') return 0;
+    return Math.max(0, Number(s.lab) || 0) + Math.max(0, Number(s.sw) || 0) +
+      Math.max(0, Number(s.ads) || 0) + Math.max(0, Number(s.oth) || 0);
+  }
+
+  function saveBudgets(b) {
+    var payload = {
+      lab: Math.max(0, Number(b.lab) || 0),
+      sw:  Math.max(0, Number(b.sw)  || 0),
+      ads: Math.max(0, Number(b.ads) || 0),
+      oth: Math.max(0, Number(b.oth) || 0),
+    };
+    try {
+      localStorage.setItem(BUDGETS_KEY, JSON.stringify(payload));
+    } catch (_) {}
+    try {
+      var snaps = loadBudgetMonthSnapshots();
+      var now = new Date();
+      var mk = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      snaps[mk] = {
+        lab: payload.lab,
+        sw: payload.sw,
+        ads: payload.ads,
+        oth: payload.oth,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(BUDGET_MONTHS_KEY, JSON.stringify(snaps));
     } catch (_) {}
   }
 
@@ -1459,13 +1490,17 @@
   }
 
   function populateIncomeClientOptions() {
-    var select = $('income-client');
-    if (!select) return;
-    var opts = ['<option value="">— None —</option>'];
+    var incOpts = ['<option value="">— None —</option>'];
+    var expOpts = ['<option value="">— None (unallocated) —</option>'];
     clients.forEach(function (c) {
-      opts.push('<option value="' + (c.id || '') + '">' + (c.companyName || 'Untitled client') + '</option>');
+      var o = '<option value="' + (c.id || '') + '">' + (c.companyName || 'Untitled client') + '</option>';
+      incOpts.push(o);
+      expOpts.push(o);
     });
-    select.innerHTML = opts.join('');
+    var inc = $('income-client');
+    if (inc) inc.innerHTML = incOpts.join('');
+    var exp = $('expense-client');
+    if (exp) exp.innerHTML = expOpts.join('');
   }
 
   function populateIncomeProjectOptions() {
@@ -1518,6 +1553,11 @@
 
   // ---------- Compute ----------
 
+  /** True for series lead, generated instances, or legacy recurring flag (metadata round-trips). */
+  function isFixedRecurringExpense(tx) {
+    return !!(tx && (tx.expenseRecurringLead === true || tx.expenseRecurrenceInstance === true || tx.recurring === true));
+  }
+
   function compute(filter) {
     var txs = state.transactions.slice().filter(function (tx) {
       return isWithinRange(tx.date, filter);
@@ -1525,6 +1565,8 @@
 
     var revenueByCat = { svc: 0, ret: 0 };
     var expenseByCat = { lab: 0, sw: 0, ads: 0, oth: 0 };
+    var expenseFixedTotal = 0;
+    var expenseVariableTotal = 0;
 
     txs.forEach(function (tx) {
       var amt = +tx.amount || 0;
@@ -1539,6 +1581,8 @@
         case 'ads':
         case 'oth':
           expenseByCat[tx.category] += amt;
+          if (isFixedRecurringExpense(tx)) expenseFixedTotal += amt;
+          else expenseVariableTotal += amt;
           break;
         case 'own':
           // Owner equity injection: tracked in ledger but excluded from revenue / expense / net.
@@ -1549,6 +1593,10 @@
     var revenueTotal = revenueByCat.svc + revenueByCat.ret;
     var expenseTotal = expenseByCat.lab + expenseByCat.sw + expenseByCat.ads + expenseByCat.oth;
     var net = revenueTotal - expenseTotal;
+    // Gross profit / gross margin use labor (delivery) only as COGS; netProfit is after all expense buckets—do not conflate.
+    var cogsTotal = expenseByCat.lab;
+    var grossProfit = revenueTotal - cogsTotal;
+    var grossMarginPct = revenueTotal > 0.01 ? (grossProfit / revenueTotal) * 100 : null;
 
     return {
       filter: filter,
@@ -1559,8 +1607,51 @@
       expenseByCat: expenseByCat,
       revenueTotal: revenueTotal,
       expenseTotal: expenseTotal,
+      expenseFixedTotal: expenseFixedTotal,
+      expenseVariableTotal: expenseVariableTotal,
+      cogsTotal: cogsTotal,
+      grossProfit: grossProfit,
+      grossMarginPct: grossMarginPct,
       netProfit: net,
     };
+  }
+
+  /** YYYY-MM-DD bounds for the dashboard period selector (month = full calendar month). */
+  function dashboardCurrentYmdBounds(filter) {
+    if (!filter || filter.mode === 'all') return null;
+    if (filter.mode === 'month') {
+      var now = new Date();
+      var y = now.getFullYear();
+      var m = now.getMonth();
+      var s = new Date(y, m, 1, 12, 0, 0, 0);
+      var e = new Date(y, m + 1, 0, 12, 0, 0, 0);
+      return { start: dateYMD(s), end: dateYMD(e) };
+    }
+    if (filter.mode === 'range' && filter.start && filter.end) {
+      return { start: filter.start, end: filter.end };
+    }
+    return null;
+  }
+
+  /** Prior period for MoM / PoP: previous calendar month, or equal-length window before custom range. */
+  function dashboardPriorYmdBounds(filter) {
+    if (!filter || filter.mode === 'all') return null;
+    if (filter.mode === 'month') {
+      var now = new Date();
+      var firstThis = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0, 0);
+      var lastPrev = new Date(firstThis.getTime());
+      lastPrev.setDate(0);
+      var firstPrev = new Date(lastPrev.getFullYear(), lastPrev.getMonth(), 1, 12, 0, 0, 0);
+      return { start: dateYMD(firstPrev), end: dateYMD(lastPrev) };
+    }
+    if (filter.mode === 'range' && filter.start && filter.end) {
+      return spendPriorRange(filter.start, filter.end);
+    }
+    return null;
+  }
+
+  function computeForYmdRange(start, end) {
+    return compute({ mode: 'range', start: start, end: end });
   }
 
   // ---------- DOM helpers ----------
@@ -1572,6 +1663,74 @@
   function setText(id, value) {
     var el = $(id);
     if (el) el.textContent = value;
+  }
+
+  function setKpiBadge(id, text, tone) {
+    var el = $(id);
+    if (!el) return;
+    el.textContent = text;
+    var t = tone === 'up' ? 'bu' : tone === 'down' ? 'bd' : 'bn';
+    el.className = 'kb ' + t;
+  }
+
+  /** tone: 'up' | 'down' | 'neutral' for badge coloring. */
+  function formatDashboardKpiDelta(currentVal, priorVal, metric) {
+    var cur = +currentVal || 0;
+    var pri = +priorVal || 0;
+    var eps = 0.005;
+    if (Math.abs(pri) < eps && Math.abs(cur) < eps) {
+      return { text: '—', tone: 'neutral' };
+    }
+    if (Math.abs(pri) < eps) {
+      if (metric === 'revenue' || metric === 'profit') {
+        return { text: 'New', tone: 'up' };
+      }
+      if (metric === 'expense') {
+        return { text: 'New', tone: 'down' };
+      }
+      return { text: 'New', tone: 'neutral' };
+    }
+    var delta = cur - pri;
+    var pct = (delta / pri) * 100;
+    var arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
+    var absPct = Math.abs(pct);
+    var pctStr = absPct >= 100 ? String(Math.round(pct)) : String(Math.round(pct * 10) / 10);
+    if (pctStr.indexOf('.') !== -1) {
+      pctStr = pctStr.replace(/\.0$/, '');
+    }
+    var text = arrow + ' ' + pctStr + '%';
+    var up = cur > pri;
+    var down = cur < pri;
+    if (!up && !down) return { text: text, tone: 'neutral' };
+    if (metric === 'expense') {
+      return { text: text, tone: up ? 'down' : 'up' };
+    }
+    return { text: text, tone: up ? 'up' : 'down' };
+  }
+
+  /** Compare gross margin % vs prior period; delta in percentage points (higher margin = up). */
+  function formatGrossMarginDeltaPctPoints(currentPct, priorPct) {
+    var cur = currentPct;
+    var pri = priorPct;
+    if (cur == null || isNaN(cur)) {
+      return { text: '—', tone: 'neutral' };
+    }
+    if (pri == null || isNaN(pri)) {
+      return { text: '—', tone: 'neutral' };
+    }
+    var delta = cur - pri;
+    var eps = 0.05;
+    if (Math.abs(delta) < eps) {
+      return { text: '→ 0 pts', tone: 'neutral' };
+    }
+    var arrow = delta > 0 ? '↑' : '↓';
+    var pts = Math.abs(delta);
+    var ptsStr = String(Math.round(pts * 10) / 10);
+    if (ptsStr.indexOf('.') !== -1) ptsStr = ptsStr.replace(/\.0$/, '');
+    return {
+      text: arrow + ' ' + ptsStr + ' pts',
+      tone: delta > 0 ? 'up' : 'down',
+    };
   }
 
   function fmtCurrency(n) {
@@ -1619,6 +1778,7 @@ var spendReportUi = {
   chartType: 'line',
   tab: 'all',
   q: '',
+  costType: 'all',
 };
 
   // Light UI chart theme: orange primary, muted grays for secondary series
@@ -1793,9 +1953,68 @@ var spendReportUi = {
     setText('kpi-exp', fmtCurrency(c.expenseTotal));
     setText('kpi-pft', fmtCurrency(c.netProfit));
 
+    var gmPct = c.grossMarginPct;
+    var gmStr =
+      gmPct != null && !isNaN(gmPct)
+        ? (Math.round(gmPct * 10) / 10).toLocaleString('en-US', {
+            maximumFractionDigits: 1,
+            minimumFractionDigits: 0,
+          }) + '%'
+        : '—';
+    setText('kpi-gm', gmStr);
+    var gmEl = $('kpi-gm');
+    if (gmEl) {
+      gmEl.style.color =
+        gmPct != null && !isNaN(gmPct) && gmPct < 0 ? 'var(--red)' : '';
+    }
+
+    var expSplit = $('kpi-exp-split');
+    if (expSplit) {
+      var fx = Number(c.expenseFixedTotal || 0);
+      var vr = Number(c.expenseVariableTotal || 0);
+      if (fx < 0.01 && vr < 0.01) {
+        expSplit.textContent = '';
+      } else {
+        expSplit.textContent = 'Fixed ' + fmtCurrencyPrecise(fx) + ' · One-time ' + fmtCurrencyPrecise(vr);
+      }
+    }
+
     var pftEl = $('kpi-pft');
     if (pftEl) {
       pftEl.style.color = c.netProfit < 0 ? 'var(--red)' : '';
+    }
+
+    var sub = $('dash-subtitle');
+    var filt = c.filter || state.filter;
+    var priorB = dashboardPriorYmdBounds(filt);
+    if (!priorB) {
+      setKpiBadge('kpi-rev-badge', '—', 'neutral');
+      setKpiBadge('kpi-exp-badge', '—', 'neutral');
+      setKpiBadge('kpi-pft-badge', '—', 'neutral');
+      setKpiBadge('kpi-gm-badge', '—', 'neutral');
+      if (sub) sub.textContent = filt && filt.mode === 'all' ? 'All-time — no prior period to compare' : '—';
+      return;
+    }
+
+    var priorC = computeForYmdRange(priorB.start, priorB.end);
+    var dRev = formatDashboardKpiDelta(c.revenueTotal, priorC.revenueTotal, 'revenue');
+    var dExp = formatDashboardKpiDelta(c.expenseTotal, priorC.expenseTotal, 'expense');
+    var dPft = formatDashboardKpiDelta(c.netProfit, priorC.netProfit, 'profit');
+    var dGm = formatGrossMarginDeltaPctPoints(c.grossMarginPct, priorC.grossMarginPct);
+    setKpiBadge('kpi-rev-badge', dRev.text, dRev.tone);
+    setKpiBadge('kpi-exp-badge', dExp.text, dExp.tone);
+    setKpiBadge('kpi-pft-badge', dPft.text, dPft.tone);
+    setKpiBadge('kpi-gm-badge', dGm.text, dGm.tone);
+
+    if (sub) {
+      if (filt.mode === 'month') {
+        var pm = parseYMD(priorB.start);
+        sub.textContent = isNaN(pm.getTime())
+          ? 'Compared to prior month'
+          : 'vs ' + pm.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      } else {
+        sub.textContent = 'vs ' + fmtDateDisplay(priorB.start) + ' – ' + fmtDateDisplay(priorB.end);
+      }
     }
   }
 
@@ -1820,7 +2039,6 @@ var spendReportUi = {
 
     if (expLines) {
       var expMap = [
-        ['Labor', c.expenseByCat.lab],
         ['Software & Tools', c.expenseByCat.sw],
         ['Advertising', c.expenseByCat.ads],
         ['Other', c.expenseByCat.oth],
@@ -1831,6 +2049,29 @@ var spendReportUi = {
     }
 
     setText('f-gro', fmtCurrency(c.revenueTotal));
+    var fcogs = $('f-cogs-lab');
+    if (fcogs) {
+      fcogs.textContent = '−' + fmtCurrency(c.cogsTotal || 0);
+    }
+    var fgp = $('f-gp');
+    if (fgp) {
+      fgp.textContent = fmtCurrency(c.grossProfit);
+      fgp.className = 'val ' + (c.grossProfit >= 0 ? 'pos' : 'neg');
+    }
+    var fgmp = $('f-gmpct');
+    if (fgmp) {
+      if (c.grossMarginPct != null && !isNaN(c.grossMarginPct)) {
+        fgmp.textContent =
+          (Math.round(c.grossMarginPct * 10) / 10).toLocaleString('en-US', {
+            maximumFractionDigits: 1,
+            minimumFractionDigits: 0,
+          }) + '%';
+        fgmp.className = 'val ' + (c.grossMarginPct >= 0 ? 'pos' : 'neg');
+      } else {
+        fgmp.textContent = '—';
+        fgmp.className = 'val';
+      }
+    }
     var fnet = $('f-net');
     if (fnet) {
       fnet.textContent = fmtCurrency(c.netProfit);
@@ -1901,12 +2142,14 @@ var spendReportUi = {
       }[tx.category] || tx.category || 'Expense';
       var titleText = (tx.title && String(tx.title).trim()) || (tx.description && String(tx.description).trim()) || '—';
       var vendorText = (tx.vendor && String(tx.vendor).trim()) || '—';
+      var clientCell = clientCompanyNameById(tx.clientId) || '—';
       return '<tr>' +
         '<td>' + (tx.date || '—') + '</td>' +
         '<td class="tdp">' + titleText + '</td>' +
         '<td>' + label + '</td>' +
         '<td>' + fmtCurrency(tx.amount) + '</td>' +
         '<td>' + vendorText + '</td>' +
+        '<td>' + esc(clientCell) + '</td>' +
         '<td>' + (tx.expenseRecurringLead ? '<span class="pl pg-c">Series</span>' : tx.expenseRecurrenceInstance ? '<span class="pl pg-c">Yes</span>' : 'No') + '</td>' +
         '<td style="white-space:nowrap;">' +
           '<button type="button" class="btn" data-exp-edit="' + tx.id + '" style="margin-right:6px;">Edit</button>' +
@@ -2160,10 +2403,122 @@ var spendReportUi = {
     return hay.indexOf(q) !== -1;
   }
 
-  function renderSpendingReport() {
-    var canvas = document.getElementById('cSpendTrend');
-    if (!canvas || !window.Chart) return;
+  function spendMatchesSpendTab(tx, tab, pillDefs) {
+    if (tab === 'all') return true;
+    if (tab.indexOf('cat:') === 0) return tx.category === tab.slice(4);
+    if (tab.indexOf('ven:') === 0) {
+      var want = tab.slice(4);
+      if (want === '__other__') {
+        var topSet = {};
+        pillDefs.forEach(function (p) {
+          if (p.id.indexOf('ven:') === 0 && p.id !== 'ven:__other__') topSet[p.id.slice(4)] = true;
+        });
+        var v = (tx.vendor && String(tx.vendor).trim()) || '—';
+        return !topSet[v];
+      }
+      var vv = (tx.vendor && String(tx.vendor).trim()) || '—';
+      return vv === want;
+    }
+    if (tab.indexOf('cli:') === 0) {
+      var wantC = tab.slice(4);
+      if (wantC === '__other__') {
+        var topSetC = {};
+        pillDefs.forEach(function (p) {
+          if (p.id.indexOf('cli:') === 0 && p.id !== 'cli:__other__') topSetC[p.id.slice(4)] = true;
+        });
+        var txKeyC = tx.clientId ? String(tx.clientId) : '__unallocated__';
+        return !topSetC[txKeyC];
+      }
+      var txKey = tx.clientId ? String(tx.clientId) : '__unallocated__';
+      return txKey === wantC;
+    }
+    return true;
+  }
 
+  function spendVendorAggregateKey(tx) {
+    return (tx.vendor && String(tx.vendor).trim()) || '—';
+  }
+
+  function spendVendorDisplayLabel(key) {
+    return key === '—' ? 'No vendor' : key;
+  }
+
+  function spendRankVendors(expenseTxsInRange) {
+    var tot = {};
+    expenseTxsInRange.forEach(function (tx) {
+      var k = spendVendorAggregateKey(tx);
+      tot[k] = (tot[k] || 0) + (+tx.amount || 0);
+    });
+    return Object.keys(tot).map(function (k) {
+      return { key: k, total: tot[k] };
+    }).sort(function (a, b) { return b.total - a.total; });
+  }
+
+  function renderSpendTopVendors(inRange, rangeMode, re) {
+    var sumEl = document.getElementById('spend-top-vendors-summary');
+    var listEl = document.getElementById('spend-top-vendors-list');
+    if (!sumEl || !listEl) return;
+
+    var periodDen = inRange.reduce(function (a, tx) { return a + (+tx.amount || 0); }, 0);
+    if (!inRange.length || periodDen < 0.01) {
+      sumEl.innerHTML = '<span class="spend-top-vendors-empty">No spend recorded in this period.</span>';
+      listEl.innerHTML = '';
+      return;
+    }
+
+    var ranked = spendRankVendors(inRange).filter(function (r) { return r.total > 0.01; });
+    var topN = 10;
+    var rows = ranked.slice(0, topN);
+
+    var narrPrefix = '';
+    if (rangeMode === 'month') {
+      narrPrefix = 'In ' + re.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    } else if (rangeMode === '30d') {
+      narrPrefix = 'Over the last 30 days';
+    } else if (rangeMode === '90d') {
+      narrPrefix = 'Over the last 90 days';
+    } else if (rangeMode === 'ytd') {
+      narrPrefix = 'Year to date';
+    } else {
+      narrPrefix = 'All time';
+    }
+
+    var narr = ranked.slice(0, 3);
+    var narrHtml = '';
+    if (narr.length === 1) {
+      var d0 = spendVendorDisplayLabel(narr[0].key);
+      narrHtml = esc(narrPrefix) + ', you spent <strong>' + esc(fmtCurrency(narr[0].total)) + '</strong> with ' + esc(d0) + '.';
+    } else if (narr.length === 2) {
+      var d0a = spendVendorDisplayLabel(narr[0].key);
+      var d1a = spendVendorDisplayLabel(narr[1].key);
+      narrHtml = esc(narrPrefix) + ', you spent <strong>' + esc(fmtCurrency(narr[0].total)) + '</strong> with ' + esc(d0a) +
+        ' and <strong>' + esc(fmtCurrency(narr[1].total)) + '</strong> with ' + esc(d1a) + '.';
+    } else if (narr.length >= 3) {
+      var d0b = spendVendorDisplayLabel(narr[0].key);
+      var d1b = spendVendorDisplayLabel(narr[1].key);
+      var d2b = spendVendorDisplayLabel(narr[2].key);
+      narrHtml = esc(narrPrefix) + ', you spent <strong>' + esc(fmtCurrency(narr[0].total)) + '</strong> with ' + esc(d0b) +
+        ', <strong>' + esc(fmtCurrency(narr[1].total)) + '</strong> with ' + esc(d1b) +
+        ', and <strong>' + esc(fmtCurrency(narr[2].total)) + '</strong> with ' + esc(d2b) + '.';
+    }
+    sumEl.innerHTML = narrHtml;
+
+    listEl.innerHTML = rows.map(function (r, i) {
+      var pct = periodDen > 0 ? Math.round((r.total / periodDen) * 1000) / 10 : 0;
+      var pctStr = (pct % 1 === 0 ? String(Math.round(pct)) : pct.toFixed(1)) + '%';
+      var label = spendVendorDisplayLabel(r.key);
+      var barW = periodDen > 0 ? Math.min(100, Math.round((r.total / periodDen) * 1000) / 10) : 0;
+      return '<div class="spend-tv-row">' +
+        '<span class="spend-tv-rank">' + (i + 1) + '</span>' +
+        '<span class="spend-tv-name" title="' + esc(label) + '">' + esc(label) + '</span>' +
+        '<span class="spend-tv-amt">' + esc(fmtCurrency(r.total)) + '</span>' +
+        '<span class="spend-tv-pct">' + esc(pctStr) + '</span>' +
+        '<div class="spend-tv-bar" aria-hidden="true"><div class="spend-tv-bar-fill" style="width:' + barW + '%"></div></div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function renderSpendingReport() {
     var slice = spendReportUi.slice;
     var rangeMode = spendReportUi.range;
     var interval = spendReportUi.interval;
@@ -2178,7 +2533,13 @@ var spendReportUi = {
     var range = spendResolveRange(rangeMode, allExpense);
     var rs = range.startDate;
     var re = range.endDate;
-    if (isNaN(rs.getTime()) || isNaN(re.getTime())) return;
+    if (isNaN(rs.getTime()) || isNaN(re.getTime())) {
+      var sumBad = document.getElementById('spend-top-vendors-summary');
+      var listBad = document.getElementById('spend-top-vendors-list');
+      if (sumBad) sumBad.innerHTML = '';
+      if (listBad) listBad.innerHTML = '';
+      return;
+    }
 
     var inRange = allExpense.filter(function (tx) {
       if (!tx.date) return false;
@@ -2186,6 +2547,11 @@ var spendReportUi = {
       if (isNaN(d.getTime())) return false;
       return d >= rs && d <= re;
     });
+
+    renderSpendTopVendors(inRange, rangeMode, re);
+
+    var canvas = document.getElementById('cSpendTrend');
+    if (!canvas || !window.Chart) return;
 
     var missingDates = allExpense.filter(function (tx) { return !tx.date || isNaN(parseYMD(tx.date).getTime()); }).length;
     if (missingDates) {
@@ -2197,7 +2563,9 @@ var spendReportUi = {
     var pillsEl = document.getElementById('spend-pills');
     var pillsLbl = document.getElementById('spend-pills-lbl');
     if (pillsLbl) {
-      pillsLbl.textContent = slice === 'vendor' ? 'Vendor' : 'Category';
+      if (slice === 'vendor') pillsLbl.textContent = 'Vendor';
+      else if (slice === 'client') pillsLbl.textContent = 'Client';
+      else pillsLbl.textContent = 'Category';
     }
 
     var pillDefs = [{ id: 'all', label: 'All', color: 'var(--text)' }];
@@ -2206,6 +2574,22 @@ var spendReportUi = {
         var has = forPills.some(function (tx) { return tx.category === k; });
         if (has) pillDefs.push({ id: 'cat:' + k, label: SPEND_CAT_META[k].label, color: SPEND_CAT_META[k].color });
       });
+    } else if (slice === 'client') {
+      var cliTot = {};
+      forPills.forEach(function (tx) {
+        var ck = tx.clientId ? String(tx.clientId) : '__unallocated__';
+        cliTot[ck] = (cliTot[ck] || 0) + (+tx.amount || 0);
+      });
+      var cliList = Object.keys(cliTot).sort(function (a, b) { return cliTot[b] - cliTot[a]; });
+      var maxC = 12;
+      var topC = cliList.slice(0, maxC);
+      var restC = cliList.slice(maxC);
+      var PALc = CHART_VENDOR_PAL;
+      topC.forEach(function (k, i) {
+        var label = k === '__unallocated__' ? 'Unallocated' : (clientCompanyNameById(k) || 'Unknown client');
+        pillDefs.push({ id: 'cli:' + k, label: label, color: PALc[i % PALc.length] });
+      });
+      if (restC.length) pillDefs.push({ id: 'cli:__other__', label: 'Other', color: CHART_EXPENSE_GRAY });
     } else {
       var venTot = {};
       forPills.forEach(function (tx) {
@@ -2236,31 +2620,23 @@ var spendReportUi = {
     }
 
     var filtered = forPills.filter(function (tx) {
-      if (tab === 'all') return true;
-      if (tab.indexOf('cat:') === 0) return tx.category === tab.slice(4);
-      if (tab.indexOf('ven:') === 0) {
-        var want = tab.slice(4);
-        if (want === '__other__') {
-          var topSet = {};
-          pillDefs.forEach(function (p) {
-            if (p.id.indexOf('ven:') === 0 && p.id !== 'ven:__other__') topSet[p.id.slice(4)] = true;
-          });
-          var v = (tx.vendor && String(tx.vendor).trim()) || '—';
-          return !topSet[v];
-        }
-        var vv = (tx.vendor && String(tx.vendor).trim()) || '—';
-        return vv === want;
-      }
-      return true;
+      return spendMatchesSpendTab(tx, tab, pillDefs);
     });
+
+    var costType = spendReportUi.costType || 'all';
+    if (costType !== 'all' && costType !== 'fixed' && costType !== 'variable') costType = 'all';
 
     var enumed = spendEnumerateBuckets(rs, re, interval);
     var keys = enumed.keys;
     var shortLabels = enumed.shortLabels;
     spendReportTooltipTitles = enumed.titles.slice();
 
-    var sums = {};
-    keys.forEach(function (k) { sums[k] = 0; });
+    var sumsFixed = {};
+    var sumsVar = {};
+    keys.forEach(function (k) {
+      sumsFixed[k] = 0;
+      sumsVar[k] = 0;
+    });
 
     var useIndexAxis = filtered.length > 0 && filtered.every(function (tx) {
       return !tx.date || isNaN(parseYMD(tx.date).getTime());
@@ -2269,7 +2645,10 @@ var spendReportUi = {
     if (!useIndexAxis) {
       filtered.forEach(function (tx) {
         var bk = spendTxBucketKey(tx.date, interval);
-        if (bk && sums.hasOwnProperty(bk)) sums[bk] += (+tx.amount || 0);
+        if (!bk || !sumsFixed.hasOwnProperty(bk)) return;
+        var amt = +tx.amount || 0;
+        if (isFixedRecurringExpense(tx)) sumsFixed[bk] += amt;
+        else sumsVar[bk] += amt;
       });
     } else {
       keys = filtered.map(function (_, i) { return 'i' + i; });
@@ -2277,9 +2656,13 @@ var spendReportUi = {
       spendReportTooltipTitles = filtered.map(function (tx) {
         return (tx.title || tx.vendor || tx.description || 'Expense') + ' · ' + (tx.date || 'no date');
       });
-      sums = {};
+      sumsFixed = {};
+      sumsVar = {};
       filtered.forEach(function (tx, i) {
-        sums['i' + i] = (+tx.amount || 0);
+        var k = 'i' + i;
+        var amt = +tx.amount || 0;
+        if (isFixedRecurringExpense(tx)) sumsFixed[k] = amt;
+        else sumsVar[k] = amt;
       });
     }
 
@@ -2287,11 +2670,28 @@ var spendReportUi = {
       keys = ['_empty'];
       shortLabels = ['—'];
       spendReportTooltipTitles = ['No data in range'];
-      sums = { _empty: 0 };
+      sumsFixed = { _empty: 0 };
+      sumsVar = { _empty: 0 };
     }
 
-    var dataVals = keys.map(function (k) { return Math.round((sums[k] || 0) * 100) / 100; });
-    var periodTotal = dataVals.reduce(function (a, b) { return a + b; }, 0);
+    var round2 = function (n) { return Math.round((Number(n) || 0) * 100) / 100; };
+    var dataValsFixed = keys.map(function (k) { return round2(sumsFixed[k] || 0); });
+    var dataValsVar = keys.map(function (k) { return round2(sumsVar[k] || 0); });
+    var dataValsTotal = keys.map(function (_, i) { return round2(dataValsFixed[i] + dataValsVar[i]); });
+
+    var periodTotalFixed = dataValsFixed.reduce(function (a, b) { return a + b; }, 0);
+    var periodTotalVar = dataValsVar.reduce(function (a, b) { return a + b; }, 0);
+    var periodTotalAll = periodTotalFixed + periodTotalVar;
+
+    var dataVals;
+    if (costType === 'fixed') dataVals = dataValsFixed;
+    else if (costType === 'variable') dataVals = dataValsVar;
+    else dataVals = dataValsTotal;
+
+    var periodTotal;
+    if (costType === 'fixed') periodTotal = periodTotalFixed;
+    else if (costType === 'variable') periodTotal = periodTotalVar;
+    else periodTotal = periodTotalAll;
 
     var pr = spendPriorRange(range.start, range.end);
     var priorTxs = allExpense.filter(function (tx) {
@@ -2300,60 +2700,100 @@ var spendReportUi = {
       if (isNaN(d.getTime())) return false;
       return d >= parseYMD(pr.start) && d <= parseYMD(pr.end);
     }).filter(function (tx) { return spendMatchesQuery(tx, q); }).filter(function (tx) {
-      if (tab === 'all') return true;
-      if (tab.indexOf('cat:') === 0) return tx.category === tab.slice(4);
-      if (tab.indexOf('ven:') === 0) {
-        var want = tab.slice(4);
-        if (want === '__other__') {
-          var topSet = {};
-          pillDefs.forEach(function (p) {
-            if (p.id.indexOf('ven:') === 0 && p.id !== 'ven:__other__') topSet[p.id.slice(4)] = true;
-          });
-          var v = (tx.vendor && String(tx.vendor).trim()) || '—';
-          return !topSet[v];
-        }
-        var vv = (tx.vendor && String(tx.vendor).trim()) || '—';
-        return vv === want;
-      }
-      return true;
+      return spendMatchesSpendTab(tx, tab, pillDefs);
     });
+
+    var priorTotalFixed = 0;
+    var priorTotalVar = 0;
+    var priorTotalAll = 0;
     var priorTotal = 0;
     if (!useIndexAxis) {
       var pEnumPrior = spendEnumerateBuckets(parseYMD(pr.start), parseYMD(pr.end), interval);
-      var priorSums = {};
-      pEnumPrior.keys.forEach(function (k) { priorSums[k] = 0; });
+      var priorSumsF = {};
+      var priorSumsV = {};
+      pEnumPrior.keys.forEach(function (k) {
+        priorSumsF[k] = 0;
+        priorSumsV[k] = 0;
+      });
       priorTxs.forEach(function (tx) {
         var bk = spendTxBucketKey(tx.date, interval);
-        if (bk && priorSums.hasOwnProperty(bk)) priorSums[bk] += (+tx.amount || 0);
+        if (!bk || !priorSumsF.hasOwnProperty(bk)) return;
+        var amt = +tx.amount || 0;
+        if (isFixedRecurringExpense(tx)) priorSumsF[bk] += amt;
+        else priorSumsV[bk] += amt;
       });
-      priorTotal = pEnumPrior.keys.reduce(function (a, k) { return a + (priorSums[k] || 0); }, 0);
+      priorTotalFixed = pEnumPrior.keys.reduce(function (a, k) { return a + (priorSumsF[k] || 0); }, 0);
+      priorTotalVar = pEnumPrior.keys.reduce(function (a, k) { return a + (priorSumsV[k] || 0); }, 0);
+      priorTotalAll = priorTotalFixed + priorTotalVar;
+      if (costType === 'fixed') priorTotal = priorTotalFixed;
+      else if (costType === 'variable') priorTotal = priorTotalVar;
+      else priorTotal = priorTotalAll;
     }
 
     var kpiPrimaryLbl = document.getElementById('spend-kpi-primary-lbl');
     var kpiSecondaryLbl = document.getElementById('spend-kpi-secondary-lbl');
     var kpiPrimaryVal = document.getElementById('spend-kpi-primary-val');
     var kpiSecondaryVal = document.getElementById('spend-kpi-secondary-val');
+    var kpiPrimaryBrk = document.getElementById('spend-kpi-primary-brk');
+    var kpiSecondaryBrk = document.getElementById('spend-kpi-secondary-brk');
+
+    var basePeriodLbl;
+    if (rangeMode === 'month') {
+      basePeriodLbl = re.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + ' spend';
+    } else if (rangeMode === '30d') {
+      basePeriodLbl = 'Last 30 days spend';
+    } else if (rangeMode === '90d') {
+      basePeriodLbl = 'Last 90 days spend';
+    } else if (rangeMode === 'ytd') {
+      basePeriodLbl = 'Year-to-date spend';
+    } else {
+      basePeriodLbl = 'All-time spend';
+    }
 
     if (kpiPrimaryLbl) {
-      if (rangeMode === 'month') {
-        kpiPrimaryLbl.textContent = re.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + ' spend';
-      } else if (rangeMode === '30d') {
-        kpiPrimaryLbl.textContent = 'Last 30 days spend';
-      } else if (rangeMode === '90d') {
-        kpiPrimaryLbl.textContent = 'Last 90 days spend';
-      } else if (rangeMode === 'ytd') {
-        kpiPrimaryLbl.textContent = 'Year-to-date spend';
-      } else {
-        kpiPrimaryLbl.textContent = 'All-time spend';
-      }
+      if (costType === 'fixed') kpiPrimaryLbl.textContent = basePeriodLbl + ' (fixed recurring)';
+      else if (costType === 'variable') kpiPrimaryLbl.textContent = basePeriodLbl + ' (one-time)';
+      else kpiPrimaryLbl.textContent = basePeriodLbl;
     }
     if (kpiSecondaryLbl) {
-      kpiSecondaryLbl.textContent = 'Prior period · ' + fmtDateDisplay(pr.start) + ' – ' + fmtDateDisplay(pr.end);
+      if (costType === 'fixed') {
+        kpiSecondaryLbl.textContent = 'Prior period (fixed) · ' + fmtDateDisplay(pr.start) + ' – ' + fmtDateDisplay(pr.end);
+      } else if (costType === 'variable') {
+        kpiSecondaryLbl.textContent = 'Prior period (one-time) · ' + fmtDateDisplay(pr.start) + ' – ' + fmtDateDisplay(pr.end);
+      } else {
+        kpiSecondaryLbl.textContent = 'Prior period · ' + fmtDateDisplay(pr.start) + ' – ' + fmtDateDisplay(pr.end);
+      }
     }
     if (kpiPrimaryVal) kpiPrimaryVal.innerHTML = spendFormatKpiSplit(periodTotal);
     if (kpiSecondaryVal) kpiSecondaryVal.innerHTML = spendFormatKpiSplit(priorTotal);
 
-    spendReportCsvPayload = { labels: shortLabels.slice(), values: dataVals.slice(), titles: spendReportTooltipTitles.slice() };
+    if (kpiPrimaryBrk) {
+      if (costType === 'all' && !useIndexAxis) {
+        kpiPrimaryBrk.textContent = 'Fixed ' + fmtCurrencyPrecise(periodTotalFixed) + ' · One-time ' + fmtCurrencyPrecise(periodTotalVar);
+        kpiPrimaryBrk.style.display = 'block';
+      } else {
+        kpiPrimaryBrk.textContent = '';
+        kpiPrimaryBrk.style.display = 'none';
+      }
+    }
+    if (kpiSecondaryBrk) {
+      if (costType === 'all' && !useIndexAxis) {
+        kpiSecondaryBrk.textContent = 'Fixed ' + fmtCurrencyPrecise(priorTotalFixed) + ' · One-time ' + fmtCurrencyPrecise(priorTotalVar);
+        kpiSecondaryBrk.style.display = 'block';
+      } else {
+        kpiSecondaryBrk.textContent = '';
+        kpiSecondaryBrk.style.display = 'none';
+      }
+    }
+
+    spendReportCsvPayload = {
+      labels: shortLabels.slice(),
+      titles: spendReportTooltipTitles.slice(),
+      costType: costType,
+      values: dataVals.slice(),
+      valuesFixed: dataValsFixed.slice(),
+      valuesVariable: dataValsVar.slice(),
+    };
 
     var avgRef = dataVals.length ? dataVals.reduce(function (a, b) { return a + b; }, 0) / dataVals.length : 0;
     avgRef = Math.round(avgRef * 100) / 100;
@@ -2363,6 +2803,8 @@ var spendReportUi = {
     var axisTick = CHART_TICK;
     var lineStroke = CHART_ORANGE;
     var lineFill = CHART_ORANGE_FILL;
+    var lineVarStroke = '#52525b';
+    var lineVarFill = 'rgba(82, 82, 91, 0.12)';
     var refStroke = 'rgba(0,0,0,0.12)';
 
     if (spendTrendChart) {
@@ -2370,8 +2812,13 @@ var spendReportUi = {
       spendTrendChart = null;
     }
 
+    var stackedMode = costType === 'all';
     var commonPlugins = {
-      legend: { display: false },
+      legend: {
+        display: stackedMode,
+        position: 'bottom',
+        labels: { boxWidth: 10, boxHeight: 10, font: { size: 11 }, color: axisTick },
+      },
       tooltip: {
         backgroundColor: '#ffffff',
         titleColor: '#0a0a0a',
@@ -2380,8 +2827,11 @@ var spendReportUi = {
         borderWidth: 1,
         padding: 10,
         cornerRadius: 6,
-        displayColors: false,
-        filter: function (item) { return item.datasetIndex === 0; },
+        displayColors: true,
+        filter: function (item) {
+          if (stackedMode) return item.datasetIndex <= 1;
+          return item.datasetIndex === 0;
+        },
         callbacks: {
           title: function (items) {
             var i = items[0].dataIndex;
@@ -2389,7 +2839,13 @@ var spendReportUi = {
           },
           label: function (ctx) {
             var y = ctx.parsed.y != null ? ctx.parsed.y : ctx.parsed;
-            return fmtCurrencyPrecise(y);
+            return (ctx.dataset.label ? ctx.dataset.label + ': ' : '') + fmtCurrencyPrecise(y);
+          },
+          footer: function (items) {
+            if (!stackedMode || !items.length) return '';
+            var i = items[0].dataIndex;
+            var t = round2((dataValsFixed[i] || 0) + (dataValsVar[i] || 0));
+            return 'Total: ' + fmtCurrencyPrecise(t);
           },
         },
       },
@@ -2406,6 +2862,7 @@ var spendReportUi = {
           border: { display: false },
         },
         y: {
+          stacked: stackedMode,
           grid: { display: false },
           ticks: {
             color: axisTick,
@@ -2418,73 +2875,161 @@ var spendReportUi = {
     };
 
     if (chartType === 'bar') {
+      var barDatasets;
+      if (stackedMode) {
+        barDatasets = [
+          {
+            type: 'bar',
+            label: 'Fixed (recurring)',
+            data: dataValsFixed,
+            stack: 'spend',
+            backgroundColor: CHART_ORANGE_FILL_BAR,
+            borderColor: 'rgba(232,80,26,0.45)',
+            borderWidth: 1,
+            borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 4, bottomRight: 4 },
+            order: 3,
+          },
+          {
+            type: 'bar',
+            label: 'One-time',
+            data: dataValsVar,
+            stack: 'spend',
+            backgroundColor: 'rgba(82, 82, 91, 0.28)',
+            borderColor: 'rgba(63,63,70,0.45)',
+            borderWidth: 1,
+            borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
+            order: 3,
+          },
+          {
+            type: 'line',
+            label: 'Average',
+            data: refLine,
+            borderColor: refStroke,
+            borderDash: [5, 5],
+            borderWidth: 1,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            order: 1,
+          },
+        ];
+      } else {
+        barDatasets = [
+          {
+            type: 'bar',
+            label: 'Spend',
+            data: dataVals,
+            backgroundColor: CHART_ORANGE_FILL_BAR,
+            borderColor: 'rgba(232,80,26,0.45)',
+            borderWidth: 1,
+            borderRadius: 4,
+            order: 2,
+          },
+          {
+            type: 'line',
+            label: 'Average',
+            data: refLine,
+            borderColor: refStroke,
+            borderDash: [5, 5],
+            borderWidth: 1,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            order: 1,
+          },
+        ];
+      }
       spendTrendChart = new Chart(canvas, {
         type: 'bar',
-        data: {
-          labels: shortLabels,
-          datasets: [
-            {
-              type: 'bar',
-              label: 'Spend',
-              data: dataVals,
-              backgroundColor: CHART_ORANGE_FILL_BAR,
-              borderColor: 'rgba(232,80,26,0.45)',
-              borderWidth: 1,
-              borderRadius: 4,
-              order: 2,
-            },
-            {
-              type: 'line',
-              label: 'Average',
-              data: refLine,
-              borderColor: refStroke,
-              borderDash: [5, 5],
-              borderWidth: 1,
-              pointRadius: 0,
-              fill: false,
-              tension: 0,
-              order: 1,
-            },
-          ],
-        },
+        data: { labels: shortLabels, datasets: barDatasets },
         options: Object.assign({ plugins: commonPlugins }, commonOptions),
       });
     } else {
+      var lineDatasets;
+      if (stackedMode) {
+        lineDatasets = [
+          {
+            type: 'line',
+            label: 'Fixed (recurring)',
+            data: dataValsFixed,
+            stack: 'spend',
+            borderColor: lineStroke,
+            backgroundColor: lineFill,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: CHART_ORANGE,
+            pointHoverBorderColor: '#ffffff',
+            pointHoverBorderWidth: 2,
+            order: 3,
+          },
+          {
+            type: 'line',
+            label: 'One-time',
+            data: dataValsVar,
+            stack: 'spend',
+            borderColor: lineVarStroke,
+            backgroundColor: lineVarFill,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: lineVarStroke,
+            pointHoverBorderColor: '#ffffff',
+            pointHoverBorderWidth: 2,
+            order: 3,
+          },
+          {
+            type: 'line',
+            label: 'Average',
+            data: refLine,
+            borderColor: refStroke,
+            borderDash: [5, 5],
+            borderWidth: 1,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            order: 1,
+          },
+        ];
+      } else {
+        lineDatasets = [
+          {
+            type: 'line',
+            label: 'Spend',
+            data: dataVals,
+            borderColor: lineStroke,
+            backgroundColor: lineFill,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: CHART_ORANGE,
+            pointHoverBorderColor: '#ffffff',
+            pointHoverBorderWidth: 2,
+            order: 2,
+          },
+          {
+            type: 'line',
+            label: 'Average',
+            data: refLine,
+            borderColor: refStroke,
+            borderDash: [5, 5],
+            borderWidth: 1,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            order: 1,
+          },
+        ];
+      }
       spendTrendChart = new Chart(canvas, {
         type: 'line',
-        data: {
-          labels: shortLabels,
-          datasets: [
-            {
-              type: 'line',
-              label: 'Spend',
-              data: dataVals,
-              borderColor: lineStroke,
-              backgroundColor: lineFill,
-              borderWidth: 2,
-              fill: true,
-              tension: 0.35,
-              pointRadius: 0,
-              pointHoverRadius: 6,
-              pointHoverBackgroundColor: CHART_ORANGE,
-              pointHoverBorderColor: '#ffffff',
-              pointHoverBorderWidth: 2,
-              order: 2,
-            },
-            {
-              type: 'line',
-              label: 'Average',
-              data: refLine,
-              borderColor: refStroke,
-              borderDash: [5, 5],
-              borderWidth: 1,
-              pointRadius: 0,
-              fill: false,
-              tension: 0,
-              order: 1,
-            },
-          ],
-        },
+        data: { labels: shortLabels, datasets: lineDatasets },
         options: Object.assign({ plugins: commonPlugins }, commonOptions),
       });
     }
@@ -2527,14 +3072,17 @@ var spendReportUi = {
       var sl = document.getElementById('spend-slice');
       var rg = document.getElementById('spend-range');
       var iv = document.getElementById('spend-interval');
+      var ct = document.getElementById('spend-cost-type');
       if (sl) spendReportUi.slice = sl.value || 'category';
       if (rg) spendReportUi.range = rg.value || '90d';
       if (iv) spendReportUi.interval = iv.value || 'weekly';
+      if (ct) spendReportUi.costType = ct.value || 'all';
     }
 
     var sliceEl = document.getElementById('spend-slice');
     var rangeEl = document.getElementById('spend-range');
     var intEl = document.getElementById('spend-interval');
+    var costTypeEl = document.getElementById('spend-cost-type');
     var qEl = document.getElementById('spend-filter-q');
     if (sliceEl) {
       sliceEl.addEventListener('change', function () {
@@ -2551,6 +3099,12 @@ var spendReportUi = {
     }
     if (intEl) {
       intEl.addEventListener('change', function () {
+        syncFromDom();
+        if (state.computed) renderSpendingReport();
+      });
+    }
+    if (costTypeEl) {
+      costTypeEl.addEventListener('change', function () {
         syncFromDom();
         if (state.computed) renderSpendingReport();
       });
@@ -2599,10 +3153,22 @@ var spendReportUi = {
       dl.addEventListener('click', function () {
         var p = spendReportCsvPayload;
         if (!p || !p.labels || !p.labels.length) return;
-        var rows = ['Period,Amount'];
-        for (var i = 0; i < p.labels.length; i++) {
-          var lab = String(p.titles && p.titles[i] != null ? p.titles[i] : p.labels[i]).replace(/"/g, '""');
-          rows.push('"' + lab + '",' + (p.values[i] != null ? p.values[i] : 0));
+        var rows;
+        if (p.costType === 'all' && p.valuesFixed && p.valuesVariable) {
+          rows = ['Period,Fixed recurring,One-time,Total'];
+          for (var i = 0; i < p.labels.length; i++) {
+            var lab = String(p.titles && p.titles[i] != null ? p.titles[i] : p.labels[i]).replace(/"/g, '""');
+            var f = p.valuesFixed[i] != null ? p.valuesFixed[i] : 0;
+            var v = p.valuesVariable[i] != null ? p.valuesVariable[i] : 0;
+            var tot = Math.round((Number(f) + Number(v)) * 100) / 100;
+            rows.push('"' + lab + '",' + f + ',' + v + ',' + tot);
+          }
+        } else {
+          rows = ['Period,Amount'];
+          for (var j = 0; j < p.labels.length; j++) {
+            var lab2 = String(p.titles && p.titles[j] != null ? p.titles[j] : p.labels[j]).replace(/"/g, '""');
+            rows.push('"' + lab2 + '",' + (p.values[j] != null ? p.values[j] : 0));
+          }
         }
         var blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
         var a = document.createElement('a');
@@ -2636,6 +3202,11 @@ var spendReportUi = {
       if (empty) empty.style.display = 'block';
       if (table) table.style.display = 'none';
       setText('kpi-ar', '$0');
+      setKpiBadge('kpi-ar-badge', '—', 'neutral');
+      var arBadge0 = $('kpi-ar-badge');
+      if (arBadge0) {
+        arBadge0.title = 'Outstanding AR is a snapshot; comparing to a prior period would require saved history.';
+      }
       return;
     }
 
@@ -2677,6 +3248,11 @@ var spendReportUi = {
     }).join('');
 
     setText('kpi-ar', fmtCurrency(total));
+    setKpiBadge('kpi-ar-badge', '—', 'neutral');
+    var arBadge = $('kpi-ar-badge');
+    if (arBadge) {
+      arBadge.title = 'Outstanding AR is a snapshot; comparing to a prior period would require saved history.';
+    }
   }
 
   function renderAll() {
@@ -2818,6 +3394,293 @@ var spendReportUi = {
     return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   }
 
+  /** First and last YYYY-MM with positive svc/ret or expense amounts. */
+  function insightTransactionMonthBounds(txs) {
+    var min = null;
+    var max = null;
+    (txs || []).forEach(function (tx) {
+      if (!tx.date) return;
+      var k = tx.date.slice(0, 7);
+      var amt = +tx.amount || 0;
+      if (amt <= 0) return;
+      var inc = tx.category === 'svc' || tx.category === 'ret';
+      var exp = ['lab', 'sw', 'ads', 'oth'].indexOf(tx.category) !== -1;
+      if (!inc && !exp) return;
+      if (!min || k < min) min = k;
+      if (!max || k > max) max = k;
+    });
+    return min && max ? { min: min, max: max } : null;
+  }
+
+  /**
+   * Dense calendar months from first to last insight-related transaction month (inclusive),
+   * with zero-filled gaps so walk-forward trend matches calendar periods.
+   */
+  function buildDenseRevExpSeries(txs) {
+    var b = insightTransactionMonthBounds(txs);
+    if (!b) return null;
+    var months = [];
+    var y = +b.min.split('-')[0];
+    var m = +b.min.split('-')[1];
+    var yEnd = +b.max.split('-')[0];
+    var mEnd = +b.max.split('-')[1];
+    while (y < yEnd || (y === yEnd && m <= mEnd)) {
+      months.push(y + '-' + String(m).padStart(2, '0'));
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+    }
+    if (months.length < 3) return null;
+    var revBy = {};
+    var expBy = {};
+    (txs || []).forEach(function (tx) {
+      if (!tx.date) return;
+      var k = tx.date.slice(0, 7);
+      var amt = +tx.amount || 0;
+      if (amt <= 0) return;
+      if (tx.category === 'svc' || tx.category === 'ret') revBy[k] = (revBy[k] || 0) + amt;
+      if (['lab', 'sw', 'ads', 'oth'].indexOf(tx.category) !== -1) expBy[k] = (expBy[k] || 0) + amt;
+    });
+    return {
+      months: months,
+      revenue: months.map(function (mk) { return revBy[mk] || 0; }),
+      expense: months.map(function (mk) { return expBy[mk] || 0; }),
+    };
+  }
+
+  /** For each closed month at index i>=2: OLS on prior months predicts values[i]. */
+  function walkForwardTrendAccuracy(months, values, thisMonthKey) {
+    var out = [];
+    for (var i = 2; i < months.length; i++) {
+      if (months[i] >= thisMonthKey) continue;
+      var lf = linearForecastValues(values.slice(0, i));
+      if (!lf) continue;
+      var pred = lf.nextValue;
+      var act = values[i];
+      out.push({ month: months[i], forecast: pred, actual: act, delta: act - pred });
+    }
+    return out;
+  }
+
+  function fmtInsightAccDelta(d, invertGood) {
+    var good = invertGood ? d < 0 : d > 0;
+    var col = Math.abs(d) < 0.005 ? 'var(--text3)' : good ? 'var(--green)' : 'var(--red)';
+    var sign = d > 0 ? '+' : '';
+    return '<span style="color:' + col + ';font-weight:500;font-variant-numeric:tabular-nums;">' + sign + fmtCurrency(d) + '</span>';
+  }
+
+  /** When forecast > 0: round((actual - forecast) / forecast * 100). */
+  function fmtInsightAccPctCell(forecast, actual, invertGood) {
+    if (!forecast || forecast <= 0) {
+      return '<td style="color:var(--text3);font-size:13px;">—</td>';
+    }
+    var pct = Math.round(((actual - forecast) / forecast) * 100);
+    var good = invertGood ? pct < 0 : pct > 0;
+    var col = pct === 0 ? 'var(--text3)' : good ? 'var(--green)' : 'var(--red)';
+    var sign = pct > 0 ? '+' : '';
+    return '<td style="color:' + col + ';font-weight:500;font-variant-numeric:tabular-nums;">' + sign + pct + '%</td>';
+  }
+
+  function renderInsightsForecastAccuracy(allTxs, thisMonthKey) {
+    var wrap = document.getElementById('ins-forecast-accuracy');
+    if (!wrap) return;
+    var dense = buildDenseRevExpSeries(allTxs);
+    if (!dense) {
+      wrap.innerHTML =
+        '<p style="font-size:13px;color:var(--text3);margin:0;line-height:1.5;">' +
+        'Need more history: at least three calendar months with revenue or expense activity. Each row backtests the same linear trend model as Outlook (walk-forward).</p>';
+      return;
+    }
+    var revAcc = walkForwardTrendAccuracy(dense.months, dense.revenue, thisMonthKey);
+    var expAcc = walkForwardTrendAccuracy(dense.months, dense.expense, thisMonthKey);
+    var keySet = {};
+    revAcc.forEach(function (r) { keySet[r.month] = true; });
+    expAcc.forEach(function (r) { keySet[r.month] = true; });
+    var keys = Object.keys(keySet).sort();
+    if (!keys.length) {
+      wrap.innerHTML =
+        '<p style="font-size:13px;color:var(--text3);margin:0;line-height:1.5;">' +
+        'Forecast accuracy rows appear for months that are already closed. After this month ends, the trend vs. actual for it will show here.</p>';
+      return;
+    }
+    var revMap = {};
+    revAcc.forEach(function (r) { revMap[r.month] = r; });
+    var expMap = {};
+    expAcc.forEach(function (r) { expMap[r.month] = r; });
+    var tbody = keys.map(function (mk) {
+      var rv = revMap[mk];
+      var ex = expMap[mk];
+      var label = fmtMonthLabel(mk);
+      var revCells = rv
+        ? '<td style="font-variant-numeric:tabular-nums;">' + fmtCurrency(rv.forecast) + '</td>' +
+          '<td style="font-variant-numeric:tabular-nums;">' + fmtCurrency(rv.actual) + '</td>' +
+          '<td>' + fmtInsightAccDelta(rv.delta, false) + '</td>' +
+          fmtInsightAccPctCell(rv.forecast, rv.actual, false)
+        : '<td colspan="4" style="color:var(--text3);font-size:13px;">—</td>';
+      var expCells = ex
+        ? '<td style="font-variant-numeric:tabular-nums;">' + fmtCurrency(ex.forecast) + '</td>' +
+          '<td style="font-variant-numeric:tabular-nums;">' + fmtCurrency(ex.actual) + '</td>' +
+          '<td>' + fmtInsightAccDelta(ex.delta, true) + '</td>' +
+          fmtInsightAccPctCell(ex.forecast, ex.actual, true)
+        : '<td colspan="4" style="color:var(--text3);font-size:13px;">—</td>';
+      return '<tr><td class="tdp" style="font-weight:500;">' + esc(label) + '</td>' + revCells + expCells + '</tr>';
+    }).join('');
+    wrap.innerHTML =
+      '<p style="font-size:12px;color:var(--text3);margin:0 0 12px;line-height:1.5;">' +
+      'Delta = actual − forecast. Err% uses the same basis when forecast &gt; 0. Only completed months; under-spend on expenses is green.</p>' +
+      '<div style="overflow-x:auto;">' +
+      '<table class="dt" style="margin:0;">' +
+      '<thead><tr>' +
+      '<th>Month</th>' +
+      '<th colspan="4" style="text-align:center;border-left:1px solid var(--border);">Revenue</th>' +
+      '<th colspan="4" style="text-align:center;border-left:1px solid var(--border);">Expenses</th>' +
+      '</tr>' +
+      '<tr>' +
+      '<th></th>' +
+      '<th style="border-left:1px solid var(--border);">Forecast</th><th>Actual</th><th>Delta</th><th>Err%</th>' +
+      '<th style="border-left:1px solid var(--border);">Forecast</th><th>Actual</th><th>Delta</th><th>Err%</th>' +
+      '</tr></thead><tbody>' + tbody + '</tbody></table></div>';
+  }
+
+  function renderInsightsBudgetAccuracy(allTxs, thisMonthKey) {
+    var wrap = document.getElementById('ins-budget-accuracy');
+    if (!wrap) return;
+    var snaps = loadBudgetMonthSnapshots();
+    var snapKeys = Object.keys(snaps).filter(function (k) { return /^\d{4}-\d{2}$/.test(k); }).sort();
+    var totalCurrent = budgets.lab + budgets.sw + budgets.ads + budgets.oth;
+    var hasAnyBudget = totalCurrent > 0.01;
+    var hasSnaps = snapKeys.length > 0;
+    if (!hasAnyBudget && !hasSnaps) {
+      wrap.innerHTML =
+        '<p style="font-size:13px;color:var(--text3);margin:0;line-height:1.5;">' +
+        'Save monthly budgets in Settings to compare <strong>plan vs spend</strong> for closed months. Each save stores that calendar month’s budget snapshot for this table.</p>';
+      return;
+    }
+    var dense = buildDenseRevExpSeries(allTxs);
+    var monthSet = {};
+    if (dense) {
+      dense.months.forEach(function (mk) {
+        if (mk < thisMonthKey) monthSet[mk] = true;
+      });
+    }
+    snapKeys.forEach(function (mk) {
+      if (mk < thisMonthKey) monthSet[mk] = true;
+    });
+    var keys = Object.keys(monthSet).sort();
+    if (!keys.length) {
+      wrap.innerHTML =
+        '<p style="font-size:13px;color:var(--text3);margin:0;">Budget history rows appear once prior months are closed.</p>';
+      return;
+    }
+    var expByMonth = {};
+    (allTxs || []).forEach(function (tx) {
+      if (!tx.date) return;
+      var k = tx.date.slice(0, 7);
+      var amt = +tx.amount || 0;
+      if (amt <= 0) return;
+      if (['lab', 'sw', 'ads', 'oth'].indexOf(tx.category) === -1) return;
+      expByMonth[k] = (expByMonth[k] || 0) + amt;
+    });
+    var anyFallback = false;
+    var tbody = keys.map(function (mk) {
+      var act = expByMonth[mk] || 0;
+      var sn = snaps[mk];
+      var fromSnap = sn && budgetSnapshotTotal(sn) > 0.005;
+      var planned = fromSnap ? budgetSnapshotTotal(sn) : totalCurrent;
+      if (!fromSnap && totalCurrent < 0.01 && act < 0.01) return '';
+      if (!fromSnap && totalCurrent >= 0.01) anyFallback = true;
+      if (planned < 0.01 && act < 0.01) return '';
+      var delta = act - planned;
+      var deltaHtml = fmtInsightAccDelta(delta, true);
+      var planCell = fmtCurrency(planned) + (fromSnap ? '' : ' <span style="color:var(--text3);font-size:11px;font-weight:500;">*</span>');
+      return '<tr>' +
+        '<td class="tdp" style="font-weight:500;">' + esc(fmtMonthLabel(mk)) + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;">' + planCell + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;">' + fmtCurrency(act) + '</td>' +
+        '<td>' + deltaHtml + '</td>' +
+        fmtInsightAccPctCell(planned, act, true) +
+      '</tr>';
+    }).filter(Boolean).join('');
+    if (!tbody) {
+      wrap.innerHTML =
+        '<p style="font-size:13px;color:var(--text3);margin:0;">No closed months with budget or spend yet.</p>';
+      return;
+    }
+    var foot = anyFallback
+      ? '<p style="font-size:11px;color:var(--text3);margin:10px 0 0;line-height:1.45;">* No snapshot for that month — using your <strong>current</strong> Settings budget total. Save budgets during each month to lock the plan for history.</p>'
+      : '';
+    wrap.innerHTML =
+      '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin-bottom:8px;">Budget vs actual</div>' +
+      '<p style="font-size:12px;color:var(--text3);margin:0 0 10px;line-height:1.5;">Planned spend from saved budget snapshots (or current total). Actual = same expense categories as Budget vs. Actual on the main page.</p>' +
+      '<div style="overflow-x:auto;">' +
+      '<table class="dt" style="margin:0;">' +
+      '<thead><tr><th>Month</th><th>Budget (plan)</th><th>Actual</th><th>Delta</th><th>Err%</th></tr></thead>' +
+      '<tbody>' + tbody + '</tbody></table></div>' + foot;
+  }
+
+  var INSIGHT_EXPENSE_CATEGORIES = ['lab', 'sw', 'ads', 'oth'];
+
+  function isExpenseCategory(cat) {
+    return INSIGHT_EXPENSE_CATEGORIES.indexOf(cat) !== -1;
+  }
+
+  /** Lowercase, collapse spaces, strip common corporate suffixes for matching. */
+  function normalizeVendorName(v) {
+    if (v == null) return '';
+    var s = String(v).trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!s) return '';
+    s = s.replace(/\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company)\b\.?/g, ' ');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  }
+
+  function filterExpenseTxsInRange(txs, startYmd, endYmd) {
+    return (txs || []).filter(function (tx) {
+      if (!tx || !tx.date) return false;
+      if (tx.date < startYmd || tx.date > endYmd) return false;
+      var amt = +tx.amount || 0;
+      if (amt <= 0) return false;
+      return isExpenseCategory(tx.category);
+    });
+  }
+
+  function levenshteinDistance(a, b) {
+    if (a === b) return 0;
+    var al = a.length;
+    var bl = b.length;
+    if (!al) return bl;
+    if (!bl) return al;
+    var row = [];
+    var i; var j; var prev; var t;
+    for (j = 0; j <= bl; j++) row[j] = j;
+    for (i = 1; i <= al; i++) {
+      prev = row[0];
+      row[0] = i;
+      for (j = 1; j <= bl; j++) {
+        t = row[j];
+        row[j] = a.charAt(i - 1) === b.charAt(j - 1) ? prev : 1 + Math.min(prev, row[j], row[j - 1]);
+        prev = t;
+      }
+    }
+    return row[bl];
+  }
+
+  function insightAlertCardHtml(a) {
+    var bg = a.type === 'good' ? 'var(--green-bg)' : a.type === 'warn' ? 'var(--amber-bg)' : 'var(--blue-bg)';
+    var border = a.type === 'good' ? 'var(--green)' : a.type === 'warn' ? 'var(--amber)' : 'var(--blue)';
+    var icon = a.type === 'good' ? '✓' : a.type === 'warn' ? '⚠' : 'ℹ';
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:var(--r);background:' + bg + ';border-left:3px solid ' + border + ';">' +
+      '<span style="font-size:14px;line-height:1.4;flex-shrink:0;">' + icon + '</span>' +
+      '<span style="font-size:13px;line-height:1.5;color:var(--text);">' + a.msg + '</span>' +
+      '</div>';
+  }
+
+  function renderInsightsAlertList(items) {
+    return (items || []).map(insightAlertCardHtml).join('');
+  }
+
   function renderInsights() {
     var allTxs = state.transactions || [];
     var now = new Date();
@@ -2869,88 +3732,221 @@ var spendReportUi = {
     var forecast = linearForecast(series);
     var expForecast = linearForecastValues(expSeries.map(function (s) { return s.expense; }));
 
-    // ---- Alerts ----
-    var alertsEl = document.getElementById('insights-alerts');
-    if (alertsEl) {
-      var alerts = [];
-      // Expense spike vs 3-month avg
-      var thisMonthExp = 0;
+    // ---- Alerts (revenue vs spending columns) ----
+    var wrapEl = document.getElementById('insights-alerts-wrap');
+    var rowEl = document.getElementById('insights-alerts-row');
+    var revAlertsEl = document.getElementById('insights-alerts-revenue');
+    var spendAlertsEl = document.getElementById('insights-alerts-spend');
+    var healthyEl = document.getElementById('insights-alerts-healthy');
+    var legacyAlertsEl = document.getElementById('insights-alerts');
+    var revenueAlerts = [];
+    var spendAlerts = [];
+    var budgetCatLabels = { lab: 'Labor', sw: 'Software & Tools', ads: 'Advertising', oth: 'Other' };
+
+    // Expense spike vs 3-month avg → spending
+    var thisMonthExp = 0;
+    allTxs.forEach(function (tx) {
+      if (!tx.date || tx.date.slice(0, 7) !== thisMonthKey) return;
+      var amt = +tx.amount || 0;
+      if (expByCat.hasOwnProperty(tx.category) && amt > 0) thisMonthExp += amt;
+    });
+    var last3Exp = [];
+    for (var mi = 1; mi <= 3; mi++) {
+      var dExp = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+      var mkExp = dExp.getFullYear() + '-' + String(dExp.getMonth() + 1).padStart(2, '0');
+      var mExp = 0;
+      allTxs.forEach(function (tx) {
+        if (!tx.date || tx.date.slice(0, 7) !== mkExp) return;
+        var amt = +tx.amount || 0;
+        if (expByCat.hasOwnProperty(tx.category) && amt > 0) mExp += amt;
+      });
+      last3Exp.push(mExp);
+    }
+    var avgExp3 = last3Exp.length ? last3Exp.reduce(function (a, b) { return a + b; }, 0) / last3Exp.length : 0;
+    if (avgExp3 > 0 && thisMonthExp > avgExp3 * 1.35) {
+      var expPct = Math.round((thisMonthExp / avgExp3 - 1) * 100);
+      spendAlerts.push({ type: 'warn', msg: 'Expenses this month are <strong>' + expPct + '% above</strong> your 3-month average (' + fmtCurrency(thisMonthExp) + ' vs avg ' + fmtCurrency(avgExp3) + ').' });
+    }
+
+    // Revenue vs avg → revenue
+    if (avg3 > 0 && thisMonthRev > 0 && thisMonthRev < avg3 * 0.6) {
+      revenueAlerts.push({ type: 'warn', msg: 'Revenue this month (' + fmtCurrency(thisMonthRev) + ') is tracking <strong>below</strong> your 3-month average of ' + fmtCurrency(avg3) + '.' });
+    }
+    if (avg3 > 0 && thisMonthRev > avg3 * 1.25) {
+      var upPct = Math.round((thisMonthRev / avg3 - 1) * 100);
+      revenueAlerts.push({ type: 'good', msg: 'Revenue this month is <strong>' + upPct + '% above</strong> your 3-month average — great month!' });
+    }
+    if (churnRisk.length) {
+      revenueAlerts.push({ type: 'warn', msg: churnRisk.length + ' client' + (churnRisk.length > 1 ? 's have' : ' has') + ' had no income in 60+ days: <strong>' + churnRisk.map(function (c) { return esc(c.companyName || c.contactName || 'Unknown'); }).join(', ') + '</strong>.' });
+    }
+    if (!retainerClients.length && clients.length > 0) {
+      revenueAlerts.push({ type: 'info', msg: 'You have no retainer clients yet. Retainers provide predictable monthly revenue.' });
+    }
+
+    // Budget alerts → spending
+    var hasAnyBudget = (budgets.lab + budgets.sw + budgets.ads + budgets.oth) > 0;
+    if (!hasAnyBudget && allTxs.length > 0) {
+      spendAlerts.push({ type: 'info', msg: 'No monthly budgets set. <a href="#" onclick="window.nav(\'settings\');return false;" style="color:var(--blue);font-weight:500;text-decoration:none;">Set budgets in Settings</a> to track spending targets.' });
+    } else if (hasAnyBudget) {
+      var budgetActual = { lab: 0, sw: 0, ads: 0, oth: 0 };
       allTxs.forEach(function (tx) {
         if (!tx.date || tx.date.slice(0, 7) !== thisMonthKey) return;
-        var amt = +tx.amount || 0;
-        if (expByCat.hasOwnProperty(tx.category) && amt > 0) thisMonthExp += amt;
+        var amtB = +tx.amount || 0;
+        if (amtB > 0 && budgetActual.hasOwnProperty(tx.category)) budgetActual[tx.category] += amtB;
       });
-      var last3Exp = [];
-      for (var mi = 1; mi <= 3; mi++) {
-        var d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
-        var mk = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-        var mExp = 0;
-        allTxs.forEach(function (tx) {
-          if (!tx.date || tx.date.slice(0, 7) !== mk) return;
-          var amt = +tx.amount || 0;
-          if (expByCat.hasOwnProperty(tx.category) && amt > 0) mExp += amt;
-        });
-        last3Exp.push(mExp);
+      ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
+        var bgt = budgets[k];
+        var act = budgetActual[k];
+        if (bgt < 0.01) return;
+        var usedPct = act / bgt * 100;
+        if (usedPct >= 100) {
+          var overAmt = act - bgt;
+          spendAlerts.push({ type: 'warn', msg: '<strong>' + budgetCatLabels[k] + '</strong> is <strong>' + fmtCurrency(overAmt) + ' over budget</strong> this month (budgeted ' + fmtCurrency(bgt) + ', spent ' + fmtCurrency(act) + ').' });
+        } else if (usedPct >= 80) {
+          var leftAmt = bgt - act;
+          spendAlerts.push({ type: 'warn', msg: '<strong>' + budgetCatLabels[k] + '</strong> has used <strong>' + Math.round(usedPct) + '%</strong> of its monthly budget — ' + fmtCurrency(leftAmt) + ' remaining.' });
+        }
+      });
+    }
+
+    // --- Spending nudges: overlap, category spikes, duplicate vendors/charges, recurring ---
+    var start90 = dateYMD(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90, 12));
+    var start180 = dateYMD(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 180, 12));
+    var swByVendor90 = {};
+    filterExpenseTxsInRange(allTxs, start90, todayStr).forEach(function (tx) {
+      if (tx.category !== 'sw') return;
+      var rawV = (tx.vendor && String(tx.vendor).trim()) || '';
+      var nk = normalizeVendorName(rawV);
+      if (!nk) return;
+      var amt = +tx.amount || 0;
+      swByVendor90[nk] = (swByVendor90[nk] || 0) + amt;
+    });
+    var swVendorCount = Object.keys(swByVendor90).filter(function (vk) { return swByVendor90[vk] >= 25; }).length;
+    if (swVendorCount >= 3) {
+      spendAlerts.push({ type: 'info', msg: 'You have <strong>' + swVendorCount + ' software &amp; tool vendors</strong> with meaningful spend (90d) — review for overlap or duplicate tools.' });
+    }
+
+    var prior3Cat = { lab: 0, sw: 0, ads: 0, oth: 0 };
+    for (var pci = 1; pci <= 3; pci++) {
+      var dPrior = new Date(now.getFullYear(), now.getMonth() - pci, 1);
+      var mkPrior = dPrior.getFullYear() + '-' + String(dPrior.getMonth() + 1).padStart(2, '0');
+      allTxs.forEach(function (tx) {
+        if (!tx.date || tx.date.slice(0, 7) !== mkPrior) return;
+        var amtP = +tx.amount || 0;
+        if (amtP <= 0 || !prior3Cat.hasOwnProperty(tx.category)) return;
+        prior3Cat[tx.category] += amtP;
+      });
+    }
+    ['lab', 'sw', 'ads', 'oth'].forEach(function (ck) {
+      var priorAvg = prior3Cat[ck] / 3;
+      var thisCat = 0;
+      allTxs.forEach(function (tx) {
+        if (!tx.date || tx.date.slice(0, 7) !== thisMonthKey || tx.category !== ck) return;
+        var amtC = +tx.amount || 0;
+        if (amtC > 0) thisCat += amtC;
+      });
+      if (priorAvg > 100 && thisCat > priorAvg * 1.5) {
+        var catUp = Math.round((thisCat / priorAvg - 1) * 100);
+        spendAlerts.push({ type: 'warn', msg: '<strong>' + budgetCatLabels[ck] + '</strong> spend this month is <strong>' + catUp + '% above</strong> your prior 3-month average (' + fmtCurrency(thisCat) + ' vs avg ' + fmtCurrency(priorAvg) + ').' });
       }
-      var avgExp3 = last3Exp.length ? last3Exp.reduce(function (a, b) { return a + b; }, 0) / last3Exp.length : 0;
-      if (avgExp3 > 0 && thisMonthExp > avgExp3 * 1.35) {
-        var pct = Math.round((thisMonthExp / avgExp3 - 1) * 100);
-        alerts.push({ type: 'warn', msg: 'Expenses this month are <strong>' + pct + '% above</strong> your 3-month average (' + fmtCurrency(thisMonthExp) + ' vs avg ' + fmtCurrency(avgExp3) + ').' });
+    });
+
+    var vendorSpend180 = {};
+    var vendorDisplay180 = {};
+    filterExpenseTxsInRange(allTxs, start180, todayStr).forEach(function (tx) {
+      var raw = (tx.vendor && String(tx.vendor).trim()) || '';
+      if (!raw) return;
+      var nk = normalizeVendorName(raw);
+      if (!nk) return;
+      vendorSpend180[nk] = (vendorSpend180[nk] || 0) + (+tx.amount || 0);
+      if (!vendorDisplay180[nk]) vendorDisplay180[nk] = raw;
+    });
+    var normKeys = Object.keys(vendorSpend180).filter(function (k) { return vendorSpend180[k] > 0; });
+    var dupPairs = [];
+    var pi; var pj;
+    for (pi = 0; pi < normKeys.length; pi++) {
+      for (pj = pi + 1; pj < normKeys.length; pj++) {
+        var ka = normKeys[pi];
+        var kb = normKeys[pj];
+        if (ka.length < 4 || kb.length < 4) continue;
+        if (levenshteinDistance(ka, kb) <= 1) {
+          dupPairs.push([vendorDisplay180[ka] || ka, vendorDisplay180[kb] || kb]);
+          if (dupPairs.length >= 4) break;
+        }
       }
-      // Revenue vs avg
-      if (avg3 > 0 && thisMonthRev > 0 && thisMonthRev < avg3 * 0.6) {
-        alerts.push({ type: 'warn', msg: 'Revenue this month (' + fmtCurrency(thisMonthRev) + ') is tracking <strong>below</strong> your 3-month average of ' + fmtCurrency(avg3) + '.' });
+      if (dupPairs.length >= 4) break;
+    }
+    if (dupPairs.length) {
+      var pairStr = dupPairs.slice(0, 3).map(function (pair) {
+        return '<strong>' + esc(pair[0]) + '</strong> / <strong>' + esc(pair[1]) + '</strong>';
+      }).join('; ');
+      spendAlerts.push({ type: 'info', msg: 'Possible duplicate vendor names (similar spelling): ' + pairStr + '.' });
+    }
+
+    var dupChargeMap = {};
+    allTxs.forEach(function (tx) {
+      if (!tx.date || tx.date.slice(0, 7) !== thisMonthKey) return;
+      var amtD = +tx.amount || 0;
+      if (amtD <= 0 || !isExpenseCategory(tx.category)) return;
+      var nv = normalizeVendorName(tx.vendor || '');
+      if (!nv) nv = normalizeVendorName(tx.title || '');
+      if (!nv) return;
+      var cents = Math.round(amtD * 100);
+      var dk = nv + '\0' + tx.date + '\0' + cents;
+      dupChargeMap[dk] = (dupChargeMap[dk] || 0) + 1;
+    });
+    Object.keys(dupChargeMap).forEach(function (dk) {
+      if (dupChargeMap[dk] < 2) return;
+      var parts = dk.split('\0');
+      spendAlerts.push({ type: 'warn', msg: 'Possible <strong>duplicate expense entries</strong> on ' + esc(parts[1]) + ' (' + esc(parts[0]) + ', same amount) — check your ledger.' });
+    });
+
+    var recurringLeads = allTxs.filter(function (t) {
+      return t && t.expenseRecurringLead && t.recurrence && t.recurrenceSeriesId && isExpenseCategory(t.category);
+    });
+    var staleSeriesWarned = {};
+    recurringLeads.forEach(function (lead) {
+      var sid = lead.recurrenceSeriesId;
+      if (staleSeriesWarned[sid]) return;
+      var rule = lead.recurrence;
+      var endD = rule.endDate && String(rule.endDate).trim();
+      if (endD && endD < todayStr) return;
+      var seriesDates = [];
+      allTxs.forEach(function (t) {
+        if (t.recurrenceSeriesId === sid && t.date) seriesDates.push(t.date);
+      });
+      var latest = seriesDates.length ? seriesDates.sort().pop() : lead.date;
+      if (!latest) return;
+      var gapDays = (parseYMD(todayStr) - parseYMD(latest)) / 86400000;
+      var intervalN = Math.max(1, parseInt(rule.interval, 10) || 1);
+      var expectedDays = rule.repeat === 'weekly' ? 7 * intervalN : 30 * intervalN;
+      if (gapDays > expectedDays * 1.5) {
+        staleSeriesWarned[sid] = true;
+        var staleLabel = esc(lead.vendor || lead.title || 'Recurring expense');
+        spendAlerts.push({ type: 'warn', msg: 'Recurring expense <strong>' + staleLabel + '</strong> has <strong>no recent charge</strong> in this series — confirm it is still active or update the schedule.' });
       }
-      if (avg3 > 0 && thisMonthRev > avg3 * 1.25) {
-        var upPct = Math.round((thisMonthRev / avg3 - 1) * 100);
-        alerts.push({ type: 'good', msg: 'Revenue this month is <strong>' + upPct + '% above</strong> your 3-month average — great month!' });
+    });
+
+    var swRecurringLeads = recurringLeads.filter(function (t) { return t.category === 'sw'; });
+    if (swRecurringLeads.length >= 3) {
+      spendAlerts.push({ type: 'info', msg: 'You have <strong>' + swRecurringLeads.length + ' active recurring</strong> software &amp; tool subscriptions — worth a periodic audit.' });
+    }
+
+    var hasNewLayout = wrapEl && revAlertsEl && spendAlertsEl;
+    if (hasNewLayout) {
+      if (!revenueAlerts.length && !spendAlerts.length && allTxs.length > 0) {
+        if (rowEl) rowEl.style.display = 'none';
+        if (healthyEl) healthyEl.innerHTML = insightAlertCardHtml({ type: 'good', msg: 'Everything looks healthy — no anomalies detected.' });
+      } else {
+        if (rowEl) rowEl.style.display = 'grid';
+        if (healthyEl) healthyEl.innerHTML = '';
+        revAlertsEl.innerHTML = renderInsightsAlertList(revenueAlerts);
+        spendAlertsEl.innerHTML = renderInsightsAlertList(spendAlerts);
       }
-      // Churn
-      if (churnRisk.length) {
-        alerts.push({ type: 'warn', msg: churnRisk.length + ' client' + (churnRisk.length > 1 ? 's have' : ' has') + ' had no income in 60+ days: <strong>' + churnRisk.map(function (c) { return esc(c.companyName || c.contactName || 'Unknown'); }).join(', ') + '</strong>.' });
-      }
-      // No retainers
-      if (!retainerClients.length && clients.length > 0) {
-        alerts.push({ type: 'info', msg: 'You have no retainer clients yet. Retainers provide predictable monthly revenue.' });
-      }
-      // Budget alerts
-      var budgetCatLabels = { lab: 'Labor', sw: 'Software & Tools', ads: 'Advertising', oth: 'Other' };
-      var hasAnyBudget = (budgets.lab + budgets.sw + budgets.ads + budgets.oth) > 0;
-      if (!hasAnyBudget && allTxs.length > 0) {
-        alerts.push({ type: 'info', msg: 'No monthly budgets set. <a href="#" onclick="window.nav(\'settings\');return false;" style="color:var(--blue);font-weight:500;text-decoration:none;">Set budgets in Settings</a> to track spending targets.' });
-      } else if (hasAnyBudget) {
-        var budgetActual = { lab: 0, sw: 0, ads: 0, oth: 0 };
-        allTxs.forEach(function (tx) {
-          if (!tx.date || tx.date.slice(0, 7) !== thisMonthKey) return;
-          var amt = +tx.amount || 0;
-          if (amt > 0 && budgetActual.hasOwnProperty(tx.category)) budgetActual[tx.category] += amt;
-        });
-        ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
-          var bgt = budgets[k];
-          var act = budgetActual[k];
-          if (bgt < 0.01) return;
-          var usedPct = act / bgt * 100;
-          if (usedPct >= 100) {
-            var overAmt = act - bgt;
-            alerts.push({ type: 'warn', msg: '<strong>' + budgetCatLabels[k] + '</strong> is <strong>' + fmtCurrency(overAmt) + ' over budget</strong> this month (budgeted ' + fmtCurrency(bgt) + ', spent ' + fmtCurrency(act) + ').' });
-          } else if (usedPct >= 80) {
-            var leftAmt = bgt - act;
-            alerts.push({ type: 'warn', msg: '<strong>' + budgetCatLabels[k] + '</strong> has used <strong>' + Math.round(usedPct) + '%</strong> of its monthly budget — ' + fmtCurrency(leftAmt) + ' remaining.' });
-          }
-        });
-      }
-      if (!alerts.length && allTxs.length > 0) {
-        alerts.push({ type: 'good', msg: 'Everything looks healthy — no anomalies detected.' });
-      }
-      alertsEl.innerHTML = alerts.map(function (a) {
-        var bg = a.type === 'good' ? 'var(--green-bg)' : a.type === 'warn' ? 'var(--amber-bg)' : 'var(--blue-bg)';
-        var border = a.type === 'good' ? 'var(--green)' : a.type === 'warn' ? 'var(--amber)' : 'var(--blue)';
-        var icon = a.type === 'good' ? '✓' : a.type === 'warn' ? '⚠' : 'ℹ';
-        return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:var(--r);background:' + bg + ';border-left:3px solid ' + border + ';">' +
-          '<span style="font-size:14px;line-height:1.4;flex-shrink:0;">' + icon + '</span>' +
-          '<span style="font-size:13px;line-height:1.5;color:var(--text);">' + a.msg + '</span>' +
-          '</div>';
-      }).join('');
+    } else if (legacyAlertsEl) {
+      var merged = revenueAlerts.concat(spendAlerts);
+      if (!merged.length && allTxs.length > 0) merged.push({ type: 'good', msg: 'Everything looks healthy — no anomalies detected.' });
+      legacyAlertsEl.innerHTML = renderInsightsAlertList(merged);
     }
 
     // ---- KPI cards ----
@@ -3130,6 +4126,9 @@ var spendReportUi = {
         forecastEl.innerHTML = paceHtml + revHtml + expHtml + netHtml;
       }
     }
+
+    renderInsightsForecastAccuracy(allTxs, thisMonthKey);
+    renderInsightsBudgetAccuracy(allTxs, thisMonthKey);
 
     // ---- Client performance table ----
     var clientsTbody = document.getElementById('ins-clients-tbody');
@@ -3941,6 +4940,34 @@ var spendReportUi = {
     return sum;
   }
 
+  /** Sum of lab/sw/ads/oth tagged to this client (all-time). */
+  function clientAllocatedCostFromTransactions(clientId) {
+    if (!clientId) return 0;
+    var sum = 0;
+    (state.transactions || []).forEach(function (tx) {
+      if (tx.clientId !== clientId) return;
+      if (['lab', 'sw', 'ads', 'oth'].indexOf(tx.category) === -1) return;
+      var amt = +tx.amount || 0;
+      if (amt > 0) sum += amt;
+    });
+    return sum;
+  }
+
+  function clientCompanyNameById(clientId) {
+    if (!clientId) return '';
+    var c = clients.find(function (x) { return x.id === clientId; });
+    return c ? (c.companyName || 'Untitled client') : '';
+  }
+
+  function fmtProfitMarginRoi(revenue, cost) {
+    var rev = +revenue || 0;
+    var cst = +cost || 0;
+    var profit = rev - cst;
+    var marginStr = rev > 0 ? (profit / rev * 100).toLocaleString('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 0 }) + '%' : '—';
+    var roiStr = cst > 0 ? (profit / cst * 100).toLocaleString('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 0 }) + '%' : '—';
+    return { profit: profit, marginStr: marginStr, roiStr: roiStr };
+  }
+
   function clientProjectCount(clientId) {
     if (!clientId) return 0;
     return projects.filter(function (p) { return p.clientId === clientId; }).length;
@@ -3975,6 +5002,11 @@ var spendReportUi = {
       if (table) table.style.display = 'table';
       tbody.innerHTML = clients.map(function (c) {
         var rev = clientRevenueFromTransactions(c.id);
+        var cost = clientAllocatedCostFromTransactions(c.id);
+        var pr = fmtProfitMarginRoi(rev, cost);
+        var profitStyle = 'font-variant-numeric:tabular-nums;';
+        if (pr.profit < 0) profitStyle += 'color:var(--red);';
+        else if (pr.profit > 0) profitStyle += 'color:var(--green);';
         var pcount = clientProjectCount(c.id);
         return '<tr>' +
           '<td class="tdp">' + (c.companyName || '—') + '</td>' +
@@ -3986,6 +5018,10 @@ var spendReportUi = {
           '</td>' +
           '<td>' + (pcount ? String(pcount) : '—') + '</td>' +
           '<td>' + fmtCurrency(rev) + '</td>' +
+          '<td>' + fmtCurrency(cost) + '</td>' +
+          '<td class="tdp" style="' + profitStyle + '">' + fmtCurrency(pr.profit) + '</td>' +
+          '<td>' + pr.marginStr + '</td>' +
+          '<td>' + pr.roiStr + '</td>' +
           '<td style="white-space:nowrap;">' +
             '<button type="button" class="btn" data-client-edit="' + c.id + '" style="margin-right:6px;">Edit</button>' +
             '<button type="button" class="btn" data-client-del="' + c.id + '" style="color:var(--red);">Delete</button>' +
@@ -4247,6 +5283,7 @@ var spendReportUi = {
           description: lead.description,
           amount: lead.amount,
           category: lead.category,
+          clientId: lead.clientId || null,
           recurrenceSeriesId: lead.recurrenceSeriesId,
           expenseRecurrenceInstance: true,
         };
@@ -4420,12 +5457,14 @@ var spendReportUi = {
     wireExpenseRecurrenceControls();
     var m = $('expenseModal');
     if (!m) return;
+    populateIncomeClientOptions();
     var editId = $('expense-edit-id');
     var fDate = $('expense-date');
     var fAmount = $('expense-amount');
     var fTitle = $('expense-title');
     var fCat = $('expense-category');
     var fVendor = $('expense-vendor');
+    var fClient = $('expense-client');
     var fNotes = $('expense-notes');
     var recChk = $('expense-recurring');
 
@@ -4436,6 +5475,7 @@ var spendReportUi = {
       if (fTitle) fTitle.value = (existingTx.title != null && existingTx.title !== '') ? existingTx.title : (existingTx.description || '');
       if (fCat) fCat.value = existingTx.categoryLabel || '';
       if (fVendor) fVendor.value = existingTx.vendor || '';
+      if (fClient) fClient.value = existingTx.clientId || '';
       if (fNotes) fNotes.value = existingTx.notes != null ? existingTx.notes : '';
       var isLead = !!existingTx.expenseRecurringLead && existingTx.recurrence;
       if (recChk) recChk.checked = isLead;
@@ -4475,6 +5515,7 @@ var spendReportUi = {
       if (fTitle) fTitle.value = '';
       if (fCat) fCat.value = '';
       if (fVendor) fVendor.value = '';
+      if (fClient) fClient.value = '';
       if (fNotes) fNotes.value = '';
       if (recChk) recChk.checked = false;
       resetExpenseRecurrenceUiDefaults();
@@ -4700,6 +5741,8 @@ var spendReportUi = {
         var vendorTrim = (vendor || '').trim();
         var notesTrim = (notes || '').trim();
         var desc = titleTrim || vendorTrim || notesTrim;
+        var clientIdRaw = $('expense-client') ? $('expense-client').value : '';
+        var expenseClientId = clientIdRaw ? clientIdRaw : null;
 
         var editId = $('expense-edit-id') ? $('expense-edit-id').value : '';
         var recurring = $('expense-recurring') && $('expense-recurring').checked;
@@ -4716,6 +5759,7 @@ var spendReportUi = {
               description: desc,
               amount: amount,
               category: cat,
+              clientId: expenseClientId,
             };
             if (recurring) {
               next.recurrenceSeriesId = (prevTx && prevTx.recurrenceSeriesId) ? prevTx.recurrenceSeriesId : uuid();
@@ -4750,6 +5794,7 @@ var spendReportUi = {
               description: desc,
               amount: amount,
               category: cat,
+              clientId: expenseClientId,
               recurrenceSeriesId: seriesId,
               expenseRecurringLead: true,
               recurrence: readExpenseRecurrenceRuleFromUi(date),
@@ -4767,6 +5812,7 @@ var spendReportUi = {
               description: desc,
               amount: amount,
               category: cat,
+              clientId: expenseClientId,
             });
           }
         }
@@ -4958,6 +6004,7 @@ var spendReportUi = {
             vendor: tx.vendor,
             notes: tx.notes,
             description: tx.description,
+            clientId: tx.clientId,
             expenseRecurringLead: tx.expenseRecurringLead,
             recurrence: tx.recurrence,
           });
@@ -5970,4 +7017,3 @@ var spendReportUi = {
     init();
   }
 })();
-
