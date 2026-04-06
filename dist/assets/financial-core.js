@@ -382,6 +382,13 @@
         .upsert(payload, { onConflict: 'id' });
       if (result.error) {
         console.error('upsert client error', result.error);
+        var errStr = JSON.stringify(result.error || {});
+        if (/is_retainer|schema|column/i.test(errStr)) {
+          var payload2 = Object.assign({}, payload);
+          delete payload2.is_retainer;
+          var result2 = await supabase.from('clients').upsert(payload2, { onConflict: 'id' });
+          if (result2.error) console.error('upsert client (no is_retainer) error', result2.error);
+        }
       }
     } catch (err) {
       console.error('persistClientToSupabase error', err);
@@ -515,6 +522,8 @@
   }
 
   async function uploadClientsToSupabase(list) {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser || !Array.isArray(list) || !list.length) return false;
     var payload = list.map(function (client) {
       return {
@@ -536,6 +545,20 @@
       var result = await supabase.from('clients').upsert(payload, { onConflict: 'id' });
       if (result.error) {
         console.error('bulk upsert clients error', result.error);
+        var errStr = JSON.stringify(result.error || {});
+        if (/is_retainer|schema|column/i.test(errStr)) {
+          var payload2 = payload.map(function (row) {
+            var copy = Object.assign({}, row);
+            delete copy.is_retainer;
+            return copy;
+          });
+          var result2 = await supabase.from('clients').upsert(payload2, { onConflict: 'id' });
+          if (result2.error) {
+            console.error('bulk upsert clients (no is_retainer) error', result2.error);
+            return false;
+          }
+          return true;
+        }
         return false;
       }
       return true;
@@ -632,7 +655,7 @@
     wrap.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
         '<span style="font-size:12px;font-weight:600;color:var(--text2);">Strategy point</span>' +
-        '<button type="button" class="btn case-strategy-remove" style="font-size:11px;padding:3px 8px;color:var(--red);">Remove</button>' +
+        '<button type="button" class="btn case-strategy-remove" style="color:var(--red);">Remove</button>' +
       '</div>' +
       '<input class="fi cs-strat-title" type="text" placeholder="Title (optional)" />' +
       '<textarea class="fi cs-strat-body" rows="2" style="min-height:48px;resize:vertical;" placeholder="Body"></textarea>';
@@ -1194,18 +1217,30 @@
     };
   }
 
-  /** After remote fetch, keep explicit local retainer checkbox when user has set it before. */
+  /**
+   * Merge remote clients (source of truth for ids present on server) with local-only rows
+   * so devices that never received a row still upload it. Preserve explicit retainer checkbox from local when ids match.
+   */
   function mergeClientsPreserveRetainer(prevList, remoteList) {
     var prevById = {};
     (prevList || []).forEach(function (c) {
       if (c && c.id) prevById[c.id] = c;
     });
-    return (remoteList || []).map(function (c) {
+    var onServer = {};
+    var out = (remoteList || []).map(function (c) {
+      if (!c || !c.id) return null;
+      onServer[c.id] = true;
       var prev = prevById[c.id];
       var next = Object.assign({}, c);
       if (prev && typeof prev.retainer === 'boolean') next.retainer = prev.retainer;
       return next;
+    }).filter(Boolean);
+    (prevList || []).forEach(function (c) {
+      if (c && c.id && !onServer[c.id]) {
+        out.push(Object.assign({}, c));
+      }
     });
+    return out;
   }
 
   function clientIsRetainer(c) {
@@ -1233,6 +1268,8 @@
   }
 
   async function claimUnassignedClients(ids) {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser || !ids || !ids.length) return;
     try {
       var res = await supabase
@@ -1481,6 +1518,17 @@ var projMonthlyChart = null;
 var revTrendChart = null;
 var verticalChart = null;
 var leadSourceChart = null;
+var spendTrendChart = null;
+var spendReportTooltipTitles = [];
+var spendReportCsvPayload = null;
+var spendReportUi = {
+  slice: 'category',
+  range: '90d',
+  interval: 'weekly',
+  chartType: 'line',
+  tab: 'all',
+  q: '',
+};
 
   function renderExpenseChart(c) {
     var canvas = document.getElementById('cExp');
@@ -1710,7 +1758,7 @@ var leadSourceChart = null;
         '<td>' + catLabel + '</td>' +
         '<td class="tdp">' + fmtCurrency(tx.amount) + '</td>' +
         '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (tx.description || '') + '">' + (tx.description || '—') + '</td>' +
-        '<td style="white-space:nowrap;"><button type="button" class="btn" data-tx-del="' + tx.id + '" style="font-size:11px;padding:4px 10px;color:var(--red);">Delete</button></td>' +
+        '<td style="white-space:nowrap;"><button type="button" class="btn" data-tx-del="' + tx.id + '" style="color:var(--red);">Delete</button></td>' +
         '</tr>';
     }).join('');
   }
@@ -1751,11 +1799,575 @@ var leadSourceChart = null;
         '<td>' + vendorText + '</td>' +
         '<td>' + (tx.expenseRecurringLead ? '<span class="pl pg-c">Series</span>' : tx.expenseRecurrenceInstance ? '<span class="pl pg-c">Yes</span>' : 'No') + '</td>' +
         '<td style="white-space:nowrap;">' +
-          '<button type="button" class="btn" data-exp-edit="' + tx.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">Edit</button>' +
-          '<button type="button" class="btn" data-exp-del="' + tx.id + '" style="font-size:11px;padding:4px 10px;color:var(--red);">Delete</button>' +
+          '<button type="button" class="btn" data-exp-edit="' + tx.id + '" style="margin-right:6px;">Edit</button>' +
+          '<button type="button" class="btn" data-exp-del="' + tx.id + '" style="color:var(--red);">Delete</button>' +
         '</td>' +
         '</tr>';
     }).join('');
+  }
+
+  var SPEND_EXP_CATS = ['lab', 'sw', 'ads', 'oth'];
+  var SPEND_CAT_META = {
+    lab: { label: 'Labor', color: '#e8501a' },
+    sw: { label: 'Software', color: '#3366aa' },
+    ads: { label: 'Advertising', color: '#a86e28' },
+    oth: { label: 'Other', color: '#c8c7c2' },
+  };
+
+  function spendStartOfWeekMonday(d) {
+    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+    var day = x.getDay();
+    var diff = (day + 6) % 7;
+    x.setDate(x.getDate() - diff);
+    return x;
+  }
+
+  function spendEnumerateBuckets(rangeStart, rangeEnd, interval) {
+    var keys = [];
+    var shortLabels = [];
+    var titles = [];
+    var rs = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate(), 12, 0, 0, 0);
+    var re = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate(), 12, 0, 0, 0);
+    if (interval === 'daily') {
+      var cur = new Date(rs);
+      while (cur <= re) {
+        var k = dateYMD(cur);
+        keys.push(k);
+        shortLabels.push(cur.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+        titles.push(cur.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }));
+        cur.setDate(cur.getDate() + 1);
+      }
+    } else if (interval === 'weekly') {
+      var w0 = spendStartOfWeekMonday(rs);
+      var curW = new Date(w0);
+      while (curW <= re) {
+        var wk = dateYMD(curW);
+        keys.push(wk);
+        var wEnd = new Date(curW);
+        wEnd.setDate(wEnd.getDate() + 6);
+        shortLabels.push(curW.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+        titles.push('Week of ' + curW.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+          ' – ' + wEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+        curW.setDate(curW.getDate() + 7);
+      }
+    } else {
+      var curM = new Date(rs.getFullYear(), rs.getMonth(), 1, 12, 0, 0, 0);
+      var endM = new Date(re.getFullYear(), re.getMonth(), 1, 12, 0, 0, 0);
+      while (curM <= endM) {
+        var mk = curM.getFullYear() + '-' + String(curM.getMonth() + 1).padStart(2, '0');
+        keys.push(mk);
+        shortLabels.push(curM.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+        titles.push(curM.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
+        curM.setMonth(curM.getMonth() + 1);
+      }
+    }
+    return { keys: keys, shortLabels: shortLabels, titles: titles };
+  }
+
+  function spendTxBucketKey(txDateStr, interval) {
+    var d = parseYMD(txDateStr);
+    if (isNaN(d.getTime())) return null;
+    if (interval === 'daily') return dateYMD(d);
+    if (interval === 'weekly') return dateYMD(spendStartOfWeekMonday(d));
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function spendResolveRange(mode, expenseTxs) {
+    var now = new Date();
+    now.setHours(12, 0, 0, 0);
+    var today = dateYMD(now);
+    var start;
+    var end = today;
+    if (mode === 'month') {
+      start = dateYMD(new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0, 0));
+    } else if (mode === '30d') {
+      var s30 = new Date(now);
+      s30.setDate(s30.getDate() - 29);
+      start = dateYMD(s30);
+    } else if (mode === '90d') {
+      var s90 = new Date(now);
+      s90.setDate(s90.getDate() - 89);
+      start = dateYMD(s90);
+    } else if (mode === 'ytd') {
+      start = dateYMD(new Date(now.getFullYear(), 0, 1, 12, 0, 0, 0));
+    } else {
+      var minD = null;
+      var maxD = null;
+      expenseTxs.forEach(function (tx) {
+        var d = parseYMD(tx.date);
+        if (isNaN(d.getTime())) return;
+        if (!minD || d < minD) minD = d;
+        if (!maxD || d > maxD) maxD = d;
+      });
+      if (!minD) {
+        start = today;
+        end = today;
+      } else {
+        start = dateYMD(minD);
+        end = maxD && parseYMD(maxD) > parseYMD(today) ? dateYMD(maxD) : today;
+      }
+    }
+    return { start: start, end: end, startDate: parseYMD(start), endDate: parseYMD(end) };
+  }
+
+  function spendPriorRange(startStr, endStr) {
+    var a = parseYMD(startStr);
+    var b = parseYMD(endStr);
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return { start: startStr, end: endStr };
+    var days = Math.max(1, Math.round((b - a) / 86400000) + 1);
+    var pe = new Date(a);
+    pe.setDate(pe.getDate() - 1);
+    var ps = new Date(pe);
+    ps.setDate(ps.getDate() - (days - 1));
+    return { start: dateYMD(ps), end: dateYMD(pe) };
+  }
+
+  function spendFormatKpiSplit(n) {
+    var v = Number(n || 0);
+    var s = v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    var dot = s.lastIndexOf('.');
+    if (dot === -1) {
+      return '<span class="spend-kpi-dollars">$' + esc(s) + '</span>';
+    }
+    return '<span class="spend-kpi-dollars">$' + esc(s.slice(0, dot)) + '</span>' +
+      '<span class="spend-kpi-cents">' + esc(s.slice(dot)) + '</span>';
+  }
+
+  function spendMatchesQuery(tx, q) {
+    if (!q) return true;
+    var hay = [tx.title, tx.vendor, tx.description, tx.note, tx.notes].map(function (x) {
+      return String(x || '').toLowerCase();
+    }).join(' ');
+    return hay.indexOf(q) !== -1;
+  }
+
+  function renderSpendingReport() {
+    var canvas = document.getElementById('cSpendTrend');
+    if (!canvas || !window.Chart) return;
+
+    var slice = spendReportUi.slice;
+    var rangeMode = spendReportUi.range;
+    var interval = spendReportUi.interval;
+    var chartType = spendReportUi.chartType;
+    var tab = spendReportUi.tab;
+    var q = (spendReportUi.q || '').trim().toLowerCase();
+
+    var allExpense = (state.transactions || []).filter(function (tx) {
+      return SPEND_EXP_CATS.indexOf(tx.category) !== -1 && (+tx.amount || 0) > 0;
+    });
+
+    var range = spendResolveRange(rangeMode, allExpense);
+    var rs = range.startDate;
+    var re = range.endDate;
+    if (isNaN(rs.getTime()) || isNaN(re.getTime())) return;
+
+    var inRange = allExpense.filter(function (tx) {
+      if (!tx.date) return false;
+      var d = parseYMD(tx.date);
+      if (isNaN(d.getTime())) return false;
+      return d >= rs && d <= re;
+    });
+
+    var missingDates = allExpense.filter(function (tx) { return !tx.date || isNaN(parseYMD(tx.date).getTime()); }).length;
+    if (missingDates) {
+      console.warn('Spending chart: ' + missingDates + ' expense row(s) have no valid date and are omitted from the series.');
+    }
+
+    var forPills = inRange.filter(function (tx) { return spendMatchesQuery(tx, q); });
+
+    var pillsEl = document.getElementById('spend-pills');
+    var pillsLbl = document.getElementById('spend-pills-lbl');
+    if (pillsLbl) {
+      pillsLbl.textContent = slice === 'vendor' ? 'Vendor' : 'Category';
+    }
+
+    var pillDefs = [{ id: 'all', label: 'All', color: 'var(--text)' }];
+    if (slice === 'category') {
+      SPEND_EXP_CATS.forEach(function (k) {
+        var has = forPills.some(function (tx) { return tx.category === k; });
+        if (has) pillDefs.push({ id: 'cat:' + k, label: SPEND_CAT_META[k].label, color: SPEND_CAT_META[k].color });
+      });
+    } else {
+      var venTot = {};
+      forPills.forEach(function (tx) {
+        var v = (tx.vendor && String(tx.vendor).trim()) || '—';
+        venTot[v] = (venTot[v] || 0) + (+tx.amount || 0);
+      });
+      var venList = Object.keys(venTot).sort(function (a, b) { return venTot[b] - venTot[a]; });
+      var maxV = 12;
+      var top = venList.slice(0, maxV);
+      var rest = venList.slice(maxV);
+      var PAL = ['#e8501a', '#3366aa', '#4a8a4a', '#a86e28', '#3366cc', '#cc3333', '#7b2d8e', '#2d8e7b'];
+      top.forEach(function (v, i) {
+        pillDefs.push({ id: 'ven:' + v, label: v, color: PAL[i % PAL.length] });
+      });
+      if (rest.length) pillDefs.push({ id: 'ven:__other__', label: 'Other', color: '#c8c7c2' });
+    }
+
+    var tabOk = pillDefs.some(function (p) { return p.id === tab; });
+    if (!tabOk) tab = 'all';
+    spendReportUi.tab = tab;
+
+    if (pillsEl) {
+      pillsEl.innerHTML = pillDefs.map(function (p) {
+        var on = p.id === tab ? ' on' : '';
+        var dot = '<span class="spend-pill-dot" style="background:' + p.color + ';"></span>';
+        return '<button type="button" class="spend-pill' + on + '" data-spend-tab="' + esc(p.id) + '">' + dot + esc(p.label) + '</button>';
+      }).join('');
+    }
+
+    var filtered = forPills.filter(function (tx) {
+      if (tab === 'all') return true;
+      if (tab.indexOf('cat:') === 0) return tx.category === tab.slice(4);
+      if (tab.indexOf('ven:') === 0) {
+        var want = tab.slice(4);
+        if (want === '__other__') {
+          var topSet = {};
+          pillDefs.forEach(function (p) {
+            if (p.id.indexOf('ven:') === 0 && p.id !== 'ven:__other__') topSet[p.id.slice(4)] = true;
+          });
+          var v = (tx.vendor && String(tx.vendor).trim()) || '—';
+          return !topSet[v];
+        }
+        var vv = (tx.vendor && String(tx.vendor).trim()) || '—';
+        return vv === want;
+      }
+      return true;
+    });
+
+    var enumed = spendEnumerateBuckets(rs, re, interval);
+    var keys = enumed.keys;
+    var shortLabels = enumed.shortLabels;
+    spendReportTooltipTitles = enumed.titles.slice();
+
+    var sums = {};
+    keys.forEach(function (k) { sums[k] = 0; });
+
+    var useIndexAxis = filtered.length > 0 && filtered.every(function (tx) {
+      return !tx.date || isNaN(parseYMD(tx.date).getTime());
+    });
+
+    if (!useIndexAxis) {
+      filtered.forEach(function (tx) {
+        var bk = spendTxBucketKey(tx.date, interval);
+        if (bk && sums.hasOwnProperty(bk)) sums[bk] += (+tx.amount || 0);
+      });
+    } else {
+      keys = filtered.map(function (_, i) { return 'i' + i; });
+      shortLabels = filtered.map(function (_, i) { return 'Entry ' + (i + 1); });
+      spendReportTooltipTitles = filtered.map(function (tx) {
+        return (tx.title || tx.vendor || tx.description || 'Expense') + ' · ' + (tx.date || 'no date');
+      });
+      sums = {};
+      filtered.forEach(function (tx, i) {
+        sums['i' + i] = (+tx.amount || 0);
+      });
+    }
+
+    if (!keys.length) {
+      keys = ['_empty'];
+      shortLabels = ['—'];
+      spendReportTooltipTitles = ['No data in range'];
+      sums = { _empty: 0 };
+    }
+
+    var dataVals = keys.map(function (k) { return Math.round((sums[k] || 0) * 100) / 100; });
+    var periodTotal = dataVals.reduce(function (a, b) { return a + b; }, 0);
+
+    var pr = spendPriorRange(range.start, range.end);
+    var priorTxs = allExpense.filter(function (tx) {
+      if (!tx.date) return false;
+      var d = parseYMD(tx.date);
+      if (isNaN(d.getTime())) return false;
+      return d >= parseYMD(pr.start) && d <= parseYMD(pr.end);
+    }).filter(function (tx) { return spendMatchesQuery(tx, q); }).filter(function (tx) {
+      if (tab === 'all') return true;
+      if (tab.indexOf('cat:') === 0) return tx.category === tab.slice(4);
+      if (tab.indexOf('ven:') === 0) {
+        var want = tab.slice(4);
+        if (want === '__other__') {
+          var topSet = {};
+          pillDefs.forEach(function (p) {
+            if (p.id.indexOf('ven:') === 0 && p.id !== 'ven:__other__') topSet[p.id.slice(4)] = true;
+          });
+          var v = (tx.vendor && String(tx.vendor).trim()) || '—';
+          return !topSet[v];
+        }
+        var vv = (tx.vendor && String(tx.vendor).trim()) || '—';
+        return vv === want;
+      }
+      return true;
+    });
+    var priorTotal = 0;
+    if (!useIndexAxis) {
+      var pEnumPrior = spendEnumerateBuckets(parseYMD(pr.start), parseYMD(pr.end), interval);
+      var priorSums = {};
+      pEnumPrior.keys.forEach(function (k) { priorSums[k] = 0; });
+      priorTxs.forEach(function (tx) {
+        var bk = spendTxBucketKey(tx.date, interval);
+        if (bk && priorSums.hasOwnProperty(bk)) priorSums[bk] += (+tx.amount || 0);
+      });
+      priorTotal = pEnumPrior.keys.reduce(function (a, k) { return a + (priorSums[k] || 0); }, 0);
+    }
+
+    var kpiPrimaryLbl = document.getElementById('spend-kpi-primary-lbl');
+    var kpiSecondaryLbl = document.getElementById('spend-kpi-secondary-lbl');
+    var kpiPrimaryVal = document.getElementById('spend-kpi-primary-val');
+    var kpiSecondaryVal = document.getElementById('spend-kpi-secondary-val');
+
+    if (kpiPrimaryLbl) {
+      if (rangeMode === 'month') {
+        kpiPrimaryLbl.textContent = re.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + ' spend';
+      } else if (rangeMode === '30d') {
+        kpiPrimaryLbl.textContent = 'Last 30 days spend';
+      } else if (rangeMode === '90d') {
+        kpiPrimaryLbl.textContent = 'Last 90 days spend';
+      } else if (rangeMode === 'ytd') {
+        kpiPrimaryLbl.textContent = 'Year-to-date spend';
+      } else {
+        kpiPrimaryLbl.textContent = 'All-time spend';
+      }
+    }
+    if (kpiSecondaryLbl) {
+      kpiSecondaryLbl.textContent = 'Prior period · ' + fmtDateDisplay(pr.start) + ' – ' + fmtDateDisplay(pr.end);
+    }
+    if (kpiPrimaryVal) kpiPrimaryVal.innerHTML = spendFormatKpiSplit(periodTotal);
+    if (kpiSecondaryVal) kpiSecondaryVal.innerHTML = spendFormatKpiSplit(priorTotal);
+
+    spendReportCsvPayload = { labels: shortLabels.slice(), values: dataVals.slice(), titles: spendReportTooltipTitles.slice() };
+
+    var avgRef = dataVals.length ? dataVals.reduce(function (a, b) { return a + b; }, 0) / dataVals.length : 0;
+    avgRef = Math.round(avgRef * 100) / 100;
+    var refLine = keys.map(function () { return avgRef; });
+
+    var gridMuted = 'rgba(0,0,0,0.06)';
+    var axisTick = '#aaa99f';
+    var lineStroke = '#111110';
+    var lineFill = 'rgba(17,17,16,0.07)';
+    var refStroke = 'rgba(0,0,0,0.18)';
+
+    if (spendTrendChart) {
+      spendTrendChart.destroy();
+      spendTrendChart = null;
+    }
+
+    var commonPlugins = {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#111110',
+        titleColor: '#ffffff',
+        bodyColor: '#ffffff',
+        borderColor: 'rgba(255,255,255,0.12)',
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 6,
+        displayColors: false,
+        filter: function (item) { return item.datasetIndex === 0; },
+        callbacks: {
+          title: function (items) {
+            var i = items[0].dataIndex;
+            return spendReportTooltipTitles[i] || shortLabels[i] || '';
+          },
+          label: function (ctx) {
+            var y = ctx.parsed.y != null ? ctx.parsed.y : ctx.parsed;
+            return fmtCurrencyPrecise(y);
+          },
+        },
+      },
+    };
+
+    var commonOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          grid: { display: true, color: gridMuted, lineWidth: 1, drawTicks: false },
+          ticks: { color: axisTick, font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
+          border: { display: false },
+        },
+        y: {
+          grid: { display: false },
+          ticks: {
+            color: axisTick,
+            font: { size: 11 },
+            callback: function (v) { return '$' + Number(v).toLocaleString(); },
+          },
+          border: { display: false },
+        },
+      },
+    };
+
+    if (chartType === 'bar') {
+      spendTrendChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: shortLabels,
+          datasets: [
+            {
+              type: 'bar',
+              label: 'Spend',
+              data: dataVals,
+              backgroundColor: 'rgba(17,17,16,0.2)',
+              borderColor: lineStroke,
+              borderWidth: 1,
+              borderRadius: 4,
+              order: 2,
+            },
+            {
+              type: 'line',
+              label: 'Average',
+              data: refLine,
+              borderColor: refStroke,
+              borderDash: [5, 5],
+              borderWidth: 1,
+              pointRadius: 0,
+              fill: false,
+              tension: 0,
+              order: 1,
+            },
+          ],
+        },
+        options: Object.assign({ plugins: commonPlugins }, commonOptions),
+      });
+    } else {
+      spendTrendChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: shortLabels,
+          datasets: [
+            {
+              type: 'line',
+              label: 'Spend',
+              data: dataVals,
+              borderColor: lineStroke,
+              backgroundColor: lineFill,
+              borderWidth: 2,
+              fill: true,
+              tension: 0.35,
+              pointRadius: 0,
+              pointHoverRadius: 6,
+              pointHoverBackgroundColor: lineStroke,
+              pointHoverBorderColor: '#ffffff',
+              pointHoverBorderWidth: 2,
+              order: 2,
+            },
+            {
+              type: 'line',
+              label: 'Average',
+              data: refLine,
+              borderColor: refStroke,
+              borderDash: [5, 5],
+              borderWidth: 1,
+              pointRadius: 0,
+              fill: false,
+              tension: 0,
+              order: 1,
+            },
+          ],
+        },
+        options: Object.assign({ plugins: commonPlugins }, commonOptions),
+      });
+    }
+
+    var lineBtn = document.getElementById('spend-chart-line');
+    var barBtn = document.getElementById('spend-chart-bar');
+    if (lineBtn) lineBtn.classList.toggle('on', chartType === 'line');
+    if (barBtn) barBtn.classList.toggle('on', chartType === 'bar');
+  }
+
+  function wireSpendingReport() {
+    function syncFromDom() {
+      var sl = document.getElementById('spend-slice');
+      var rg = document.getElementById('spend-range');
+      var iv = document.getElementById('spend-interval');
+      if (sl) spendReportUi.slice = sl.value || 'category';
+      if (rg) spendReportUi.range = rg.value || '90d';
+      if (iv) spendReportUi.interval = iv.value || 'weekly';
+    }
+
+    var sliceEl = document.getElementById('spend-slice');
+    var rangeEl = document.getElementById('spend-range');
+    var intEl = document.getElementById('spend-interval');
+    var qEl = document.getElementById('spend-filter-q');
+    if (sliceEl) {
+      sliceEl.addEventListener('change', function () {
+        syncFromDom();
+        spendReportUi.tab = 'all';
+        if (state.computed) renderSpendingReport();
+      });
+    }
+    if (rangeEl) {
+      rangeEl.addEventListener('change', function () {
+        syncFromDom();
+        if (state.computed) renderSpendingReport();
+      });
+    }
+    if (intEl) {
+      intEl.addEventListener('change', function () {
+        syncFromDom();
+        if (state.computed) renderSpendingReport();
+      });
+    }
+    if (qEl) {
+      var t = null;
+      qEl.addEventListener('input', function () {
+        spendReportUi.q = qEl.value || '';
+        clearTimeout(t);
+        t = setTimeout(function () {
+          if (state.computed) renderSpendingReport();
+        }, 160);
+      });
+    }
+
+    var pillHost = document.getElementById('spend-pills');
+    if (pillHost) {
+      pillHost.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('[data-spend-tab]');
+        if (!btn) return;
+        spendReportUi.tab = btn.getAttribute('data-spend-tab') || 'all';
+        syncFromDom();
+        if (state.computed) renderSpendingReport();
+      });
+    }
+
+    var lineB = document.getElementById('spend-chart-line');
+    if (lineB) {
+      lineB.addEventListener('click', function () {
+        spendReportUi.chartType = 'line';
+        syncFromDom();
+        if (state.computed) renderSpendingReport();
+      });
+    }
+    var barB = document.getElementById('spend-chart-bar');
+    if (barB) {
+      barB.addEventListener('click', function () {
+        spendReportUi.chartType = 'bar';
+        syncFromDom();
+        if (state.computed) renderSpendingReport();
+      });
+    }
+
+    var dl = document.getElementById('spend-download');
+    if (dl) {
+      dl.addEventListener('click', function () {
+        var p = spendReportCsvPayload;
+        if (!p || !p.labels || !p.labels.length) return;
+        var rows = ['Period,Amount'];
+        for (var i = 0; i < p.labels.length; i++) {
+          var lab = String(p.titles && p.titles[i] != null ? p.titles[i] : p.labels[i]).replace(/"/g, '""');
+          rows.push('"' + lab + '",' + (p.values[i] != null ? p.values[i] : 0));
+        }
+        var blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'spending-report.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+    }
+
+    syncFromDom();
   }
 
   function renderDashAR() {
@@ -1811,7 +2423,7 @@ var leadSourceChart = null;
       }
 
       return '<tr>' +
-        '<td class="tdp">' + clientName + (inv.number ? '<br><span style="font-size:11px;color:var(--text3);font-weight:400;">' + esc(inv.number) + '</span>' : '') + '</td>' +
+        '<td class="tdp">' + clientName + (inv.number ? '<br><span class="td-sub">' + esc(inv.number) + '</span>' : '') + '</td>' +
         '<td>' + fmtCurrency(amt) + '</td>' +
         '<td>' + esc(dueStr) + overdue + '</td>' +
         '<td><span class="pl ' + statusClass + '">' + esc(statusLabel) + '</span></td>' +
@@ -1829,6 +2441,7 @@ var leadSourceChart = null;
     renderIncomeStatement(c);
     renderTransactionLog(c);
     renderExpensesTable(c);
+    renderSpendingReport();
     renderRevenueVsExpenses(c);
     renderIncomeSection(c);
     renderRevenueByVertical(c);
@@ -2304,8 +2917,8 @@ var leadSourceChart = null;
             (c.notes ? '<div style="font-size:12px;color:var(--text3);margin-top:6px;">' + esc(c.notes) + '</div>' : '') +
             '</div>' +
             '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end;">' +
-            '<button type="button" class="btn" data-campaign-edit="' + esc(c.id) + '" style="font-size:11px;padding:4px 10px;">Edit</button>' +
-            '<button type="button" class="btn" data-campaign-del="' + esc(c.id) + '" style="font-size:11px;padding:4px 10px;color:var(--red);">Delete</button>' +
+            '<button type="button" class="btn" data-campaign-edit="' + esc(c.id) + '">Edit</button>' +
+            '<button type="button" class="btn" data-campaign-del="' + esc(c.id) + '" style="color:var(--red);">Delete</button>' +
             '</div></div>';
         }).join('');
       }
@@ -2527,7 +3140,7 @@ var leadSourceChart = null;
         var csCell = '<div style="font-size:12px;line-height:1.4;">' +
           '<div><span style="color:var(--text3);">Pub.</span> <strong>' + pubLabel + '</strong></div>';
         if (canView) {
-          csCell += '<button type="button" class="btn" data-project-casestudy="' + esc(p.id) + '" style="font-size:11px;padding:4px 10px;margin-top:6px;">View</button>';
+          csCell += '<button type="button" class="btn" data-project-casestudy="' + esc(p.id) + '" style="margin-top:6px;">View</button>';
         } else {
           csCell += '<div style="margin-top:4px;color:var(--text3);">—</div>';
         }
@@ -2541,13 +3154,13 @@ var leadSourceChart = null;
           '<td>' + fmtCurrency(p.value || 0) + '</td>' +
           '<td style="min-width:140px;">' +
             '<select class="fi project-row-status" data-project-status-id="' + esc(p.id) + '" ' +
-            'style="font-size:12px;padding:4px 8px;width:100%;max-width:200px;box-sizing:border-box;">' +
+            'style="width:100%;max-width:200px;box-sizing:border-box;">' +
             buildProjectRowStatusOptionsHtml(p.status) +
             '</select></td>' +
           '<td style="vertical-align:top;">' + csCell + '</td>' +
           '<td style="white-space:nowrap;">' +
-            '<button type="button" class="btn" data-project-edit="' + p.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">Edit</button>' +
-            '<button type="button" class="btn" data-project-del="' + p.id + '" style="font-size:11px;padding:4px 10px;color:var(--red);">Delete</button>' +
+            '<button type="button" class="btn" data-project-edit="' + p.id + '" style="margin-right:6px;">Edit</button>' +
+            '<button type="button" class="btn" data-project-del="' + p.id + '" style="color:var(--red);">Delete</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -2697,16 +3310,16 @@ var leadSourceChart = null;
             '<td style="white-space:nowrap;">' +
               invBadge +
               (inv
-                ? '<button type="button" class="btn" data-income-invoice-edit="' + tx.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">Edit invoice</button>'
-                : '<button type="button" class="btn" data-income-invoice-create="' + tx.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">Create invoice</button>') +
+                ? '<button type="button" class="btn" data-income-invoice-edit="' + tx.id + '" style="margin-right:6px;">Edit invoice</button>'
+                : '<button type="button" class="btn" data-income-invoice-create="' + tx.id + '" style="margin-right:6px;">Create invoice</button>') +
               (inv
-                ? '<button type="button" class="btn" data-income-invoice-view="' + tx.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">View invoice</button>'
+                ? '<button type="button" class="btn" data-income-invoice-view="' + tx.id + '" style="margin-right:6px;">View invoice</button>'
                 : '') +
               (inv && inv.status !== 'paid'
-                ? '<button type="button" class="btn" data-income-invoice-paid="' + tx.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">Mark received</button>'
+                ? '<button type="button" class="btn" data-income-invoice-paid="' + tx.id + '" style="margin-right:6px;">Mark received</button>'
                 : '') +
-              '<button type="button" class="btn" data-income-edit="' + tx.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">Edit</button>' +
-              '<button type="button" class="btn" data-income-del="' + tx.id + '" style="font-size:11px;padding:4px 10px;color:var(--red);">Delete</button>' +
+              '<button type="button" class="btn" data-income-edit="' + tx.id + '" style="margin-right:6px;">Edit</button>' +
+              '<button type="button" class="btn" data-income-del="' + tx.id + '" style="color:var(--red);">Delete</button>' +
             '</td>' +
           '</tr>';
         }).join('');
@@ -3003,8 +3616,8 @@ var leadSourceChart = null;
           '<td>' + (pcount ? String(pcount) : '—') + '</td>' +
           '<td>' + fmtCurrency(rev) + '</td>' +
           '<td style="white-space:nowrap;">' +
-            '<button type="button" class="btn" data-client-edit="' + c.id + '" style="font-size:11px;padding:4px 10px;margin-right:6px;">Edit</button>' +
-            '<button type="button" class="btn" data-client-del="' + c.id + '" style="font-size:11px;padding:4px 10px;color:var(--red);">Delete</button>' +
+            '<button type="button" class="btn" data-client-edit="' + c.id + '" style="margin-right:6px;">Edit</button>' +
+            '<button type="button" class="btn" data-client-del="' + c.id + '" style="color:var(--red);">Delete</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -4326,7 +4939,7 @@ var leadSourceChart = null;
       statusList.innerHTML = projectStatuses.map(function (label, idx) {
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">' +
           '<span>' + label + '</span>' +
-          '<button type="button" class="btn" data-status-del="' + idx + '" style="font-size:11px;padding:3px 8px;color:var(--red);">Remove</button>' +
+          '<button type="button" class="btn" data-status-del="' + idx + '" style="color:var(--red);">Remove</button>' +
         '</div>';
       }).join('');
     }
@@ -4564,8 +5177,19 @@ var leadSourceChart = null;
     endInput.addEventListener('change', applyFilter);
   }
 
+  // Serialize runs so a pre-auth no-op init cannot overlap with post-login sync.
+  var initDataFromSupabaseChain = Promise.resolve();
+  function initDataFromSupabase() {
+    initDataFromSupabaseChain = initDataFromSupabaseChain.then(function () {
+      return initDataFromSupabaseInner();
+    }).catch(function (err) {
+      console.error('initDataFromSupabase error', err);
+    });
+    return initDataFromSupabaseChain;
+  }
+
   // Initialize dashboard data from Supabase when available, falling back to local storage.
-  async function initDataFromSupabase() {
+  async function initDataFromSupabaseInner() {
     try {
       supabase = window.supabaseClient || supabase;
       currentUser = window.currentUser || currentUser;
@@ -4599,7 +5223,20 @@ var leadSourceChart = null;
           state.transactions = omitLocallyDeletedTransactions(state.transactions);
           pruneDeletedTxMarksAbsentFromRemote(remoteTxs);
         }
-        if (remoteClients.length) clients = mergeClientsPreserveRetainer(clients, remoteClients);
+
+        var remoteClientIdSet = {};
+        (remoteClients || []).forEach(function (c) {
+          if (c && c.id) remoteClientIdSet[c.id] = true;
+        });
+        clients = mergeClientsPreserveRetainer(clients, remoteClients);
+        var localOnlyClients = clients.filter(function (c) {
+          return c && c.id && !remoteClientIdSet[c.id];
+        });
+        if (localOnlyClients.length) {
+          await uploadClientsToSupabase(localOnlyClients);
+          remoteClients = await fetchClientsFromSupabase();
+          clients = mergeClientsPreserveRetainer(clients, remoteClients);
+        }
 
         var remoteProjects = await fetchProjectsFromSupabase();
         if (!remoteProjects.length && projects.length) {
@@ -4687,6 +5324,7 @@ var leadSourceChart = null;
     wireInvoicePreviewModal();
     wireProjectsAndStatuses();
     wireFilter();
+    wireSpendingReport();
     wireMarketingCampaign();
 
     // Simple page navigation wiring to replace the original bundle's nav().
@@ -4733,8 +5371,8 @@ var leadSourceChart = null;
       if (ev.key === 'Escape') document.body.classList.remove('mobile-nav-open');
     });
 
-    // After wiring UI, load data from Supabase (or local fallback)
-    if (typeof initDataFromSupabase === 'function') {
+    // Load data only when session is already present (auth also calls init after login).
+    if (typeof initDataFromSupabase === 'function' && window.currentUser && window.supabaseClient) {
       initDataFromSupabase();
     }
   }
