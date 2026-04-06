@@ -5161,6 +5161,12 @@ var spendReportUi = {
     return new Date().toISOString().slice(0, 10);
   }
 
+  /** Local calendar YYYY-MM-DD (matches expandRecurringExpenseInstances "today"). */
+  function todayLocalYMD() {
+    var now = new Date();
+    return dateYMD(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0));
+  }
+
   function dateYMD(d) {
     var y = d.getFullYear();
     var m = String(d.getMonth() + 1).padStart(2, '0');
@@ -5240,8 +5246,7 @@ var spendReportUi = {
   }
 
   function expandRecurringExpenseInstances() {
-    var today = new Date();
-    var todayStr = dateYMD(new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0));
+    var todayStr = todayLocalYMD();
     var futureInstanceIds = (state.transactions || []).filter(function (t) {
       return t && t.expenseRecurrenceInstance && t.date && t.date > todayStr;
     }).map(function (t) { return t.id; });
@@ -5266,6 +5271,11 @@ var spendReportUi = {
       var dates = rule.repeat === 'weekly'
         ? generateWeeklyOccurrenceDates(rule, rule.startDate, endCap)
         : generateMonthlyOccurrenceDates(rule, rule.startDate, endCap);
+      // No legacy backfill: only auto-create instances on/after the day the user turned on recurring.
+      var notBefore = rule.materializeNotBefore;
+      if (notBefore && typeof notBefore === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(notBefore)) {
+        dates = dates.filter(function (iso) { return iso >= notBefore; });
+      }
       var existing = {};
       state.transactions.forEach(function (t) {
         if (t.recurrenceSeriesId === lead.recurrenceSeriesId && t.date) existing[t.date] = true;
@@ -5765,6 +5775,11 @@ var spendReportUi = {
               next.recurrenceSeriesId = (prevTx && prevTx.recurrenceSeriesId) ? prevTx.recurrenceSeriesId : uuid();
               next.expenseRecurringLead = true;
               next.recurrence = readExpenseRecurrenceRuleFromUi(date);
+              if (prevTx && prevTx.recurrence && prevTx.recurrence.materializeNotBefore) {
+                next.recurrence.materializeNotBefore = prevTx.recurrence.materializeNotBefore;
+              } else {
+                next.recurrence.materializeNotBefore = todayLocalYMD();
+              }
               next.recurring = true;
             } else {
               if (prevTx && prevTx.expenseRecurrenceInstance) {
@@ -5785,6 +5800,8 @@ var spendReportUi = {
         } else {
           if (recurring) {
             var seriesId = uuid();
+            var recRule = readExpenseRecurrenceRuleFromUi(date);
+            recRule.materializeNotBefore = todayLocalYMD();
             addTransaction({
               id: uuid(),
               date: date,
@@ -5797,7 +5814,7 @@ var spendReportUi = {
               clientId: expenseClientId,
               recurrenceSeriesId: seriesId,
               expenseRecurringLead: true,
-              recurrence: readExpenseRecurrenceRuleFromUi(date),
+              recurrence: recRule,
               recurring: true,
             });
             expandRecurringExpenseInstances();

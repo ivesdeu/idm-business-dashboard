@@ -40,6 +40,8 @@
     --blue-bg:  var(--neutral-bg);
     --r: 6px; --rl: 8px; --rs: 6px;
     --font-sans: "Helvetica Now Pro Display Medium", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    /* Custom <select> chevron (Safari uses heavy native chrome unless appearance is reset) */
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath stroke='%23626262' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
   }
   /* Host Medium .woff2/.woff in public/fonts/ (rename to match) or rely on local() if the font is installed. */
   @font-face {
@@ -209,7 +211,32 @@
   .td-sub { display:block; font-size:0.75rem; font-weight:400; opacity:0.72; margin-top:2px; line-height:1.35; }
 
   .dt .btn { font-size:0.75rem; padding:5px 10px; border-radius:6px; font-weight:500; }
-  .dt select.fi,
+  .dt select.fi {
+    border-radius:6px;
+    background-color:transparent;
+    background-image: var(--select-chevron);
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 11px;
+    -webkit-appearance: none;
+    appearance: none;
+    border-color:transparent;
+    box-shadow:none;
+    font-size:0.875rem;
+    font-weight:400;
+    padding:6px 28px 6px 8px;
+    min-height:36px;
+  }
+  .dt select.fi:hover {
+    border-color:var(--border);
+    background-color:var(--bg3);
+    background-image: var(--select-chevron);
+  }
+  .dt select.fi:focus {
+    border-color:var(--border2);
+    background-color:var(--bg2);
+    background-image: var(--select-chevron);
+  }
   .dt .project-row-status,
   .dt .fi.project-row-status {
     border-radius:6px;
@@ -221,13 +248,11 @@
     padding:6px 8px;
     min-height:36px;
   }
-  .dt select.fi:hover,
   .dt .project-row-status:hover,
   .dt .fi.project-row-status:hover {
     border-color:var(--border);
     background:var(--bg3);
   }
-  .dt select.fi:focus,
   .dt .project-row-status:focus,
   .dt .fi.project-row-status:focus {
     border-color:var(--border2);
@@ -268,8 +293,19 @@
   .fg { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .fgp { display:flex; flex-direction:column; gap:5px; }
   .fl { font-size:0.75rem; color:var(--text3); font-weight:500; }
-  .fi { background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.875rem; outline:none; transition:border-color .15s,background .15s,box-shadow .15s; width:100%; }
-  .fi:focus { border-color:var(--coral); background:var(--bg2); box-shadow:0 0 0 3px var(--coral-bg); }
+  .fi { background-color:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.875rem; outline:none; transition:border-color .15s,background-color .15s,box-shadow .15s; width:100%; }
+  .fi:focus { border-color:var(--coral); background-color:var(--bg2); box-shadow:0 0 0 3px var(--coral-bg); }
+  /* WebKit/Safari: draw selects like other browsers (flat field + chevron, not Aqua control) */
+  select.fi {
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    background-image: var(--select-chevron);
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 12px;
+    padding-right: 34px;
+  }
   .fst { font-size:0.875rem; font-weight:600; color:var(--text); margin-bottom:14px; margin-top:4px; }
 
   /* MODAL */
@@ -521,6 +557,7 @@
   .spend-dd { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .spend-dd-lbl { font-size: 11px; font-weight: 500; color: var(--text3); letter-spacing: 0.02em; }
   .spend-dd .fi { width: auto; min-width: 118px; font-size: 13px; padding: 7px 10px; }
+  .spend-dd select.fi { padding: 7px 32px 7px 10px; background-position: right 10px center; }
   .spend-download { padding: 7px 10px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; color: var(--text2); }
   .spend-download:hover { color: var(--text); }
   .spend-kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
