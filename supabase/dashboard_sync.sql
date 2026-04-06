@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
   project_statuses jsonb DEFAULT '[]'::jsonb,
   updated_at timestamptz DEFAULT now()
 );
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS dashboard_settings jsonb DEFAULT '{}'::jsonb;
 
 -- ---- RLS ----
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;

@@ -288,6 +288,12 @@
       Math.max(0, Number(s.ads) || 0) + Math.max(0, Number(s.oth) || 0);
   }
 
+  function saveBudgetMonthSnapshotsToStorage(snaps) {
+    try {
+      localStorage.setItem(BUDGET_MONTHS_KEY, JSON.stringify(snaps && typeof snaps === 'object' ? snaps : {}));
+    } catch (_) {}
+  }
+
   function saveBudgets(b) {
     var payload = {
       lab: Math.max(0, Number(b.lab) || 0),
@@ -309,7 +315,7 @@
         oth: payload.oth,
         savedAt: new Date().toISOString(),
       };
-      localStorage.setItem(BUDGET_MONTHS_KEY, JSON.stringify(snaps));
+      saveBudgetMonthSnapshotsToStorage(snaps);
     } catch (_) {}
   }
 
@@ -1219,17 +1225,150 @@
     }
   }
 
+  function collectDashboardSettingsForCloud() {
+    function gid(id) {
+      return document.getElementById(id);
+    }
+    function val(id) {
+      var el = gid(id);
+      return el ? String(el.value || '').trim() : '';
+    }
+    function numEl(id, def) {
+      var el = gid(id);
+      var n = el ? parseFloat(el.value) : NaN;
+      return isNaN(n) ? def : n;
+    }
+    var curEl = gid('setting-currency');
+    var fiscalEl = gid('setting-fiscal');
+    return {
+      business: {
+        name: val('setting-name'),
+        owner: val('setting-owner'),
+        email: val('setting-email'),
+        phone: val('setting-phone'),
+        address: val('setting-address'),
+        period: val('setting-period'),
+        accent: val('setting-accent') || '#e8501a',
+        terms: Math.max(0, Math.round(numEl('setting-terms', 30))),
+        tax: Math.max(0, numEl('setting-tax', 0)),
+        currency: curEl && curEl.value ? curEl.value : 'USD',
+        fiscal: fiscalEl && fiscalEl.value ? fiscalEl.value : 'January',
+      },
+      budgets: {
+        lab: Math.max(0, Number(budgets.lab) || 0),
+        sw: Math.max(0, Number(budgets.sw) || 0),
+        ads: Math.max(0, Number(budgets.ads) || 0),
+        oth: Math.max(0, Number(budgets.oth) || 0),
+      },
+      budgetMonths: loadBudgetMonthSnapshots(),
+    };
+  }
+
+  function refreshSettingsBudgetInputsFromState() {
+    ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
+      var el = document.getElementById('budget-input-' + k);
+      if (el) el.value = budgets[k] > 0 ? String(budgets[k]) : '';
+    });
+  }
+
+  function mergeDashboardSettingsForPersist(prevDash, nextDash) {
+    if (!prevDash || typeof prevDash !== 'object') return nextDash;
+    var pb = prevDash.business && typeof prevDash.business === 'object' ? prevDash.business : {};
+    var nb = nextDash.business && typeof nextDash.business === 'object' ? nextDash.business : {};
+    var mergedBusiness = Object.assign({}, pb);
+    ['name', 'owner', 'email', 'phone', 'address', 'period', 'accent', 'currency', 'fiscal'].forEach(function (k) {
+      var nv = nb[k];
+      if (nv != null && String(nv).trim()) mergedBusiness[k] = nv;
+    });
+    mergedBusiness.terms = nb.terms != null ? nb.terms : pb.terms != null ? pb.terms : 30;
+    mergedBusiness.tax = nb.tax != null ? nb.tax : pb.tax != null ? pb.tax : 0;
+    return {
+      business: mergedBusiness,
+      budgets: nextDash.budgets && typeof nextDash.budgets === 'object' ? nextDash.budgets : { lab: 0, sw: 0, ads: 0, oth: 0 },
+      budgetMonths: Object.assign({}, prevDash.budgetMonths || {}, nextDash.budgetMonths || {}),
+    };
+  }
+
+  function applyDashboardSettingsFromCloud(raw) {
+    if (raw == null || typeof raw !== 'object') return;
+    if (!raw.business && !raw.budgets && !raw.budgetMonths) return;
+    var biz = raw.business;
+    if (biz && typeof biz === 'object') {
+      function gid(id) {
+        return document.getElementById(id);
+      }
+      function setv(id, v) {
+        var el = gid(id);
+        if (!el || v == null) return;
+        el.value = v;
+      }
+      if (biz.name != null) setv('setting-name', biz.name);
+      if (biz.owner != null) setv('setting-owner', biz.owner);
+      if (biz.email != null) setv('setting-email', biz.email);
+      if (biz.phone != null) setv('setting-phone', biz.phone);
+      if (biz.address != null) setv('setting-address', biz.address);
+      if (biz.period != null) setv('setting-period', biz.period);
+      if (biz.accent) setv('setting-accent', biz.accent);
+      if (biz.terms != null) setv('setting-terms', String(biz.terms));
+      if (biz.tax != null) setv('setting-tax', String(biz.tax));
+      var cur = gid('setting-currency');
+      if (cur && biz.currency) cur.value = biz.currency;
+      var fis = gid('setting-fiscal');
+      if (fis && biz.fiscal) fis.value = biz.fiscal;
+    }
+    if (raw.budgets && typeof raw.budgets === 'object') {
+      ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
+        if (raw.budgets[k] == null) return;
+        budgets[k] = Math.max(0, Number(raw.budgets[k]) || 0);
+      });
+      try {
+        localStorage.setItem(
+          BUDGETS_KEY,
+          JSON.stringify({
+            lab: budgets.lab,
+            sw: budgets.sw,
+            ads: budgets.ads,
+            oth: budgets.oth,
+          })
+        );
+      } catch (_) {}
+    }
+    if (raw.budgetMonths && typeof raw.budgetMonths === 'object') {
+      saveBudgetMonthSnapshotsToStorage(raw.budgetMonths);
+    }
+    refreshSettingsBudgetInputsFromState();
+  }
+
   async function persistAppSettingsToSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser) return;
     try {
-      var result = await supabase.from('app_settings').upsert({
-        user_id: currentUser.id,
-        project_statuses: projectStatuses,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
-      if (result.error) console.error('upsert app_settings error', result.error);
+      var dash = collectDashboardSettingsForCloud();
+      try {
+        var existingSettings = await fetchAppSettingsFromSupabase();
+        if (existingSettings && existingSettings.dashboard_settings) {
+          dash = mergeDashboardSettingsForPersist(existingSettings.dashboard_settings, dash);
+        }
+      } catch (_) {}
+      var result = await supabase.from('app_settings').upsert(
+        {
+          user_id: currentUser.id,
+          project_statuses: projectStatuses,
+          dashboard_settings: dash,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+      if (result.error) {
+        console.error('upsert app_settings error', result.error);
+        var errStr = JSON.stringify(result.error || {});
+        if (/dashboard_settings|schema|column|42703/i.test(errStr)) {
+          console.warn(
+            'bizdash: add column dashboard_settings to app_settings — run supabase/add_app_settings_dashboard_settings.sql in the Supabase SQL editor.'
+          );
+        }
+      }
     } catch (err) {
       console.error('persistAppSettingsToSupabase error', err);
     }
@@ -1373,18 +1512,37 @@
 
   var TX_RECURRENCE_KEYS = ['recurrence', 'recurrenceSeriesId', 'expenseRecurringLead', 'expenseRecurrenceInstance', 'recurring'];
 
+  function remoteHasExpenseRecurrenceMeta(t) {
+    if (!t) return false;
+    if (t.recurrenceSeriesId) return true;
+    if (t.expenseRecurringLead === true || t.expenseRecurrenceInstance === true) return true;
+    if (t.recurrence && typeof t.recurrence === 'object' && Object.keys(t.recurrence).length) return true;
+    if (t.recurring === true) return true;
+    return false;
+  }
+
   function mergeTransactionsPreserveRecurrence(prevList, remoteList) {
     var prevById = {};
     (prevList || []).forEach(function (t) {
       if (t && t.id) prevById[t.id] = t;
     });
+    function textMissing(v) {
+      return v == null || !String(v).trim();
+    }
     return (remoteList || []).map(function (t) {
       var p = prevById[t.id];
       if (!p) return t;
       var next = Object.assign({}, t);
-      TX_RECURRENCE_KEYS.forEach(function (k) {
-        if (Object.prototype.hasOwnProperty.call(p, k)) next[k] = p[k];
-      });
+      if (textMissing(next.title) && !textMissing(p.title)) next.title = p.title;
+      if (textMissing(next.vendor) && !textMissing(p.vendor)) next.vendor = p.vendor;
+      if (textMissing(next.notes) && !textMissing(p.notes)) next.notes = p.notes;
+      if (textMissing(next.source) && !textMissing(p.source)) next.source = p.source;
+      // Prefer cloud copy for recurring metadata so a stale local row cannot wipe synced fields.
+      if (!remoteHasExpenseRecurrenceMeta(t)) {
+        TX_RECURRENCE_KEYS.forEach(function (k) {
+          if (Object.prototype.hasOwnProperty.call(p, k)) next[k] = p[k];
+        });
+      }
       return next;
     });
   }
@@ -3052,13 +3210,14 @@ var spendReportUi = {
 
     var saveBtn = document.getElementById('btn-save-settings');
     if (saveBtn) {
-      saveBtn.addEventListener('click', function () {
+      saveBtn.addEventListener('click', async function () {
         ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
           var el = document.getElementById('budget-input-' + k);
           if (el) budgets[k] = Math.max(0, parseFloat(el.value) || 0);
         });
         saveBudgets(budgets);
         recomputeAndRender();
+        await persistAppSettingsToSupabase();
         // Brief visual confirmation
         var orig = saveBtn.textContent;
         saveBtn.textContent = 'Saved!';
@@ -6335,6 +6494,7 @@ var spendReportUi = {
         syncBtn.textContent = 'Syncing…';
         try {
           await initDataFromSupabase();
+          await persistAppSettingsToSupabase();
           refreshCloudSyncStatus();
           syncBtn.textContent = 'Done';
           setTimeout(function () { syncBtn.textContent = label || 'Sync'; }, 1800);
@@ -6917,6 +7077,9 @@ var spendReportUi = {
         }
 
         var settingsRow = await fetchAppSettingsFromSupabase();
+        if (settingsRow && settingsRow.dashboard_settings) {
+          applyDashboardSettingsFromCloud(settingsRow.dashboard_settings);
+        }
         if (settingsRow && Array.isArray(settingsRow.project_statuses) && settingsRow.project_statuses.length) {
           projectStatuses = settingsRow.project_statuses.map(function (s) { return String(s); }).filter(Boolean);
           saveStatuses(projectStatuses);
