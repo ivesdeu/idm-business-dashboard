@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS public.clients (
   notes text,
   total_revenue numeric DEFAULT 0,
   created_at timestamptz DEFAULT now(),
-  is_retainer boolean DEFAULT false
+  is_retainer boolean DEFAULT false,
+  metadata jsonb DEFAULT '{}'::jsonb
 );
 CREATE INDEX IF NOT EXISTS clients_user_id_idx ON public.clients (user_id);
 
@@ -88,6 +89,7 @@ BEGIN
   IF to_regclass('public.clients') IS NOT NULL THEN
     ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS industry text;
     ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS is_retainer boolean DEFAULT false;
+    ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT '{}'::jsonb;
   END IF;
 END $cl$;
 

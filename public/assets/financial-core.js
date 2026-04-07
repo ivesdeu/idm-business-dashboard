@@ -87,6 +87,31 @@
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || '').trim());
   }
 
+  function buildClientMetadata(client) {
+    var out = {};
+    if (client.custTabRevenue != null && isFinite(Number(client.custTabRevenue))) {
+      out.custTabRevenue = Math.max(0, Number(client.custTabRevenue));
+    }
+    if (client.custTabAllocatedCost != null && isFinite(Number(client.custTabAllocatedCost))) {
+      out.custTabAllocatedCost = Math.max(0, Number(client.custTabAllocatedCost));
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  function applyClientMetadata(client, meta) {
+    var out = Object.assign({}, client);
+    delete out.custTabRevenue;
+    delete out.custTabAllocatedCost;
+    if (!meta || typeof meta !== 'object') return out;
+    if (meta.custTabRevenue != null && isFinite(Number(meta.custTabRevenue))) {
+      out.custTabRevenue = Math.max(0, Number(meta.custTabRevenue));
+    }
+    if (meta.custTabAllocatedCost != null && isFinite(Number(meta.custTabAllocatedCost))) {
+      out.custTabAllocatedCost = Math.max(0, Number(meta.custTabAllocatedCost));
+    }
+    return out;
+  }
+
   function buildClientDbPayload(client, userId) {
     var rev = Number(client.totalRevenue);
     if (!isFinite(rev)) rev = 0;
@@ -97,7 +122,7 @@
     } catch (_) {
       createdIso = new Date().toISOString();
     }
-    return {
+    var row = {
       id: client.id,
       user_id: userId,
       company_name: client.companyName,
@@ -111,6 +136,9 @@
       created_at: createdIso,
       is_retainer: client.retainer === true,
     };
+    var cmeta = buildClientMetadata(client);
+    row.metadata = cmeta || {};
+    return row;
   }
 
   function uuid() {
@@ -520,6 +548,11 @@
         if (!changed && /is_retainer/i.test(errStr) && Object.prototype.hasOwnProperty.call(body, 'is_retainer')) {
           delete body.is_retainer;
           changed = true;
+        }
+        if (!changed && (/metadata|schema cache|could not find.*column/i.test(errStr)) && Object.prototype.hasOwnProperty.call(body, 'metadata')) {
+          delete body.metadata;
+          changed = true;
+          console.warn('bizdash: retrying client persist without metadata — run ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT \'{}\'::jsonb;');
         }
         if (!changed) {
           persistClientLastError = formatSupabaseErr(result.error);
@@ -1463,7 +1496,17 @@
     var fromStatus = st.toLowerCase().indexOf('retain') !== -1;
     var ex = row.is_retainer;
     var retainer = ex === true || ex === false ? ex : fromStatus;
-    return {
+    var metaRaw = row.metadata;
+    var meta = typeof metaRaw === 'string'
+      ? (function () {
+        try {
+          return JSON.parse(metaRaw);
+        } catch (_) {
+          return null;
+        }
+      })()
+      : metaRaw;
+    var base = {
       id: row.id,
       companyName: row.company_name || '',
       contactName: row.contact_name || '',
@@ -1476,6 +1519,7 @@
       createdAt: row.created_at || null,
       retainer: retainer,
     };
+    return applyClientMetadata(base, meta);
   }
 
   /**
@@ -3866,13 +3910,13 @@ var spendReportUi = {
     // ---- MRR from retainer clients ----
     var retainerClients = clients.filter(clientIsRetainer);
     var mrr = retainerClients.reduce(function (sum, c) {
-      var rev = clientRevenueFromTransactions(c.id);
+      var rev = effectiveClientRevenue(c);
       return sum + (rev > 0 ? rev / Math.max(1, series.length) : 0);
     }, 0);
 
     // ---- Top client ----
     var clientRevs = clients.map(function (c) {
-      return { client: c, rev: clientRevenueFromTransactions(c.id) };
+      return { client: c, rev: effectiveClientRevenue(c) };
     }).filter(function (x) { return x.rev > 0; }).sort(function (a, b) { return b.rev - a.rev; });
     var topClient = clientRevs[0] || null;
 
@@ -4295,7 +4339,7 @@ var spendReportUi = {
     var clientsEmpty = document.getElementById('ins-clients-empty');
     if (clientsTbody) {
       var sortedClients = clients.slice().sort(function (a, b) {
-        return clientRevenueFromTransactions(b.id) - clientRevenueFromTransactions(a.id);
+        return effectiveClientRevenue(b) - effectiveClientRevenue(a);
       });
       if (!sortedClients.length) {
         if (clientsEmpty) clientsEmpty.style.display = 'block';
@@ -4304,7 +4348,7 @@ var spendReportUi = {
         if (clientsEmpty) clientsEmpty.style.display = 'none';
         if (clientsTable) clientsTable.style.display = 'table';
         clientsTbody.innerHTML = sortedClients.map(function (c) {
-          var rev = clientRevenueFromTransactions(c.id);
+          var rev = effectiveClientRevenue(c);
           var pcount = clientProjectCount(c.id);
           var incomeTxs = allTxs.filter(function (tx) {
             return tx.clientId === c.id && (tx.category === 'svc' || tx.category === 'ret') && tx.date;
@@ -4342,7 +4386,7 @@ var spendReportUi = {
           });
           var lastDate = incomeTxs.map(function (tx) { return tx.date; }).sort().pop();
           var daysSince = Math.floor((parseYMD(todayStr) - parseYMD(lastDate)) / 86400000);
-          var rev = clientRevenueFromTransactions(c.id);
+          var rev = effectiveClientRevenue(c);
           return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg2);">' +
             '<div>' +
               '<div style="font-weight:600;font-size:14px;">' + esc(c.companyName || c.contactName || '—') + '</div>' +
@@ -5112,6 +5156,22 @@ var spendReportUi = {
     return sum;
   }
 
+  /** Revenue shown on Customers tab: optional manual amount, else sum of linked income. */
+  function effectiveClientRevenue(c) {
+    if (!c || !c.id) return 0;
+    if (c.custTabRevenue != null && isFinite(Number(c.custTabRevenue))) return Math.max(0, Number(c.custTabRevenue));
+    return clientRevenueFromTransactions(c.id);
+  }
+
+  /** Allocated cost on Customers tab: optional manual amount, else sum of linked expenses. */
+  function effectiveClientAllocatedCost(c) {
+    if (!c || !c.id) return 0;
+    if (c.custTabAllocatedCost != null && isFinite(Number(c.custTabAllocatedCost))) {
+      return Math.max(0, Number(c.custTabAllocatedCost));
+    }
+    return clientAllocatedCostFromTransactions(c.id);
+  }
+
   function clientCompanyNameById(clientId) {
     if (!clientId) return '';
     var c = clients.find(function (x) { return x.id === clientId; });
@@ -5136,7 +5196,7 @@ var spendReportUi = {
     var total = clients.length;
     var activeRetainers = clients.filter(clientIsRetainer).length;
     var totalRevenue = clients.reduce(function (sum, c) {
-      return sum + clientRevenueFromTransactions(c.id);
+      return sum + effectiveClientRevenue(c);
     }, 0);
     var avgValue = total ? totalRevenue / total : 0;
     return {
@@ -5160,13 +5220,15 @@ var spendReportUi = {
       if (empty) empty.style.display = 'none';
       if (table) table.style.display = 'table';
       tbody.innerHTML = clients.map(function (c) {
-        var rev = clientRevenueFromTransactions(c.id);
-        var cost = clientAllocatedCostFromTransactions(c.id);
+        var rev = effectiveClientRevenue(c);
+        var cost = effectiveClientAllocatedCost(c);
         var pr = fmtProfitMarginRoi(rev, cost);
         var profitStyle = 'font-variant-numeric:tabular-nums;';
         if (pr.profit < 0) profitStyle += 'color:var(--red);';
         else if (pr.profit > 0) profitStyle += 'color:var(--green);';
         var pcount = clientProjectCount(c.id);
+        var revTitle = c.custTabRevenue != null ? ' title="Custom revenue — edit client to change"' : '';
+        var costTitle = c.custTabAllocatedCost != null ? ' title="Custom allocated cost — edit client to change"' : '';
         return '<tr>' +
           '<td class="tdp">' + (c.companyName || '—') + '</td>' +
           '<td>' + (c.contactName || '—') + '</td>' +
@@ -5176,8 +5238,8 @@ var spendReportUi = {
             (clientIsRetainer(c) ? ' <span style="font-size:10px;font-weight:600;color:var(--coral);white-space:nowrap;">Retainer</span>' : '') +
           '</td>' +
           '<td>' + (pcount ? String(pcount) : '—') + '</td>' +
-          '<td>' + fmtCurrency(rev) + '</td>' +
-          '<td>' + fmtCurrency(cost) + '</td>' +
+          '<td' + revTitle + ' style="font-variant-numeric:tabular-nums;">' + fmtCurrency(rev) + '</td>' +
+          '<td' + costTitle + ' style="font-variant-numeric:tabular-nums;">' + fmtCurrency(cost) + '</td>' +
           '<td class="tdp" style="' + profitStyle + '">' + fmtCurrency(pr.profit) + '</td>' +
           '<td>' + pr.marginStr + '</td>' +
           '<td>' + pr.roiStr + '</td>' +
@@ -6246,6 +6308,10 @@ var spendReportUi = {
           $('client-email').value = client.email || '';
           $('client-phone').value = client.phone || '';
           $('client-notes').value = client.notes || '';
+          var cr = $('client-cust-revenue');
+          var cc = $('client-cust-cost');
+          if (cr) cr.value = client.custTabRevenue != null ? String(client.custTabRevenue) : '';
+          if (cc) cc.value = client.custTabAllocatedCost != null ? String(client.custTabAllocatedCost) : '';
           var retCb = $('client-retainer');
           if (retCb) retCb.checked = client.retainer === true;
           m.classList.add('on');
@@ -6628,6 +6694,10 @@ var spendReportUi = {
       $('client-email').value = '';
       $('client-phone').value = '';
       $('client-notes').value = '';
+      var cr = $('client-cust-revenue');
+      var cc = $('client-cust-cost');
+      if (cr) cr.value = '';
+      if (cc) cc.value = '';
       var retCb = $('client-retainer');
       if (retCb) retCb.checked = false;
       populateClientIndustryDatalist();
@@ -6654,6 +6724,16 @@ var spendReportUi = {
         supabase = window.supabaseClient || supabase;
         currentUser = window.currentUser || currentUser;
 
+        function parseCustTabMoney(el) {
+          if (!el) return null;
+          var s = String(el.value || '').trim();
+          if (s === '') return null;
+          var n = parseFloat(s);
+          return isNaN(n) ? null : Math.max(0, n);
+        }
+        var custRev = parseCustTabMoney($('client-cust-revenue'));
+        var custCost = parseCustTabMoney($('client-cust-cost'));
+
         if (existingId) {
           var clientsSnapshot = JSON.stringify(clients);
           clients = clients.map(function (c) {
@@ -6671,6 +6751,8 @@ var spendReportUi = {
               createdAt: c.createdAt || Date.now(),
               retainer: !!retainerChecked,
             };
+            if (custRev != null) client.custTabRevenue = custRev;
+            if (custCost != null) client.custTabAllocatedCost = custCost;
             return client;
           });
           saveClients(clients);
@@ -6707,6 +6789,8 @@ var spendReportUi = {
             createdAt: Date.now(),
             retainer: !!retainerChecked,
           };
+          if (custRev != null) client.custTabRevenue = custRev;
+          if (custCost != null) client.custTabAllocatedCost = custCost;
           var addSync = await persistClientToSupabase(client, 'insert');
           if (addSync === 'skipped') {
             alert('Could not save this client: you are not signed in or your session expired.\n\n' + (persistClientLastError || 'Sign in again and retry.'));

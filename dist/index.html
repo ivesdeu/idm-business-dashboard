@@ -779,7 +779,7 @@
 
   <!-- CUSTOMERS -->
   <div class="pg" id="page-customers">
-    <div class="ph"><div><div class="pt">Customers</div><div class="ps">All active clients and pipeline. Allocated cost sums expenses you tag to each client on the Expenses page; untagged expenses are firm-wide only.</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
+    <div class="ph"><div><div class="pt">Customers</div><div class="ps">All active clients and pipeline. Allocated cost sums expenses you tag to each client on the Expenses page; untagged expenses are firm-wide only. To override revenue or cost in the table, edit a client and set custom amounts under <strong>Customers tab</strong>.</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
     <div class="kg" style="grid-template-columns:repeat(3,1fr);">
       <div class="kc"><div class="kl">Total Clients</div><div class="kv" id="cust-kpi-1">0</div><div class="kb bn" id="cust-kpi-1b">—</div></div>
       <div class="kc hi"><div class="kl">Active Retainers</div><div class="kv" id="cust-kpi-2">0</div><div class="kb bn" id="cust-kpi-2b">—</div></div>
@@ -1281,6 +1281,14 @@
       <div class="fgp"><label class="fl">Email</label><input class="fi" id="client-email" type="email" /></div>
       <div class="fgp"><label class="fl">Phone</label><input class="fi" id="client-phone" /></div>
       <div class="fgp" style="grid-column:1/-1;"><label class="fl">Notes</label><textarea class="fi" id="client-notes" rows="2" style="min-height:56px;resize:vertical;"></textarea></div>
+      <div class="fgp" style="grid-column:1/-1;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="fl" style="margin-bottom:4px;">Customers tab (optional)</div>
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px;line-height:1.45;">Leave blank to use income and expenses linked to this client. Enter amounts to show fixed revenue and/or allocated cost in the Customers table; profit and margin update automatically.</p>
+        <div class="fg" style="grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="fgp"><label class="fl">Custom revenue</label><input class="fi" id="client-cust-revenue" type="number" min="0" step="0.01" placeholder="Auto from income" /></div>
+          <div class="fgp"><label class="fl">Custom allocated cost</label><input class="fi" id="client-cust-cost" type="number" min="0" step="0.01" placeholder="Auto from expenses" /></div>
+        </div>
+      </div>
     </div>
     <div class="mf" style="border-top:none;padding-top:0;margin-top:0;">
       <button type="button" class="btn" id="btn-client-cancel">Cancel</button>

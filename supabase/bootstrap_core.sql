@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS public.clients (
   notes text,
   total_revenue numeric DEFAULT 0,
   created_at timestamptz DEFAULT now(),
-  is_retainer boolean DEFAULT false
+  is_retainer boolean DEFAULT false,
+  metadata jsonb DEFAULT '{}'::jsonb
 );
 CREATE INDEX IF NOT EXISTS clients_user_id_idx ON public.clients (user_id);
 
