@@ -4,6 +4,9 @@
 (function () {
   'use strict';
 
+  /** Minimum time to show the “thinking” state before revealing the reply (ms). */
+  var THINKING_MIN_MS = 2500;
+
   var WELCOME =
     'Hi — I’m a built-in helper for this dashboard.\n\n' +
     'I can explain the Supabase schema, where things live in the repo, and how auth/build work. ' +
@@ -217,6 +220,35 @@
     div.textContent = text;
     logEl.appendChild(div);
     logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function delay(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  function appendThinkingBubble(logEl) {
+    var div = document.createElement('div');
+    div.className = 'chat-msg asst chat-msg-thinking';
+    div.setAttribute('aria-busy', 'true');
+    div.setAttribute('aria-label', 'Assistant is thinking');
+    var inner = document.createElement('div');
+    inner.className = 'chat-thinking-inner';
+    var lab = document.createElement('span');
+    lab.className = 'chat-thinking-label';
+    lab.textContent = 'Thinking';
+    var dots = document.createElement('span');
+    dots.className = 'chat-thinking-dots';
+    for (var i = 0; i < 3; i++) {
+      dots.appendChild(document.createElement('span'));
+    }
+    inner.appendChild(lab);
+    inner.appendChild(dots);
+    div.appendChild(inner);
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+    return div;
   }
 
   async function countRows(supabase, userId, table) {
@@ -545,6 +577,7 @@
     });
 
     var seeded = false;
+    var isThinking = false;
     function seedWelcome() {
       if (seeded) return;
       seeded = true;
@@ -552,6 +585,7 @@
     }
 
     async function handleSend(text) {
+      if (isThinking) return;
       var t = (text || '').trim();
       var hadImage = !!imagePreview;
       if (!t && !hadImage) return;
@@ -563,12 +597,36 @@
       ta.value = '';
       autoResizeTa();
       setImagePreview(null);
+      ta.blur();
 
-      appendBubble(logEl, 'asst', '…');
-      var pending = logEl.lastChild;
-      var out = await replyForQuestion(t, hadImage);
-      pending.textContent = out;
+      isThinking = true;
+      sendBtn.disabled = true;
+      var thinkingEl = appendThinkingBubble(logEl);
+
+      var t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+      var out;
+      try {
+        out = await replyForQuestion(t, hadImage);
+      } catch (err) {
+        out = 'Something went wrong while preparing a reply. Try again.';
+        if (typeof console !== 'undefined' && console.error) console.error(err);
+      }
+      var t1 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+      var elapsed = t1 - t0;
+      if (elapsed < THINKING_MIN_MS) {
+        await delay(THINKING_MIN_MS - elapsed);
+      }
+
+      thinkingEl.className = 'chat-msg asst';
+      thinkingEl.removeAttribute('aria-busy');
+      thinkingEl.removeAttribute('aria-label');
+      while (thinkingEl.firstChild) {
+        thinkingEl.removeChild(thinkingEl.firstChild);
+      }
+      thinkingEl.textContent = out;
+
       logEl.scrollTop = logEl.scrollHeight;
+      isThinking = false;
       syncSendDisabled();
     }
 

@@ -138,29 +138,63 @@
   .ps { font-size:0.875rem; font-weight:400; color:var(--text3); margin-top:6px; line-height:1.35; }
   .hr { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 
-  /* In-app assistant — ChatGPT-style prompt shell (vanilla port; no React/shadcn in this repo) */
-  .chat-page-body {
-    max-width: 42rem;
-    width: 100%;
-    margin: 0 auto;
-  }
-  .chat-card {
+  /* Chat — one centered shell (transcript + composer + chips), ChatGPT-style workspace */
+  #page-chat.pg.on {
     display: flex;
     flex-direction: column;
-    min-height: 12rem;
-    max-height: min(52vh, 30rem);
-    max-width: 42rem;
-    margin: 0 auto;
+    align-items: center;
+    padding-top: clamp(12px, 3vh, 36px);
+    min-height: calc(100dvh - 80px);
+    box-sizing: border-box;
+  }
+  .chat-shell {
     width: 100%;
-    padding: 0;
+    max-width: 44rem;
+    display: flex;
+    flex-direction: column;
+    min-height: min(76dvh, 42rem);
+    max-height: calc(100dvh - 96px);
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.07);
     overflow: hidden;
-    border-radius: var(--rl);
+  }
+  .chat-shell-header {
+    flex-shrink: 0;
+    padding: 16px 20px 14px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  .chat-shell-title {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    margin: 0;
+  }
+  .chat-shell-sub {
+    font-size: 0.8125rem;
+    color: var(--text2);
+    line-height: 1.45;
+    margin: 8px auto 0;
+    max-width: 34rem;
+  }
+  .chat-transcript {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
   }
   .chat-log {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 20px 22px;
+    overflow-anchor: none;
+    padding: 18px 20px;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -190,33 +224,53 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  /* Sticky composer: stays at bottom of .main viewport while messages scroll above */
-  .chat-composer-sticky {
-    position: sticky;
-    bottom: 0;
-    z-index: 35;
-    max-width: 42rem;
-    width: 100%;
-    margin: 12px auto 0;
-    padding: 12px 0 max(10px, env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(180deg, rgba(250, 250, 250, 0) 0%, var(--bg) 18px, var(--bg) 100%);
-    box-sizing: border-box;
+  .chat-msg-thinking {
+    white-space: normal;
   }
-  .chat-prompt-section {
+  .chat-thinking-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .chat-thinking-label {
+    font-size: 0.8125rem;
+    color: var(--text3);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+  .chat-thinking-dots {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    height: 20px;
+  }
+  .chat-thinking-dots span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text3);
+    animation: chatThinkingDot 1.05s ease-in-out infinite;
+  }
+  .chat-thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+  .chat-thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+  @keyframes chatThinkingDot {
+    0%, 70%, 100% { transform: translateY(0); opacity: 0.3; }
+    35% { transform: translateY(-6px); opacity: 1; }
+  }
+  .chat-composer-stack {
     flex-shrink: 0;
-    padding: 16px 18px 18px;
-    border: 1px solid var(--border);
-    border-radius: var(--rl);
+    padding: 20px 22px 8px;
     background: var(--bg2);
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.04);
+    border-top: 1px solid var(--border);
   }
   .chat-prompt-heading {
     text-align: center;
-    font-size: clamp(1.25rem, 3vw, 1.65rem);
+    font-size: clamp(1.125rem, 2.8vw, 1.5rem);
     font-weight: 600;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
     color: var(--text);
-    margin: 0 0 14px;
+    margin: 0 0 16px;
+    line-height: 1.2;
   }
   .chat-prompt-box {
     cursor: text;
@@ -225,13 +279,13 @@
     border-radius: 28px;
     padding: 8px;
     background: var(--bg2);
-    border: 1px solid var(--border);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--border2);
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.06);
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .chat-prompt-box:focus-within {
-    border-color: rgba(232, 80, 26, 0.28);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    border-color: rgba(232, 80, 26, 0.35);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   }
   .chat-file-input-hidden { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
   .chat-image-preview-wrap {
@@ -391,7 +445,7 @@
     height: 32px;
     border: none;
     border-radius: 999px;
-    background: #0a0a0a;
+    background: var(--coral);
     color: #fff;
     cursor: pointer;
     display: flex;
@@ -399,7 +453,7 @@
     justify-content: center;
     transition: opacity 0.15s, background 0.15s;
   }
-  .chat-prompt-send:hover:not(:disabled) { background: #262626; }
+  .chat-prompt-send:hover:not(:disabled) { background: var(--coral2); }
   .chat-prompt-send:disabled {
     opacity: 0.38;
     cursor: not-allowed;
@@ -446,8 +500,10 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 12px;
+    margin: 0;
+    padding: 6px 22px max(16px, env(safe-area-inset-bottom, 0px));
     justify-content: center;
+    background: var(--bg2);
   }
   .chat-chip {
     font-size: 12px;
@@ -464,6 +520,23 @@
     border-color: rgba(232, 80, 26, 0.35);
     color: var(--coral);
     background: var(--coral-bg);
+  }
+
+  @media (max-width: 960px) {
+    #page-chat.pg.on {
+      padding-left: 14px;
+      padding-right: 14px;
+      min-height: calc(100dvh - 124px);
+    }
+    .chat-shell {
+      max-height: calc(100dvh - 136px);
+      border-radius: 18px;
+      min-height: min(68dvh, 34rem);
+    }
+    .chat-shell-header { padding: 14px 16px 12px; }
+    .chat-log { padding: 14px 16px; }
+    .chat-composer-stack { padding: 16px 16px 6px; }
+    .chat-starters { padding-left: 16px; padding-right: 16px; }
   }
 
   /* BTN */
@@ -1552,21 +1625,18 @@
     <div class="ui-internal-facing card"><div style="font-size:13px;color:var(--text2);line-height:1.55;">No marketing data yet. Use Dashboard and Revenue for operational numbers.</div></div>
   </div>
 
-  <!-- CHAT (mock assistant: schema + code facts + live Supabase counts when signed in; no LLM API) -->
+  <!-- CHAT: single shell — transcript, composer, chips (ChatGPT-style workspace) -->
   <div class="pg" id="page-chat">
-    <div class="ph">
-      <div>
-        <div class="pt">Chat</div>
-        <div class="ps">Ask how the app is built, what lives in Supabase, or (when signed in) how many records you have. Replies use this codebase and your session—no external AI API key.</div>
+    <div class="chat-shell">
+      <header class="chat-shell-header">
+        <p class="chat-shell-title">Chat</p>
+        <p class="chat-shell-sub">Built-in helper: Supabase, your ledger, and repo facts. No external AI key—uses this app and your session.</p>
+      </header>
+      <div class="chat-transcript">
+        <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
       </div>
-    </div>
-    <div class="chat-page-body">
-    <div class="card chat-card">
-      <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
-    </div>
-    <div class="chat-composer-sticky">
-      <div class="chat-prompt-section">
-        <p class="chat-prompt-heading">How can I help you?</p>
+      <div class="chat-composer-stack">
+        <p class="chat-prompt-heading">Where should we begin?</p>
         <div class="chat-prompt-box" id="chat-prompt-box" role="group" aria-label="Message composer">
           <input type="file" id="chat-file-input" class="chat-file-input-hidden" accept="image/*" tabindex="-1" aria-hidden="true" />
           <div id="chat-image-preview-wrap" class="chat-image-preview-wrap" hidden>
@@ -1577,7 +1647,7 @@
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
-          <textarea id="chat-input" class="chat-prompt-ta" rows="1" placeholder="Message…" maxlength="2000" autocomplete="off"></textarea>
+          <textarea id="chat-input" class="chat-prompt-ta" rows="1" placeholder="Ask anything." maxlength="2000" autocomplete="off"></textarea>
           <div class="chat-prompt-toolbar">
             <button type="button" class="chat-prompt-icon-btn" id="chat-attach-btn" title="Attach image" aria-label="Attach image">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
@@ -1635,7 +1705,6 @@
         <button type="button" class="chat-chip" data-chat-q="How many clients do I have?">Count clients</button>
         <button type="button" class="chat-chip" data-chat-q="Where is the production build defined?">Build</button>
       </div>
-    </div>
     </div>
     <div class="chat-lightbox" id="chat-lightbox" hidden role="dialog" aria-modal="true" aria-label="Image preview">
       <button type="button" class="chat-lightbox-close" id="chat-lightbox-close" aria-label="Close">&times;</button>
