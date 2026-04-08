@@ -138,47 +138,48 @@
   .ps { font-size:0.875rem; font-weight:400; color:var(--text3); margin-top:6px; line-height:1.35; }
   .hr { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 
-  /* Chat — full-tab workspace */
+  /* Chat — flat workspace with docked composer */
   #page-chat.pg.on {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    padding: 0;
-    max-width: none;
-    margin: 0;
-    min-height: calc(100dvh - 74px);
+    padding-top: clamp(10px, 2vh, 18px);
+    min-height: calc(100dvh - 72px);
     box-sizing: border-box;
   }
   .chat-shell {
     width: 100%;
-    max-width: none;
+    max-width: 100%;
     display: flex;
     flex-direction: column;
-    min-height: calc(100dvh - 74px);
-    max-height: calc(100dvh - 74px);
-    background: var(--bg);
+    min-height: calc(100dvh - 170px);
+    max-height: none;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
   }
   .chat-shell-header {
     flex-shrink: 0;
-    padding: 14px 28px 12px;
+    padding: 4px 2px 14px;
     text-align: left;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
+    border-bottom: none;
+    background: transparent;
   }
   .chat-shell-title {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     color: var(--text3);
     margin: 0;
   }
   .chat-shell-sub {
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     color: var(--text2);
     line-height: 1.45;
     margin: 6px 0 0;
-    max-width: 56rem;
+    max-width: 68rem;
   }
   .chat-transcript {
     flex: 1;
@@ -192,33 +193,33 @@
     min-height: 0;
     overflow-y: auto;
     overflow-anchor: none;
-    padding: 20px 28px;
+    padding: 14px 2px 12px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    background: var(--bg);
+    gap: 12px;
+    background: transparent;
   }
   .chat-log::-webkit-scrollbar { width: 6px; }
   .chat-log::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
   .chat-msg {
-    max-width: min(78ch, 78%);
+    max-width: 92%;
     padding: 12px 14px;
-    border-radius: 14px;
+    border-radius: 12px;
     font-size: 0.875rem;
     line-height: 1.55;
     color: var(--text2);
   }
   .chat-msg.user {
     align-self: flex-end;
-    background: color-mix(in srgb, var(--coral) 14%, var(--bg2));
-    border: 1px solid color-mix(in srgb, var(--coral) 26%, var(--border));
+    background: var(--coral-bg);
+    border: 1px solid rgba(232, 80, 26, 0.14);
     color: var(--text);
     font-weight: 500;
   }
   .chat-msg.asst {
     align-self: flex-start;
-    background: transparent;
-    border: 1px solid transparent;
+    background: var(--bg2);
+    border: 1px solid var(--border);
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -257,9 +258,9 @@
   }
   .chat-composer-stack {
     flex-shrink: 0;
-    padding: 14px 28px 8px;
-    background: var(--bg);
-    border-top: 1px solid var(--border);
+    padding: 10px 0 6px;
+    background: transparent;
+    border-top: none;
   }
   .chat-prompt-heading {
     display: none;
@@ -268,11 +269,11 @@
     cursor: text;
     display: flex;
     flex-direction: column;
-    border-radius: 18px;
-    padding: 8px;
+    border-radius: 16px;
+    padding: 10px 12px 8px;
     background: var(--bg2);
-    border: 1px solid var(--border2);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border);
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.05);
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .chat-prompt-box:focus-within {
@@ -314,13 +315,13 @@
   .chat-image-preview-remove:hover { background: var(--bg3); }
   .chat-prompt-ta {
     width: 100%;
-    min-height: 48px;
+    min-height: 42px;
     max-height: 200px;
     resize: none;
     border: none;
     background: transparent;
-    padding: 12px 14px;
-    font-size: 0.9375rem;
+    padding: 10px 4px 8px;
+    font-size: 0.95rem;
     line-height: 1.45;
     color: var(--text);
     font-family: inherit;
@@ -332,7 +333,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-    padding: 4px 4px 2px;
+    padding: 2px 0 0;
     margin-top: 2px;
   }
   .chat-prompt-toolbar-spacer { flex: 1; min-width: 8px; }
@@ -493,33 +494,35 @@
     flex-wrap: wrap;
     gap: 8px;
     margin: 0;
-    padding: 6px 28px max(16px, env(safe-area-inset-bottom, 0px));
+    padding: 8px 0 max(10px, env(safe-area-inset-bottom, 0px));
     justify-content: flex-start;
-    background: var(--bg);
+    background: transparent;
   }
-  /* Keep the chat input anchored in flow for full-tab layout */
+  /* Typing mode: dock composer near viewport bottom like ChatGPT */
   #page-chat.chat-compose-docked .chat-shell {
-    padding-bottom: 0;
+    padding-bottom: 170px;
   }
   #page-chat.chat-compose-docked .chat-composer-stack {
-    position: static;
-    left: auto;
-    transform: none;
-    bottom: auto;
-    width: auto;
-    z-index: auto;
-    border: none;
-    border-radius: 0;
-    background: var(--bg);
-    box-shadow: none;
-    padding: 14px 28px 8px;
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    width: min(44rem, calc(100vw - 28px));
+    z-index: 130;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--bg2);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.14);
+    padding: 12px 14px 10px;
   }
-  #page-chat.chat-compose-docked .chat-prompt-heading { display: none; }
-  #page-chat.chat-compose-docked .chat-starters { display: flex; }
+  #page-chat.chat-compose-docked .chat-prompt-heading,
+  #page-chat.chat-compose-docked .chat-starters {
+    display: none;
+  }
   .chat-chip {
-    font-size: 12px;
-    padding: 7px 12px;
-    border-radius: 999px;
+    font-size: 11px;
+    padding: 6px 11px;
+    border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--bg2);
     color: var(--text2);
@@ -535,17 +538,19 @@
 
   @media (max-width: 960px) {
     #page-chat.pg.on {
-      min-height: calc(100dvh - 114px);
+      padding-left: 14px;
+      padding-right: 14px;
+      min-height: calc(100dvh - 112px);
     }
     .chat-shell {
-      max-height: calc(100dvh - 114px);
-      min-height: calc(100dvh - 114px);
+      max-height: none;
+      border-radius: 0;
+      min-height: calc(100dvh - 170px);
     }
-    .chat-shell-header { padding: 12px 16px 10px; }
-    .chat-log { padding: 14px 16px; }
-    .chat-msg { max-width: 92%; }
-    .chat-composer-stack { padding: 12px 16px 6px; }
-    .chat-starters { padding-left: 16px; padding-right: 16px; }
+    .chat-shell-header { padding: 4px 0 12px; }
+    .chat-log { padding: 10px 0; }
+    .chat-composer-stack { padding: 8px 0 4px; }
+    .chat-starters { padding-left: 0; padding-right: 0; }
   }
 
   /* BTN */
@@ -1766,18 +1771,6 @@
           </div>
           <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-top:10px;">
             Clients and transactions sync per signed-in account. Use the <strong>same email</strong> on each browser, then tap <strong>Sync</strong> to pull uploads from your other device.
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="fst">Demo Data</div>
-        <div class="fg">
-          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px;">
-            Load a realistic mock dataset (clients, projects, transactions, invoices, and campaigns) for demos.
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" class="btn btn-p" id="settings-btn-load-mock" style="font-size:12px;padding:8px 12px;">Load Mock Demo Data</button>
-            <button type="button" class="btn" id="settings-btn-reset-local" style="font-size:12px;padding:8px 12px;color:var(--red);">Clear Demo Data / Reset Workspace</button>
           </div>
         </div>
       </div>

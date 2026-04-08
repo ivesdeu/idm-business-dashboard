@@ -407,6 +407,8 @@
   }
 
   window.wireDashboardAssistant = function () {
+    var pageChat = document.getElementById('page-chat');
+    var composerStack = pageChat ? pageChat.querySelector('.chat-composer-stack') : null;
     var logEl = document.getElementById('chat-log');
     var ta = document.getElementById('chat-input');
     var sendBtn = document.getElementById('chat-send');
@@ -433,6 +435,15 @@
 
     var imagePreview = null;
     var selectedTool = null;
+    var docked = false;
+
+    function setComposeDocked(on) {
+      if (!pageChat || !composerStack) return;
+      var next = !!on;
+      if (next === docked) return;
+      docked = next;
+      pageChat.classList.toggle('chat-compose-docked', next);
+    }
 
     function syncSendDisabled() {
       var has = ta.value.trim().length > 0 || !!imagePreview;
@@ -477,8 +488,22 @@
     }
 
     ta.addEventListener('input', function () {
+      if ((ta.value || '').trim()) setComposeDocked(true);
       syncSendDisabled();
       autoResizeTa();
+    });
+
+    ta.addEventListener('focus', function () {
+      setComposeDocked(true);
+    });
+    ta.addEventListener('blur', function () {
+      setTimeout(function () {
+        var active = document.activeElement;
+        var keepDocked = !!(promptBox && active && promptBox.contains(active));
+        if (!keepDocked && !(ta.value || '').trim()) {
+          setComposeDocked(false);
+        }
+      }, 80);
     });
 
     if (promptBox) {
@@ -573,6 +598,10 @@
       if (ev.key === 'Escape') {
         setToolsOpen(false);
         if (lightbox && !lightbox.hidden) closeLightbox();
+        if (document.activeElement === ta) {
+          ta.blur();
+          if (!(ta.value || '').trim()) setComposeDocked(false);
+        }
       }
     });
 
@@ -598,6 +627,7 @@
       autoResizeTa();
       setImagePreview(null);
       ta.blur();
+      setComposeDocked(false);
 
       isThinking = true;
       sendBtn.disabled = true;
