@@ -7,3 +7,6 @@ public/assets/index-*.js
 .env.*.local
 .DS_Store
 *.log
+supabase/.temp/
+# Local Next.js experiment; not part of static dashboard
+my-agent-next/

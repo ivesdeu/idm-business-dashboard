@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="chat-embed-url" content="https://example.com/chat" />
 <title>Business Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e8501a'/%3E%3Ctext x='50%25' y='52%25' text-anchor='middle' font-size='32' fill='white' font-family='sans-serif'%3EBD%3C/text%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -133,68 +132,320 @@
   /* PAGES */
   .pg { display:none; padding:36px 40px 32px; min-height:100%; max-width:1440px; margin:0 auto; width:100%; box-sizing:border-box; }
   .pg.on { display:block; }
-  .main.main-chat-active {
-    display:flex;
-    flex-direction:column;
-    min-height:0;
-  }
-  .pg.pg-chat.on {
-    display:flex;
-    flex-direction:column;
-    flex:1;
-    min-height:0;
-  }
-  .pg-chat {
-    padding:0 !important;
-    max-width:none !important;
-  }
-  .chat-embed-header {
-    padding:20px 40px 14px;
-    border-bottom:1px solid var(--border);
-    flex-shrink:0;
-    background:var(--bg2);
-  }
-  .chat-embed-header .ps code { font-size:12px; background:var(--bg3); padding:2px 6px; border-radius:4px; font-family:ui-monospace,monospace; }
-  #chat-iframe {
-    flex:1;
-    width:100%;
-    min-height:min(68vh, 800px);
-    border:0;
-    background:var(--bg);
-    display:block;
-  }
-  .chat-embed-actions {
-    flex-shrink:0;
-    display:flex;
-    flex-wrap:wrap;
-    gap:10px;
-    align-items:center;
-    padding:8px 40px 16px;
-    border-top:1px solid var(--border);
-    background:var(--bg2);
-  }
-  .chat-embed-actions a.btn { text-decoration:none; display:inline-flex; align-items:center; }
-  .chat-embed-actions .btn-muted { font-size:12px; color:var(--text3); border-color:transparent; background:transparent; }
-  .chat-embed-actions .btn-muted:hover { color:var(--text2); background:var(--bg3); }
-  .chat-embed-notice {
-    margin:0 40px 12px;
-    padding:10px 14px;
-    font-size:13px;
-    line-height:1.45;
-    color:var(--text2);
-    background:#fff7ed;
-    border:1px solid #fed7aa;
-    border-radius:8px;
-  }
-  .chat-embed-notice[hidden] { display:none !important; }
-  .chat-embed-dev-hint { margin-top:10px; }
-  .chat-embed-dev-hint summary { cursor:pointer; font-size:13px; color:var(--text3); list-style-position:outside; }
-  .chat-embed-dev-hint .ps { margin-top:8px; }
   .ph { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:28px; }
   .pt { font-size:1.25rem; font-weight:600; letter-spacing:-0.02em; line-height:1.2; }
   .pg .pt { font-size:clamp(2.25rem, 4.2vw, 2.75rem); font-weight:700; letter-spacing:-0.035em; line-height:1.08; }
   .ps { font-size:0.875rem; font-weight:400; color:var(--text3); margin-top:6px; line-height:1.35; }
   .hr { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+
+  /* In-app assistant — ChatGPT-style prompt shell (vanilla port; no React/shadcn in this repo) */
+  .chat-card {
+    display: flex;
+    flex-direction: column;
+    min-height: min(520px, calc(100vh - 220px));
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--rl);
+  }
+  .chat-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: var(--bg);
+    min-height: 240px;
+  }
+  .chat-log::-webkit-scrollbar { width: 6px; }
+  .chat-log::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+  .chat-msg {
+    max-width: 92%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: var(--text2);
+  }
+  .chat-msg.user {
+    align-self: flex-end;
+    background: var(--coral-bg);
+    border: 1px solid rgba(232, 80, 26, 0.14);
+    color: var(--text);
+    font-weight: 500;
+  }
+  .chat-msg.asst {
+    align-self: flex-start;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .chat-prompt-section {
+    flex-shrink: 0;
+    padding: 16px 18px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  .chat-prompt-heading {
+    text-align: center;
+    font-size: clamp(1.25rem, 3vw, 1.65rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin: 0 0 14px;
+  }
+  .chat-prompt-box {
+    cursor: text;
+    display: flex;
+    flex-direction: column;
+    border-radius: 28px;
+    padding: 8px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .chat-prompt-box:focus-within {
+    border-color: rgba(232, 80, 26, 0.28);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  }
+  .chat-file-input-hidden { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+  .chat-image-preview-wrap {
+    position: relative;
+    width: fit-content;
+    margin-bottom: 4px;
+    padding: 4px 4px 0;
+  }
+  .chat-image-preview-wrap img {
+    display: block;
+    width: 58px;
+    height: 58px;
+    object-fit: cover;
+    border-radius: 16px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+  }
+  .chat-image-preview-remove {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(255, 255, 255, 0.85);
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+  .chat-image-preview-remove:hover { background: var(--bg3); }
+  .chat-prompt-ta {
+    width: 100%;
+    min-height: 48px;
+    max-height: 200px;
+    resize: none;
+    border: none;
+    background: transparent;
+    padding: 12px 14px;
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    color: var(--text);
+    font-family: inherit;
+  }
+  .chat-prompt-ta::placeholder { color: var(--text3); }
+  .chat-prompt-ta:focus { outline: none; }
+  .chat-prompt-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 4px 2px;
+    margin-top: 2px;
+  }
+  .chat-prompt-toolbar-spacer { flex: 1; min-width: 8px; }
+  .chat-prompt-icon-btn {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .chat-prompt-icon-btn:hover { background: var(--bg3); }
+  .chat-prompt-icon-btn svg { width: 22px; height: 22px; }
+  .chat-tools-wrap { position: relative; }
+  .chat-prompt-tools-trigger {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 10px 0 8px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+  }
+  .chat-prompt-tools-trigger:hover { background: var(--bg3); }
+  .chat-prompt-tools-trigger svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .chat-tools-pop {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 50;
+    width: 16rem;
+    max-width: calc(100vw - 48px);
+    padding: 8px;
+    border-radius: 12px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+  }
+  .chat-tools-pop[hidden] { display: none !important; }
+  .chat-tool-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 0.8125rem;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .chat-tool-row:hover { background: var(--bg3); }
+  .chat-tool-row svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--text2); }
+  .chat-tool-row-extra { margin-left: auto; font-size: 11px; color: var(--text3); }
+  .chat-active-tool {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chat-active-tool[hidden] { display: none !important; }
+  .chat-active-tool-divider {
+    width: 1px;
+    height: 16px;
+    background: var(--border);
+  }
+  .chat-active-tool-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: #2294ff;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .chat-active-tool-chip:hover { background: rgba(34, 148, 255, 0.08); }
+  .chat-active-tool-chip svg { width: 14px; height: 14px; }
+  .chat-prompt-send {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 999px;
+    background: #0a0a0a;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  .chat-prompt-send:hover:not(:disabled) { background: #262626; }
+  .chat-prompt-send:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .chat-prompt-send svg { width: 18px; height: 18px; }
+  .chat-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    border: none;
+    cursor: zoom-out;
+  }
+  .chat-lightbox[hidden] { display: none !important; }
+  .chat-lightbox img {
+    max-width: min(900px, 95vw);
+    max-height: 92vh;
+    object-fit: contain;
+    border-radius: 24px;
+    pointer-events: none;
+  }
+  .chat-lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .chat-lightbox-close:hover { background: rgba(255, 255, 255, 0.22); }
+  .chat-starters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+    max-width: 42rem;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .chat-chip {
+    font-size: 12px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    color: var(--text2);
+    cursor: pointer;
+    font-weight: 500;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .chat-chip:hover {
+    border-color: rgba(232, 80, 26, 0.35);
+    color: var(--coral);
+    background: var(--coral-bg);
+  }
 
   /* BTN */
   .btn { padding:8px 14px; border-radius:6px; border:1px solid var(--border2); background:var(--bg2); color:var(--text2); font-size:0.875rem; cursor:pointer; transition:border-color .15s,color .15s,background .15s,box-shadow .15s; font-weight:500; }
@@ -763,10 +1014,6 @@
     .spend-toolbar-right { flex-wrap: wrap; justify-content: flex-start; }
     .spend-kpi-row { grid-template-columns: 1fr; }
   }
-  @media (max-width: 960px) {
-    .chat-embed-header { padding: 16px; }
-    .chat-embed-notice { margin: 0 16px 12px; }
-  }
 </style>
 </head>
 <body>
@@ -1286,21 +1533,89 @@
     <div class="ui-internal-facing card"><div style="font-size:13px;color:var(--text2);line-height:1.55;">No marketing data yet. Use Dashboard and Revenue for operational numbers.</div></div>
   </div>
 
-  <!-- CHAT (Next.js + 21st; meta chat-embed-url; Netlify: CHAT_EMBED_URL at build) -->
-  <div class="pg pg-chat" id="page-chat">
-    <div class="chat-embed-header">
-      <div class="pt">AI Chat</div>
-      <div class="ps">Your assistant runs in the panel below, same as the rest of the dashboard. If it stays blank, check the notice or use refresh—only open a new tab if you need the full-page chat.</div>
-      <div id="chat-embed-notice" class="chat-embed-notice" hidden></div>
-      <details class="chat-embed-dev-hint">
-        <summary>Developer / setup</summary>
-        <div class="ps">Embedded from <code>my-agent-next</code> (agent <code>my-agent</code>). The iframe loads <code>/chat?embed=1</code> for a headerless panel. Local: <code>cd my-agent-next && npm install && npm run dev</code>, <code>API_KEY_21ST</code> in <code>.env.local</code>, then <strong>Refresh panel</strong>. Production: set <code>CHAT_EMBED_URL</code> on Netlify (build) to your HTTPS <code>/chat</code> URL so <code>chat-embed-url</code> is not <code>localhost</code>.</div>
-      </details>
+  <!-- CHAT (mock assistant: schema + code facts + live Supabase counts when signed in; no LLM API) -->
+  <div class="pg" id="page-chat">
+    <div class="ph">
+      <div>
+        <div class="pt">Chat</div>
+        <div class="ps">Ask how the app is built, what lives in Supabase, or (when signed in) how many records you have. Replies use this codebase and your session—no external AI API key.</div>
+      </div>
     </div>
-    <iframe id="chat-iframe" title="AI Chat" src="about:blank"></iframe>
-    <div class="chat-embed-actions">
-      <button type="button" class="btn btn-p" id="chat-reload-embed">Refresh panel</button>
-      <a id="chat-open-tab" class="btn btn-muted" href="http://localhost:3000/chat" target="_blank" rel="noopener noreferrer">Open full chat in new tab</a>
+    <div class="card chat-card">
+      <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <div class="chat-prompt-section">
+        <p class="chat-prompt-heading">How can I help you?</p>
+        <div class="chat-prompt-box" id="chat-prompt-box" role="group" aria-label="Message composer">
+          <input type="file" id="chat-file-input" class="chat-file-input-hidden" accept="image/*" tabindex="-1" aria-hidden="true" />
+          <div id="chat-image-preview-wrap" class="chat-image-preview-wrap" hidden>
+            <button type="button" id="chat-image-thumb-btn" class="chat-image-thumb-btn" style="border:none;padding:0;background:none;" aria-label="View full image">
+              <img id="chat-image-thumb" src="" alt="Attached preview" />
+            </button>
+            <button type="button" class="chat-image-preview-remove" id="chat-image-remove" aria-label="Remove image">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <textarea id="chat-input" class="chat-prompt-ta" rows="1" placeholder="Message…" maxlength="2000" autocomplete="off"></textarea>
+          <div class="chat-prompt-toolbar">
+            <button type="button" class="chat-prompt-icon-btn" id="chat-attach-btn" title="Attach image" aria-label="Attach image">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </button>
+            <div class="chat-tools-wrap">
+              <button type="button" class="chat-prompt-tools-trigger" id="chat-tools-trigger" aria-expanded="false" aria-haspopup="true" title="Explore tools">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+                <span id="chat-tools-label">Tools</span>
+              </button>
+              <div id="chat-tools-pop" class="chat-tools-pop" hidden role="menu" aria-label="Tools">
+                <button type="button" class="chat-tool-row" data-chat-tool="createImage" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+                  <span>Create an image</span>
+                </button>
+                <button type="button" class="chat-tool-row" data-chat-tool="searchWeb" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  <span>Search the web</span>
+                </button>
+                <button type="button" class="chat-tool-row" data-chat-tool="writeCode" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                  <span>Write or code</span>
+                </button>
+                <button type="button" class="chat-tool-row" data-chat-tool="deepResearch" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <span>Run deep research</span><span class="chat-tool-row-extra">N/A</span>
+                </button>
+                <button type="button" class="chat-tool-row" data-chat-tool="thinkLonger" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 7C9.24 7 7 9.24 7 12c0 1.36.54 2.6 1.42 3.5.34.35.62.77.7 1.25l.53 2.64c.19.93.98 1.61 1.92 1.61h.86c.94 0 1.73-.68 1.92-1.61l.53-2.64c.08-.48.36-.9.7-1.25A4.84 4.84 0 0 0 17 12c0-2.76-2.24-5-5-5Z"/><path d="M12 4V3M18 6l1-1M20 12h1M4 12H3M6 6L5 5M10 18h4"/></svg>
+                  <span>Think for longer</span>
+                </button>
+              </div>
+            </div>
+            <div class="chat-active-tool" id="chat-active-tool" hidden>
+              <span class="chat-active-tool-divider" aria-hidden="true"></span>
+              <button type="button" class="chat-active-tool-chip" id="chat-active-tool-clear" title="Clear tool">
+                <span id="chat-active-tool-icon"></span>
+                <span id="chat-active-tool-name"></span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div class="chat-prompt-toolbar-spacer"></div>
+            <button type="button" class="chat-prompt-icon-btn" id="chat-mic-btn" title="Voice input isn’t available in this dashboard" aria-label="Voice input unavailable">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+            </button>
+            <button type="button" class="chat-prompt-send" id="chat-send" disabled title="Send" aria-label="Send message">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.25v13.5"/><path d="m18.75 12-6.75-6.75L5.25 12"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-lightbox" id="chat-lightbox" hidden role="dialog" aria-modal="true" aria-label="Image preview">
+      <button type="button" class="chat-lightbox-close" id="chat-lightbox-close" aria-label="Close">&times;</button>
+      <img id="chat-lightbox-img" src="" alt="Full size attachment" />
+    </div>
+    <div class="chat-starters" id="chat-starters">
+      <button type="button" class="chat-chip" data-chat-q="What tables are in Supabase for this dashboard?">Supabase tables</button>
+      <button type="button" class="chat-chip" data-chat-q="How does row level security work?">RLS</button>
+      <button type="button" class="chat-chip" data-chat-q="How many clients do I have?">Count clients</button>
+      <button type="button" class="chat-chip" data-chat-q="Where is the production build defined?">Build</button>
     </div>
   </div>
 
@@ -1798,6 +2113,7 @@
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/assets/supabase-auth.js"></script>
+<script src="/assets/dashboard-assistant.js"></script>
 <script src="/assets/financial-core.js?v=20260408-industry"></script>
 </body>
 </html>
