@@ -1,7 +1,8 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import "@21st-sdk/react/styles.css"
 
 const SANDBOX_STORAGE_KEY = "idm-21st-chat-sandbox"
@@ -22,11 +23,13 @@ function PreparingShell() {
   )
 }
 
-export default function ChatPage() {
+function ChatPageContent() {
+  const searchParams = useSearchParams()
+  const embed = searchParams.get("embed") === "1"
+
   const [mounted, setMounted] = useState(false)
   const [sandboxId, setSandboxId] = useState<string | null>(null)
 
-  // Start downloading the chat chunk as soon as the page mounts (during the shell).
   useEffect(() => {
     void import("./chat-session")
   }, [])
@@ -45,5 +48,13 @@ export default function ChatPage() {
     return <PreparingShell />
   }
 
-  return <ChatSessionDynamic sandboxId={sandboxId} />
+  return <ChatSessionDynamic sandboxId={sandboxId} embed={embed} />
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<PreparingShell />}>
+      <ChatPageContent />
+    </Suspense>
+  )
 }

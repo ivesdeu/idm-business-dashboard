@@ -161,6 +161,7 @@
     min-height:min(68vh, 800px);
     border:0;
     background:var(--bg);
+    display:block;
   }
   .chat-embed-actions {
     flex-shrink:0;
@@ -168,11 +169,27 @@
     flex-wrap:wrap;
     gap:10px;
     align-items:center;
-    padding:12px 40px 24px;
+    padding:8px 40px 16px;
     border-top:1px solid var(--border);
     background:var(--bg2);
   }
   .chat-embed-actions a.btn { text-decoration:none; display:inline-flex; align-items:center; }
+  .chat-embed-actions .btn-muted { font-size:12px; color:var(--text3); border-color:transparent; background:transparent; }
+  .chat-embed-actions .btn-muted:hover { color:var(--text2); background:var(--bg3); }
+  .chat-embed-notice {
+    margin:0 40px 12px;
+    padding:10px 14px;
+    font-size:13px;
+    line-height:1.45;
+    color:var(--text2);
+    background:#fff7ed;
+    border:1px solid #fed7aa;
+    border-radius:8px;
+  }
+  .chat-embed-notice[hidden] { display:none !important; }
+  .chat-embed-dev-hint { margin-top:10px; }
+  .chat-embed-dev-hint summary { cursor:pointer; font-size:13px; color:var(--text3); list-style-position:outside; }
+  .chat-embed-dev-hint .ps { margin-top:8px; }
   .ph { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:28px; }
   .pt { font-size:1.25rem; font-weight:600; letter-spacing:-0.02em; line-height:1.2; }
   .pg .pt { font-size:clamp(2.25rem, 4.2vw, 2.75rem); font-weight:700; letter-spacing:-0.035em; line-height:1.08; }
@@ -748,6 +765,7 @@
   }
   @media (max-width: 960px) {
     .chat-embed-header { padding: 16px; }
+    .chat-embed-notice { margin: 0 16px 12px; }
   }
 </style>
 </head>
@@ -1268,16 +1286,21 @@
     <div class="ui-internal-facing card"><div style="font-size:13px;color:var(--text2);line-height:1.55;">No marketing data yet. Use Dashboard and Revenue for operational numbers.</div></div>
   </div>
 
-  <!-- CHAT (Next.js + 21st agent; set chat-embed-url meta for production) -->
+  <!-- CHAT (Next.js + 21st; meta chat-embed-url; Netlify: CHAT_EMBED_URL at build) -->
   <div class="pg pg-chat" id="page-chat">
     <div class="chat-embed-header">
       <div class="pt">AI Chat</div>
-      <div class="ps">Embedded from the Next.js app in <code>my-agent-next</code> (21st agent <code>my-agent</code>). <strong>If the frame below is empty:</strong> run <code>cd my-agent-next && npm install && npm run dev</code> (port 3000), add <code>API_KEY_21ST</code> in <code>.env.local</code>, then click <strong>Reload embed</strong>. For production, point <code>chat-embed-url</code> at your HTTPS chat URL.</div>
+      <div class="ps">Your assistant runs in the panel below, same as the rest of the dashboard. If it stays blank, check the notice or use refresh—only open a new tab if you need the full-page chat.</div>
+      <div id="chat-embed-notice" class="chat-embed-notice" hidden></div>
+      <details class="chat-embed-dev-hint">
+        <summary>Developer / setup</summary>
+        <div class="ps">Embedded from <code>my-agent-next</code> (agent <code>my-agent</code>). The iframe loads <code>/chat?embed=1</code> for a headerless panel. Local: <code>cd my-agent-next && npm install && npm run dev</code>, <code>API_KEY_21ST</code> in <code>.env.local</code>, then <strong>Refresh panel</strong>. Production: set <code>CHAT_EMBED_URL</code> on Netlify (build) to your HTTPS <code>/chat</code> URL so <code>chat-embed-url</code> is not <code>localhost</code>.</div>
+      </details>
     </div>
     <iframe id="chat-iframe" title="AI Chat" src="about:blank"></iframe>
     <div class="chat-embed-actions">
-      <a id="chat-open-tab" class="btn btn-p" href="http://localhost:3000/chat" target="_blank" rel="noopener noreferrer">Open chat in new tab</a>
-      <button type="button" class="btn" id="chat-reload-embed">Reload embed</button>
+      <button type="button" class="btn btn-p" id="chat-reload-embed">Refresh panel</button>
+      <a id="chat-open-tab" class="btn btn-muted" href="http://localhost:3000/chat" target="_blank" rel="noopener noreferrer">Open full chat in new tab</a>
     </div>
   </div>
 

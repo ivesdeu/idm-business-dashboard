@@ -21,7 +21,13 @@ function textFromMessage(m: UIMessage): string {
   return typeof legacy === "string" ? legacy : ""
 }
 
-export function ChatSession({ sandboxId }: { sandboxId: string }) {
+export function ChatSession({
+  sandboxId,
+  embed = false,
+}: {
+  sandboxId: string
+  embed?: boolean
+}) {
   const chat = useMemo(
     () =>
       createAgentChat({
@@ -44,15 +50,31 @@ export function ChatSession({ sandboxId }: { sandboxId: string }) {
   const busy = status === "streaming" || status === "submitted"
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900">
-      <header className="border-b border-zinc-200 bg-white px-4 py-3">
-        <h1 className="text-lg font-semibold tracking-tight">AI Chat</h1>
-        <p className="text-sm text-zinc-500">
-          21st agent <span className="font-mono text-xs">my-agent</span>
-        </p>
-      </header>
+    <div
+      className={cn(
+        "flex flex-col text-zinc-900",
+        embed
+          ? "min-h-[100dvh] bg-[#fafafa]"
+          : "min-h-screen bg-zinc-50",
+      )}
+    >
+      {!embed ? (
+        <header className="border-b border-zinc-200 bg-white px-4 py-3">
+          <h1 className="text-lg font-semibold tracking-tight">AI Chat</h1>
+          <p className="text-sm text-zinc-500">
+            21st agent <span className="font-mono text-xs">my-agent</span>
+          </p>
+        </header>
+      ) : null}
 
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-4">
+      <div
+        className={cn(
+          "mx-auto flex w-full flex-1 flex-col",
+          embed
+            ? "max-w-none px-4 py-3 min-h-0"
+            : "max-w-3xl px-4 py-4",
+        )}
+      >
         {error ? (
           <div
             className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
@@ -65,7 +87,7 @@ export function ChatSession({ sandboxId }: { sandboxId: string }) {
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
           {messages.length === 0 ? (
             <p className="text-center text-sm text-zinc-400">
-              Ask anything about your business dashboard data or general tasks.
+              Ask anything about your business or this dashboard.
             </p>
           ) : null}
           {messages.map((m) => (
@@ -86,7 +108,14 @@ export function ChatSession({ sandboxId }: { sandboxId: string }) {
           <div ref={bottomRef} />
         </div>
 
-        <div className="sticky bottom-0 border-t border-zinc-200 bg-zinc-50/95 pb-2 pt-3 backdrop-blur supports-[backdrop-filter]:bg-zinc-50/80">
+        <div
+          className={cn(
+            "sticky bottom-0 pb-2 pt-3",
+            embed
+              ? "border-t border-zinc-200/80 bg-[#fafafa]/95 backdrop-blur supports-[backdrop-filter]:bg-[#fafafa]/90"
+              : "border-t border-zinc-200 bg-zinc-50/95 backdrop-blur supports-[backdrop-filter]:bg-zinc-50/80",
+          )}
+        >
           <AIChatInput
             disabled={busy}
             showStopButton={busy}

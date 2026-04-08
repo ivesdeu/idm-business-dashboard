@@ -50,19 +50,29 @@ npx shadcn@latest init
 
 (Here we already created `tailwind.config.ts`, `postcss.config.mjs`, and `app/globals.css` with `@tailwind` layers.)
 
-## Chat tab in the main dashboard
+## Deploy chat for the dashboard (Vercel + Netlify)
 
-The static dashboard (`index.html` at repo root) includes a **Chat** sidebar item that embeds this app in an **iframe**. The URL comes from:
+The dashboard **Chat** tab embeds this app in an iframe. The iframe must load **HTTPS** (not `localhost`) when you use the dashboard on the web.
+
+1. **Vercel (or similar):** New project → import this repo → set **Root Directory** to `my-agent-next`.
+2. **Environment variables on Vercel:** `API_KEY_21ST` = your 21st secret key (same as local).
+3. **Deploy.** Note the production URL, e.g. `https://idm-chat.vercel.app/chat`.
+4. **Netlify (dashboard site):** Site → **Environment variables** → add  
+   `CHAT_EMBED_URL` = `https://idm-chat.vercel.app/chat` (your real URL, no trailing slash issues—`/chat` required).
+5. **Redeploy the dashboard** on Netlify so `npm run build` runs `scripts/build-static.mjs`, which rewrites `chat-embed-url` in `dist/index.html` from `CHAT_EMBED_URL`.
+6. **21st agent:** From `my-agent-next`, run `npm run deploy:agent` (with `API_KEY_21ST`) so `my-agent` matches this code.
+
+The dashboard loads `…/chat?embed=1` in the iframe so the inner Next header is hidden and the panel matches the rest of the app.
+
+## Chat tab in the main dashboard (local)
+
+Source `index.html` uses:
 
 ```html
 <meta name="chat-embed-url" content="http://localhost:3000/chat" />
 ```
 
-Change `content` to your deployed chat origin in production. Start the Next app before opening the tab:
-
-```bash
-cd my-agent-next && npm run dev
-```
+For local use, run `npm run dev` in `my-agent-next`, then open **Chat** in the dashboard.
 
 ## Theme
 

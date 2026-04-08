@@ -1,9 +1,13 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  # After you deploy my-agent-next (e.g. Vercel), add this in Netlify → Site configuration → Environment variables:
-  # CHAT_EMBED_URL = https://<your-next-app-host>/chat
-  # Redeploy the dashboard so dist/index.html gets the correct iframe URL.
+  # Chat iframe (production):
+  # 1) Deploy my-agent-next to Vercel (root directory = my-agent-next). Set env API_KEY_21ST there.
+  # 2) Copy the live chat URL, e.g. https://your-app.vercel.app/chat
+  # 3) In Netlify → Site configuration → Environment variables add:
+  #    CHAT_EMBED_URL = https://your-app.vercel.app/chat
+  # 4) Redeploy this site so build-static.mjs injects chat-embed-url into dist/index.html.
+  # The dashboard iframe loads that URL with ?embed=1 (headerless panel inside the app).
 
 # SPA: serve index.html for client-side routes (OAuth return, deep links)
 [[redirects]]

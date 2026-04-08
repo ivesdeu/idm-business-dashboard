@@ -8161,6 +8161,55 @@ var incomePowerState = {
     return meta ? (meta.getAttribute('content') || '').trim() : '';
   }
 
+  /** Iframe URL: same as meta + embed=1 so Next /chat hides its own header (native panel). */
+  function chatIframeSrc(cacheBust) {
+    var base = getChatEmbedUrl();
+    if (!base) return '';
+    try {
+      var u = new URL(base, window.location.href);
+      u.searchParams.set('embed', '1');
+      if (cacheBust) u.searchParams.set('_cb', String(Date.now()));
+      return u.toString();
+    } catch (e) {
+      var sep = base.indexOf('?') >= 0 ? '&' : '?';
+      var out = base + sep + 'embed=1';
+      if (cacheBust) out += '&_cb=' + Date.now();
+      return out;
+    }
+  }
+
+  function chatEmbedUrlIsLocalhost(url) {
+    if (!url) return false;
+    try {
+      var u = new URL(url, window.location.href);
+      var h = (u.hostname || '').toLowerCase();
+      return h === 'localhost' || h === '127.0.0.1';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function dashboardHostIsLocal() {
+    var h = (window.location.hostname || '').toLowerCase();
+    return h === 'localhost' || h === '127.0.0.1' || h === '';
+  }
+
+  function syncChatEmbedUI() {
+    var notice = document.getElementById('chat-embed-notice');
+    var chatUrl = getChatEmbedUrl();
+    var showLocalhostWarning = chatEmbedUrlIsLocalhost(chatUrl) && !dashboardHostIsLocal();
+    if (notice) {
+      if (showLocalhostWarning) {
+        notice.hidden = false;
+        notice.textContent =
+          'This site is still built with a computer-only chat address (localhost), so the panel cannot load on the web. Redeploy after setting CHAT_EMBED_URL on your host (e.g. Netlify) to your live https://…/chat URL. Until then, use Refresh or open full chat in a new tab only if the chat app runs on your machine.';
+      } else {
+        notice.hidden = true;
+        notice.textContent = '';
+      }
+    }
+  }
+
   function wireChatEmbed() {
     var openTab = document.getElementById('chat-open-tab');
     if (openTab) {
@@ -8171,12 +8220,12 @@ var incomePowerState = {
     if (reloadBtn) {
       reloadBtn.addEventListener('click', function () {
         var frame = document.getElementById('chat-iframe');
-        var chatUrl = getChatEmbedUrl();
-        if (!frame || !chatUrl) return;
-        var sep = chatUrl.indexOf('?') >= 0 ? '&' : '?';
-        frame.setAttribute('src', chatUrl + sep + '_cb=' + Date.now());
+        var src = chatIframeSrc(true);
+        if (!frame || !src) return;
+        frame.setAttribute('src', src);
       });
     }
+    syncChatEmbedUI();
   }
 
   function init() {
@@ -8218,11 +8267,15 @@ var incomePowerState = {
       }
 
       if (pageId === 'chat') {
+        syncChatEmbedUI();
         var frame = document.getElementById('chat-iframe');
         var meta = document.querySelector('meta[name="chat-embed-url"]');
         var chatUrl = meta ? (meta.getAttribute('content') || '').trim() : '';
-        if (frame && chatUrl && (!frame.getAttribute('src') || frame.getAttribute('src') === 'about:blank')) {
-          frame.setAttribute('src', chatUrl);
+        var skipIframe = chatEmbedUrlIsLocalhost(chatUrl) && !dashboardHostIsLocal();
+        if (skipIframe && frame) {
+          frame.setAttribute('src', 'about:blank');
+        } else if (frame && chatUrl && (!frame.getAttribute('src') || frame.getAttribute('src') === 'about:blank')) {
+          frame.setAttribute('src', chatIframeSrc(false));
         }
       }
 
