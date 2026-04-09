@@ -1101,7 +1101,8 @@
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    padding: 4px 6px 4px 4px;
+    min-height: 42px;
+    padding: 3px 6px 3px 4px;
     border: 1px solid var(--border);
     border-radius: var(--rl);
     background: var(--bg2);
@@ -1153,7 +1154,7 @@
   .ts-timesheet-toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-end;
     gap: 10px 12px;
   }
   .ts-period-toolbar {
@@ -1164,7 +1165,10 @@
     margin: -8px 0 14px;
   }
   .ts-period-dd { min-width: 0; }
-  .ts-period-dd .fi { min-width: 128px; }
+  .ts-period-dd .fi {
+    min-width: 128px;
+    min-height: 42px;
+  }
   .ts-period-all-pill {
     display: inline-flex;
     align-items: center;
@@ -1213,6 +1217,7 @@
     <div class="fg" style="grid-template-columns:1fr;gap:10px;margin-bottom:12px;">
       <div class="fgp"><label class="fl">Email</label><input class="fi" id="gate-email" type="email" autocomplete="email" placeholder="you@company.com" /></div>
       <div class="fgp"><label class="fl">Password</label><input class="fi" id="gate-password" type="password" autocomplete="current-password" placeholder="••••••••" /></div>
+      <div class="fgp" id="gate-confirm-wrap" style="display:none;"><label class="fl">Confirm password</label><input class="fi" id="gate-confirm-password" type="password" autocomplete="new-password" placeholder="••••••••" /></div>
     </div>
     <div id="gate-auth-error" style="font-size:13px;color:var(--red);margin-bottom:12px;min-height:1.2em;"></div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
@@ -1401,6 +1406,7 @@
             <select class="fi" id="rev-trend-range" title="Revenue trend range">
               <option value="30d">Past month</option>
               <option value="90d" selected>Last 90 days</option>
+              <option value="ytd">YTD</option>
               <option value="all">All time</option>
             </select>
           </div>
@@ -1576,6 +1582,7 @@
             <option value="week">Week</option>
             <option value="month">Month</option>
             <option value="quarter">Quarter</option>
+            <option value="ytd">YTD</option>
             <option value="all">All time</option>
           </select>
         </div>

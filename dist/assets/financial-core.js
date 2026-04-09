@@ -1517,6 +1517,7 @@
       if (cur && biz.currency) cur.value = biz.currency;
       var fis = gid('setting-fiscal');
       if (fis && biz.fiscal) fis.value = biz.fiscal;
+      if (biz.accent) applyAccentBranding(biz.accent);
     }
     if (raw.budgets && typeof raw.budgets === 'object') {
       ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
@@ -1539,6 +1540,51 @@
       saveBudgetMonthSnapshotsToStorage(raw.budgetMonths);
     }
     refreshSettingsBudgetInputsFromState();
+  }
+
+  function normalizeHexColor(hex, fallback) {
+    var s = String(hex || '').trim();
+    if (!s) return fallback;
+    if (s[0] !== '#') s = '#' + s;
+    var m3 = s.match(/^#([0-9a-fA-F]{3})$/);
+    if (m3) {
+      var h = m3[1];
+      return '#' + h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    }
+    var m6 = s.match(/^#([0-9a-fA-F]{6})$/);
+    if (m6) return '#' + m6[1].toLowerCase();
+    return fallback;
+  }
+
+  function hexToRgb(hex) {
+    var n = normalizeHexColor(hex, '');
+    if (!n || n.length !== 7) return null;
+    return {
+      r: parseInt(n.slice(1, 3), 16),
+      g: parseInt(n.slice(3, 5), 16),
+      b: parseInt(n.slice(5, 7), 16),
+    };
+  }
+
+  function darkenHex(hex, factor) {
+    var rgb = hexToRgb(hex);
+    if (!rgb) return hex;
+    var f = Math.max(0, Math.min(1, Number(factor) || 0));
+    var r = Math.max(0, Math.min(255, Math.round(rgb.r * (1 - f))));
+    var g = Math.max(0, Math.min(255, Math.round(rgb.g * (1 - f))));
+    var b = Math.max(0, Math.min(255, Math.round(rgb.b * (1 - f))));
+    return '#' + [r, g, b].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  function applyAccentBranding(accentHex) {
+    var accent = normalizeHexColor(accentHex, '#e8501a');
+    var rgb = hexToRgb(accent);
+    if (!rgb) return;
+    var root = document.documentElement;
+    if (!root || !root.style) return;
+    root.style.setProperty('--coral', accent);
+    root.style.setProperty('--coral2', darkenHex(accent, 0.1));
+    root.style.setProperty('--coral-bg', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.08)');
   }
 
   async function persistAppSettingsToSupabase(opts) {
@@ -2243,7 +2289,7 @@ var incomePowerState = {
   function loadIncomeTrendRange() {
     try {
       var raw = localStorage.getItem(INCOME_TREND_RANGE_KEY);
-      if (raw === '30d' || raw === '90d' || raw === 'all') incomeTrendRange = raw;
+      if (raw === '30d' || raw === '90d' || raw === 'ytd' || raw === 'all') incomeTrendRange = raw;
     } catch (_) {}
   }
 
@@ -2271,9 +2317,9 @@ var incomePowerState = {
   var CHART_TICK = '#71717a';
   var CHART_GRID = 'rgba(0, 0, 0, 0.04)';
   var CHART_EXPENSE_GRAY = '#d4d4d8';
-  /** Dashboard expense doughnut: blue (software) vs magenta (advertising) — avoid slate vs stone confusion. */
-  var CHART_EXPENSE_SOFTWARE = '#2563eb';
-  var CHART_EXPENSE_ADVERTISING = '#c026d3';
+  /** Dashboard expense doughnut: keep brand palette while preserving clear contrast. */
+  var CHART_EXPENSE_SOFTWARE = '#52525b';
+  var CHART_EXPENSE_ADVERTISING = '#ea580c';
   var CHART_PALETTE_REST = ['#71717a', '#a1a1aa', '#d4d4d8', '#e4e4e7', '#52525b', '#94a3b8'];
   var CHART_VENDOR_PAL = [CHART_ORANGE, '#71717a', '#64748b', '#a1a1aa', '#94a3b8', '#78716c', '#d4d4d8', '#cbd5e1'];
 
@@ -2301,7 +2347,7 @@ var incomePowerState = {
 
     function expenseBreakdownSliceColor(label) {
       switch (label) {
-        case 'Labor': return CHART_ORANGE;
+        case 'Labor': return '#f97316';
         case 'Software': return CHART_EXPENSE_SOFTWARE;
         case 'Advertising': return CHART_EXPENSE_ADVERTISING;
         case 'Other': return CHART_EXPENSE_GRAY;
@@ -3566,6 +3612,16 @@ var incomePowerState = {
       });
     }
     populateBudgetInputs();
+    var accentInput = document.getElementById('setting-accent');
+    if (accentInput) {
+      applyAccentBranding(accentInput.value || '#e8501a');
+      accentInput.addEventListener('input', function () {
+        applyAccentBranding(accentInput.value || '#e8501a');
+      });
+      accentInput.addEventListener('change', function () {
+        applyAccentBranding(accentInput.value || '#e8501a');
+      });
+    }
 
     function readBudgetInputsIntoState() {
       ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
@@ -5350,7 +5406,9 @@ var incomePowerState = {
       var rangeMode = incomeTrendRange || '90d';
       var hint = $('rev-trend-hint');
       if (hint) {
-        hint.textContent = rangeMode === '30d' ? 'Past month' : (rangeMode === 'all' ? 'All time' : 'Last 90 days');
+        hint.textContent = rangeMode === '30d'
+          ? 'Past month'
+          : (rangeMode === 'ytd' ? 'Year to date' : (rangeMode === 'all' ? 'All time' : 'Last 90 days'));
       }
       var rangeSel = $('rev-trend-range');
       if (rangeSel) rangeSel.value = rangeMode;
@@ -5359,37 +5417,59 @@ var incomePowerState = {
       var cutoff = null;
       if (rangeMode === '30d') cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30, 12, 0, 0, 0);
       if (rangeMode === '90d') cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 90, 12, 0, 0, 0);
+      if (rangeMode === 'ytd') cutoff = new Date(today.getFullYear(), 0, 1, 12, 0, 0, 0);
 
-      var chartRevByMonth = {};
-      var chartMonthLatestTxDate = {};
-      revTxs.forEach(function (tx) {
-        var d = parseDate(tx.date);
-        if (!d) return;
-        if (cutoff && d < cutoff) return;
-        var key = d.getFullYear() + '-' + d.getMonth();
-        chartRevByMonth[key] = (chartRevByMonth[key] || 0) + (+tx.amount || 0);
-        var ds = (tx.date || '').trim();
-        if (ds && (!chartMonthLatestTxDate[key] || ds > chartMonthLatestTxDate[key])) {
-          chartMonthLatestTxDate[key] = ds;
-        }
-      });
-
-      var monthKeys = Object.keys(chartRevByMonth);
-      if (monthKeys.length) {
-        monthKeys.sort(function (a, b) {
-          var pa = a.split('-').map(Number);
-          var pb = b.split('-').map(Number);
-          if (pa[0] !== pb[0]) return pa[0] - pb[0];
-          return pa[1] - pb[1];
+      var labels = [];
+      var data = [];
+      if (rangeMode === 'all') {
+        // Keep all-time readable by aggregating to month.
+        var chartRevByMonth = {};
+        var chartMonthLatestTxDate = {};
+        revTxs.forEach(function (tx) {
+          var d = parseDate(tx.date);
+          if (!d) return;
+          var key = d.getFullYear() + '-' + d.getMonth();
+          chartRevByMonth[key] = (chartRevByMonth[key] || 0) + (+tx.amount || 0);
+          var ds = (tx.date || '').trim();
+          if (ds && (!chartMonthLatestTxDate[key] || ds > chartMonthLatestTxDate[key])) {
+            chartMonthLatestTxDate[key] = ds;
+          }
         });
+        var monthKeys = Object.keys(chartRevByMonth);
+        if (monthKeys.length) {
+          monthKeys.sort(function (a, b) {
+            var pa = a.split('-').map(Number);
+            var pb = b.split('-').map(Number);
+            if (pa[0] !== pb[0]) return pa[0] - pb[0];
+            return pa[1] - pb[1];
+          });
+        }
+        labels = monthKeys.map(function (key) {
+          var parts = key.split('-').map(Number);
+          var y = parts[0];
+          var m0 = parts[1];
+          return chartPointDateLabel(chartMonthLatestTxDate[key], y, m0);
+        });
+        data = monthKeys.map(function (k) { return chartRevByMonth[k] || 0; });
+      } else {
+        // For 30d/90d views, show daily totals so entries don't collapse into one monthly point.
+        var chartRevByDay = {};
+        revTxs.forEach(function (tx) {
+          var d = parseDate(tx.date);
+          if (!d) return;
+          if (cutoff && d < cutoff) return;
+          var dayKey = (tx.date || '').slice(0, 10);
+          if (!dayKey) return;
+          chartRevByDay[dayKey] = (chartRevByDay[dayKey] || 0) + (+tx.amount || 0);
+        });
+        var dayKeys = Object.keys(chartRevByDay).sort();
+        labels = dayKeys.map(function (key) {
+          var dd = parseYMD(key);
+          if (isNaN(dd.getTime())) return key;
+          return dd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+        data = dayKeys.map(function (k) { return chartRevByDay[k] || 0; });
       }
-      var labels = monthKeys.map(function (key) {
-        var parts = key.split('-').map(Number);
-        var y = parts[0];
-        var m0 = parts[1];
-        return chartPointDateLabel(chartMonthLatestTxDate[key], y, m0);
-      });
-      var data = monthKeys.map(function (k) { return chartRevByMonth[k] || 0; });
 
       if (revTrendChart && revTrendChart.config && revTrendChart.config.type !== 'line') {
         revTrendChart.destroy();
@@ -5817,6 +5897,10 @@ var incomePowerState = {
       var first = new Date(timesheetQuarterYear, q0, 1, 12, 0, 0, 0);
       return startOfWeekMonday(first);
     }
+    if (mode === 'ytd') {
+      var ytd = new Date(new Date().getFullYear(), 0, 1, 12, 0, 0, 0);
+      return startOfWeekMonday(ytd);
+    }
     return startOfWeekMonday(new Date());
   }
 
@@ -5841,7 +5925,8 @@ var incomePowerState = {
     if (weekWrap) weekWrap.style.display = mode === 'week' ? '' : 'none';
     if (monthWrap) monthWrap.style.display = mode === 'month' ? '' : 'none';
     if (quarterWrap) quarterWrap.style.display = mode === 'quarter' ? '' : 'none';
-    if (allWrap) allWrap.style.display = mode === 'all' ? '' : 'none';
+    if (allWrap) allWrap.style.display = (mode === 'all' || mode === 'ytd') ? '' : 'none';
+    if (allWrap) allWrap.textContent = mode === 'ytd' ? 'Year to date' : 'All recorded time';
 
     var allEntries = timesheetEntries || [];
     var filteredEntries;
@@ -5886,7 +5971,7 @@ var incomePowerState = {
       var curYm = nowM.getFullYear() + '-' + String(nowM.getMonth() + 1).padStart(2, '0');
       var todayMonthBtn = $('ts-month-today');
       if (todayMonthBtn) todayMonthBtn.hidden = timesheetMonthYm === curYm;
-    } else {
+    } else if (mode === 'quarter') {
       var q0m = (timesheetQuarterQ - 1) * 3;
       var qFirst = new Date(timesheetQuarterYear, q0m, 1, 12, 0, 0, 0);
       var qLast = new Date(timesheetQuarterYear, q0m + 3, 0, 12, 0, 0, 0);
@@ -5905,6 +5990,15 @@ var incomePowerState = {
       if (todayQuarterBtn) {
         todayQuarterBtn.hidden = timesheetQuarterYear === cq.year && timesheetQuarterQ === cq.q;
       }
+    } else {
+      var ytdStart = new Date(new Date().getFullYear(), 0, 1, 12, 0, 0, 0);
+      var ytdEnd = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 12, 0, 0, 0);
+      var ytdStartYmd = dateYMD(ytdStart);
+      var ytdEndYmd = dateYMD(ytdEnd);
+      filteredEntries = allEntries.filter(function (e) {
+        var ds = timesheetEntryYmd(e);
+        return ds && ds >= ytdStartYmd && ds <= ytdEndYmd;
+      });
     }
 
     var byEmp = {};
@@ -5954,12 +6048,28 @@ var incomePowerState = {
     setText('ts-kpi-nonbillable-sub', total > 0 ? ((non / total) * 100).toFixed(1) + '%' : '0.0%');
     setText('ts-kpi-employees', String(empKeys.length));
     setText('ts-kpi-avg', formatMinutesToHours(empKeys.length ? total / empKeys.length : 0));
-    var avgSub = mode === 'all' ? 'all time' : mode === 'month' ? 'selected month' : mode === 'quarter' ? 'selected quarter' : 'selected week';
+    var avgSub = mode === 'all'
+      ? 'all time'
+      : mode === 'ytd'
+        ? 'year to date'
+        : mode === 'month'
+          ? 'selected month'
+          : mode === 'quarter'
+            ? 'selected quarter'
+            : 'selected week';
     setText('ts-kpi-avg-sub', avgSub);
 
     var subEmp = $('ts-sub-by-emp');
     var subLog = $('ts-sub-log');
-    var rangePhrase = mode === 'all' ? 'all time' : mode === 'month' ? 'selected month' : mode === 'quarter' ? 'selected quarter' : 'selected week';
+    var rangePhrase = mode === 'all'
+      ? 'all time'
+      : mode === 'ytd'
+        ? 'year to date'
+        : mode === 'month'
+          ? 'selected month'
+          : mode === 'quarter'
+            ? 'selected quarter'
+            : 'selected week';
     if (subEmp) subEmp.textContent = 'Based on the Account field · ' + rangePhrase;
     if (subLog) subLog.textContent = 'Newest first · ' + rangePhrase;
 
@@ -6395,7 +6505,7 @@ var incomePowerState = {
       trendRange.value = incomeTrendRange;
       trendRange.addEventListener('change', function () {
         var v = trendRange.value;
-        incomeTrendRange = (v === '30d' || v === 'all') ? v : '90d';
+        incomeTrendRange = (v === '30d' || v === '90d' || v === 'ytd' || v === 'all') ? v : '90d';
         saveIncomeTrendRange();
         if (state.computed) renderIncomeSection(state.computed);
       });

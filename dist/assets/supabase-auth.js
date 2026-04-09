@@ -104,10 +104,19 @@
   function wireAuthForm() {
     var emailInput = $('gate-email');
     var passwordInput = $('gate-password');
+    var confirmWrap = $('gate-confirm-wrap');
+    var confirmInput = $('gate-confirm-password');
     var errorBox = $('gate-auth-error');
+    var signupMode = false;
 
     function setError(msg) {
       if (errorBox) errorBox.textContent = msg || '';
+    }
+
+    function setSignupMode(on) {
+      signupMode = !!on;
+      if (confirmWrap) confirmWrap.style.display = signupMode ? '' : 'none';
+      if (!signupMode && confirmInput) confirmInput.value = '';
     }
 
     var btnSignin = $('gate-signin');
@@ -116,6 +125,7 @@
 
     if (btnSignin) {
       btnSignin.addEventListener('click', async function () {
+        setSignupMode(false);
         var email = emailInput && emailInput.value.trim();
         var password = passwordInput && passwordInput.value;
         if (!email || !password) {
@@ -140,10 +150,25 @@
 
     if (btnSignup) {
       btnSignup.addEventListener('click', async function () {
+        if (!signupMode) {
+          setSignupMode(true);
+          setError('Confirm your password to create an account.');
+          if (confirmInput) confirmInput.focus();
+          return;
+        }
         var email = emailInput && emailInput.value.trim();
         var password = passwordInput && passwordInput.value;
+        var confirmPassword = confirmInput && confirmInput.value;
         if (!email || !password) {
           setError('Email and password are required.');
+          return;
+        }
+        if (!confirmPassword) {
+          setError('Please confirm your password.');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Passwords do not match.');
           return;
         }
         setError('');
@@ -154,6 +179,7 @@
             return;
           }
           setError('Check your email to confirm your account, then sign in.');
+          setSignupMode(false);
         } catch (err) {
           console.error('signUp error', err);
           setError('Unexpected error signing up.');
