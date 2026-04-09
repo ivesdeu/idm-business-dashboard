@@ -32,7 +32,14 @@
   });
 
   function setCurrentUser(user) {
-    window.currentUser = user || null;
+    var prevUser = window.currentUser || null;
+    var nextUser = user || null;
+    window.currentUser = nextUser;
+    var prevId = prevUser && prevUser.id ? prevUser.id : null;
+    var nextId = nextUser && nextUser.id ? nextUser.id : null;
+    if (prevId !== nextId && typeof window.clearRuntimeDataForAuthChange === 'function') {
+      window.clearRuntimeDataForAuthChange(nextUser);
+    }
   }
 
   function $(id) {

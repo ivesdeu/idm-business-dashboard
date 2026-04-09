@@ -1236,7 +1236,7 @@
 <div class="mobile-nav-overlay" id="mobile-nav-overlay" onclick="document.body.classList.remove('mobile-nav-open')"></div>
 <div class="sb">
     <div class="sb-logo">
-    <img class="sb-brand-img" src="/idm-logo.png?v=transparent-1" width="400" height="123" alt="ives deutschmann management" loading="eager" decoding="async" />
+    <img class="sb-brand-img" id="sb-brand-img" src="/idm-logo.png?v=transparent-1" width="400" height="123" alt="ives deutschmann management" loading="eager" decoding="async" />
   </div>
   <nav class="sb-nav">
     <div class="nav-lbl">Overview</div>
@@ -1299,6 +1299,32 @@
         </select>
         <button type="button" class="btn" id="btn-open-transaction">+ Add transaction</button>
         <button type="button" class="btn btn-p" id="btn-open-input">Update totals</button>
+      </div>
+    </div>
+    <div class="card mb">
+      <div class="sh" style="align-items:flex-start;gap:14px;">
+        <div>
+          <div class="st" id="crm-welcome">Good day</div>
+          <div class="ss" id="crm-local-date">—</div>
+        </div>
+        <div class="hr">
+          <button type="button" class="btn" id="btn-generate-monday">Generate Monday summary</button>
+          <button type="button" class="btn" id="btn-generate-friday">Generate Friday recap</button>
+        </div>
+      </div>
+      <div class="g2" style="margin-top:12px;grid-template-columns:1.3fr 1fr;">
+        <div>
+          <div class="st" style="font-size:13px;margin-bottom:8px;">Follow-up suggestions</div>
+          <div id="crm-suggestions-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+        <div>
+          <div class="st" style="font-size:13px;margin-bottom:8px;">Milestones</div>
+          <div id="crm-milestones-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+        <div class="st" style="font-size:13px;margin-bottom:8px;">Latest summary</div>
+        <div id="crm-latest-summary" style="font-size:13px;color:var(--text2);">No summary generated yet.</div>
       </div>
     </div>
     <div class="kg kg-dash">
@@ -1382,9 +1408,14 @@
     <div class="card">
       <div id="customers-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No customers yet.</div>
       <table class="dt" id="customers-table" style="display:none;">
-        <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th style="width:140px;">Actions</th></tr></thead>
+        <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Preferred</th><th>Style</th><th>Status</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th style="width:140px;">Actions</th></tr></thead>
         <tbody id="customers-tbody"></tbody>
       </table>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <div class="sh"><div class="st">Relationship timeline</div><div class="ss">Recent outreach and reminders</div></div>
+      <div id="crm-reminders-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
+      <div id="crm-events-timeline" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
   </div>
 
@@ -1891,6 +1922,8 @@
           <div class="fgp" style="grid-column:1/-1;"><label class="fl">Address</label><input class="fi" id="setting-address" /></div>
           <div class="fgp"><label class="fl">Dashboard period label</label><input class="fi" id="setting-period" placeholder="e.g. March 2026" /></div>
           <div class="fgp"><label class="fl">Accent color</label><input class="fi" id="setting-accent" type="color" value="#e8501a" style="min-height:40px;padding:4px 8px;" /></div>
+          <div class="fgp"><label class="fl">Logo (light mode)</label><input class="fi" id="setting-logo-light" type="file" accept="image/*" /></div>
+          <div class="fgp"><label class="fl">Logo (dark mode)</label><input class="fi" id="setting-logo-dark" type="file" accept="image/*" /></div>
         </div>
       </div>
       <div class="card">
@@ -2126,7 +2159,13 @@
       </div>
       <div class="fgp"><label class="fl">Email</label><input class="fi" id="client-email" type="email" /></div>
       <div class="fgp"><label class="fl">Phone</label><input class="fi" id="client-phone" /></div>
+      <div class="fgp"><label class="fl">Birthday</label><input class="fi" id="client-birthday" type="date" /></div>
+      <div class="fgp"><label class="fl">Preferred channel</label><input class="fi" id="client-preferred-channel" placeholder="e.g. Email, Phone, Slack" /></div>
+      <div class="fgp"><label class="fl">Communication style</label><input class="fi" id="client-communication-style" placeholder="e.g. Concise, Detailed" /></div>
+      <div class="fgp"><label class="fl">Last touch date</label><input class="fi" id="client-last-touch" type="date" /></div>
+      <div class="fgp"><label class="fl">Next follow-up date</label><input class="fi" id="client-next-follow-up" type="date" /></div>
       <div class="fgp" style="grid-column:1/-1;"><label class="fl">Notes</label><textarea class="fi" id="client-notes" rows="2" style="min-height:56px;resize:vertical;"></textarea></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Relationship notes</label><textarea class="fi" id="client-relationship-notes" rows="2" style="min-height:56px;resize:vertical;"></textarea></div>
       <div class="fgp" style="grid-column:1/-1;padding-top:12px;border-top:1px solid var(--border);">
         <div class="fl" style="margin-bottom:4px;">Customers tab (optional)</div>
         <p style="font-size:12px;color:var(--text3);margin:0 0 12px;line-height:1.45;">Leave blank to use income and expenses linked to this client. Enter amounts to show fixed revenue and/or allocated cost in the Customers table; profit and margin update automatically.</p>

@@ -132,6 +132,12 @@
       email: client.email,
       phone: client.phone,
       notes: client.notes,
+      birthday: client.birthday || null,
+      communication_style: client.communicationStyle || null,
+      preferred_channel: client.preferredChannel || null,
+      last_touch_at: client.lastTouchAt || null,
+      next_follow_up_at: client.nextFollowUpAt || null,
+      relationship_notes: client.relationshipNotes || null,
       total_revenue: rev,
       created_at: createdIso,
       is_retainer: client.retainer === true,
@@ -179,6 +185,8 @@
   }
 
   var clients = [];
+  var crmEvents = [];
+  var weeklySummaries = [];
 
   // Project statuses (for Manage statuses modal)
   var STATUS_KEY = 'bizdash:project-statuses:v1';
@@ -683,6 +691,17 @@
           delete body.metadata;
           changed = true;
           console.warn('bizdash: retrying client persist without metadata — run ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT \'{}\'::jsonb;');
+        }
+        if (!changed) {
+          ['birthday', 'communication_style', 'preferred_channel', 'last_touch_at', 'next_follow_up_at', 'relationship_notes'].some(function (col) {
+            if (changed) return true;
+            if (errStr.toLowerCase().indexOf(col) !== -1 && Object.prototype.hasOwnProperty.call(body, col)) {
+              delete body[col];
+              changed = true;
+              return true;
+            }
+            return false;
+          });
         }
         if (!changed) {
           persistClientLastError = formatSupabaseErr(result.error);
@@ -1442,6 +1461,7 @@
     }
     var curEl = gid('setting-currency');
     var fiscalEl = gid('setting-fiscal');
+    var brandImg = gid('sb-brand-img');
     return {
       business: {
         name: val('setting-name'),
@@ -1455,6 +1475,8 @@
         tax: Math.max(0, numEl('setting-tax', 0)),
         currency: curEl && curEl.value ? curEl.value : 'USD',
         fiscal: fiscalEl && fiscalEl.value ? fiscalEl.value : 'January',
+        logo_light_url: brandImg && brandImg.getAttribute('data-logo-light') ? String(brandImg.getAttribute('data-logo-light')) : '',
+        logo_dark_url: brandImg && brandImg.getAttribute('data-logo-dark') ? String(brandImg.getAttribute('data-logo-dark')) : '',
       },
       budgets: {
         lab: Math.max(0, Number(budgets.lab) || 0),
@@ -1478,7 +1500,7 @@
     var pb = prevDash.business && typeof prevDash.business === 'object' ? prevDash.business : {};
     var nb = nextDash.business && typeof nextDash.business === 'object' ? nextDash.business : {};
     var mergedBusiness = Object.assign({}, pb);
-    ['name', 'owner', 'email', 'phone', 'address', 'period', 'accent', 'currency', 'fiscal'].forEach(function (k) {
+    ['name', 'owner', 'email', 'phone', 'address', 'period', 'accent', 'currency', 'fiscal', 'logo_light_url', 'logo_dark_url'].forEach(function (k) {
       var nv = nb[k];
       if (nv != null && String(nv).trim()) mergedBusiness[k] = nv;
     });
@@ -1518,6 +1540,7 @@
       var fis = gid('setting-fiscal');
       if (fis && biz.fiscal) fis.value = biz.fiscal;
       if (biz.accent) applyAccentBranding(biz.accent);
+      applyBrandLogo(biz.logo_light_url || '', biz.logo_dark_url || '');
     }
     if (raw.budgets && typeof raw.budgets === 'object') {
       ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
@@ -1576,6 +1599,18 @@
     return '#' + [r, g, b].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
   }
 
+  function applyBrandLogo(lightUrl, darkUrl) {
+    var img = document.getElementById('sb-brand-img');
+    if (!img) return;
+    var light = String(lightUrl || '').trim();
+    var dark = String(darkUrl || '').trim();
+    if (light) {
+      img.src = light;
+      img.setAttribute('data-logo-light', light);
+    }
+    if (dark) img.setAttribute('data-logo-dark', dark);
+  }
+
   function applyAccentBranding(accentHex) {
     var accent = normalizeHexColor(accentHex, '#e8501a');
     var rgb = hexToRgb(accent);
@@ -1585,6 +1620,13 @@
     root.style.setProperty('--coral', accent);
     root.style.setProperty('--coral2', darkenHex(accent, 0.1));
     root.style.setProperty('--coral-bg', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.08)');
+
+    // Keep chart palette aligned with each user's accent choice.
+    CHART_ORANGE = accent;
+    CHART_ORANGE_FILL = 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.1)';
+    CHART_ORANGE_FILL_BAR = 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.32)';
+    CHART_EXPENSE_ADVERTISING = accent;
+    CHART_VENDOR_PAL = [CHART_ORANGE, '#71717a', '#64748b', '#a1a1aa', '#94a3b8', '#78716c', '#d4d4d8', '#cbd5e1'];
   }
 
   async function persistAppSettingsToSupabase(opts) {
@@ -1736,11 +1778,79 @@
       email: row.email || '',
       phone: row.phone || '',
       notes: row.notes || '',
+      birthday: row.birthday ? String(row.birthday).slice(0, 10) : '',
+      communicationStyle: row.communication_style || '',
+      preferredChannel: row.preferred_channel || '',
+      lastTouchAt: row.last_touch_at ? String(row.last_touch_at).slice(0, 10) : '',
+      nextFollowUpAt: row.next_follow_up_at ? String(row.next_follow_up_at).slice(0, 10) : '',
+      relationshipNotes: row.relationship_notes || '',
       totalRevenue: Number(row.total_revenue || 0),
       createdAt: row.created_at || null,
       retainer: retainer,
     };
     return applyClientMetadata(base, meta);
+  }
+
+  function mapCrmEventRow(row) {
+    return {
+      id: row.id,
+      clientId: row.client_id || null,
+      kind: row.kind || 'note',
+      title: row.title || '',
+      details: row.details && typeof row.details === 'object' ? row.details : {},
+      eventAt: row.event_at || row.created_at || new Date().toISOString(),
+    };
+  }
+
+  async function fetchCrmEventsFromSupabase() {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
+    if (!supabase || !currentUser) return [];
+    try {
+      var res = await supabase.from('crm_events').select('*').eq('user_id', currentUser.id).order('event_at', { ascending: false }).limit(50);
+      if (res.error) return [];
+      return (res.data || []).map(mapCrmEventRow);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function fetchWeeklySummariesFromSupabase() {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
+    if (!supabase || !currentUser) return [];
+    try {
+      var res = await supabase.from('weekly_summaries').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(12);
+      if (res.error) return [];
+      return res.data || [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function addCrmEvent(kind, title, details, clientId, idempotencyKey) {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
+    if (!supabase || !currentUser) return;
+    var payloadDetails = details && typeof details === 'object' ? Object.assign({}, details) : {};
+    if (idempotencyKey) {
+      var exists = crmEvents.some(function (ev) { return ev && ev.details && ev.details.idempotencyKey === idempotencyKey; });
+      if (exists) return;
+      payloadDetails.idempotencyKey = idempotencyKey;
+    }
+    var payload = {
+      id: uuid(),
+      user_id: currentUser.id,
+      client_id: clientId || null,
+      kind: kind || 'note',
+      title: title || 'Activity',
+      details: payloadDetails,
+      event_at: new Date().toISOString(),
+    };
+    try {
+      var res = await supabase.from('crm_events').insert(payload);
+      if (!res.error) crmEvents.unshift(mapCrmEventRow(payload));
+    } catch (_) {}
   }
 
   /**
@@ -2348,8 +2458,8 @@ var incomePowerState = {
     function expenseBreakdownSliceColor(label) {
       switch (label) {
         case 'Labor': return '#f97316';
-        case 'Software': return CHART_EXPENSE_SOFTWARE;
-        case 'Advertising': return CHART_EXPENSE_ADVERTISING;
+        case 'Software': return CHART_EXPENSE_ADVERTISING;
+        case 'Advertising': return CHART_EXPENSE_SOFTWARE;
         case 'Other': return CHART_EXPENSE_GRAY;
         default: return CHART_PALETTE_REST[0];
       }
@@ -3617,9 +3727,17 @@ var incomePowerState = {
       applyAccentBranding(accentInput.value || '#e8501a');
       accentInput.addEventListener('input', function () {
         applyAccentBranding(accentInput.value || '#e8501a');
+        if (state.computed) {
+          renderAll();
+          renderProjects();
+        }
       });
       accentInput.addEventListener('change', function () {
         applyAccentBranding(accentInput.value || '#e8501a');
+        if (state.computed) {
+          renderAll();
+          renderProjects();
+        }
       });
     }
 
@@ -3637,6 +3755,21 @@ var incomePowerState = {
       await persistAppSettingsToSupabase({ includeDashboard: true });
     }
 
+    async function uploadBrandLogoInput(inputId, variant) {
+      var input = document.getElementById(inputId);
+      if (!input || !input.files || !input.files.length) return '';
+      supabase = window.supabaseClient || supabase;
+      currentUser = window.currentUser || currentUser;
+      if (!supabase || !currentUser) return '';
+      var file = input.files[0];
+      var ext = (String(file.name || '').split('.').pop() || 'png').toLowerCase();
+      var path = currentUser.id + '/' + variant + '-' + Date.now() + '.' + ext;
+      var upload = await supabase.storage.from('brand-assets').upload(path, file, { upsert: true, cacheControl: '3600' });
+      if (upload.error) return '';
+      var pub = supabase.storage.from('brand-assets').getPublicUrl(path);
+      return pub && pub.data && pub.data.publicUrl ? pub.data.publicUrl : '';
+    }
+
     ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
       var el = document.getElementById('budget-input-' + k);
       if (!el) return;
@@ -3648,6 +3781,13 @@ var incomePowerState = {
     var saveBtn = document.getElementById('btn-save-settings');
     if (saveBtn) {
       saveBtn.addEventListener('click', async function () {
+        var lightUrl = '';
+        var darkUrl = '';
+        try {
+          lightUrl = await uploadBrandLogoInput('setting-logo-light', 'light');
+          darkUrl = await uploadBrandLogoInput('setting-logo-dark', 'dark');
+        } catch (_) {}
+        applyBrandLogo(lightUrl, darkUrl);
         await syncBudgetsNow();
         // Brief visual confirmation
         var orig = saveBtn.textContent;
@@ -3772,6 +3912,57 @@ var incomePowerState = {
     syncFromDom();
   }
 
+  function buildWeeklySummaryText(kind) {
+    var c = state.computed || compute({ mode: 'all', start: null, end: null });
+    var openInvoices = invoices.filter(function (i) { return i && i.status !== 'paid'; }).length;
+    var doneProjects = projects.filter(function (p) { return p && String(p.status || '').toLowerCase().indexOf('complete') !== -1; }).length;
+    var prefix = kind === 'monday' ? 'Monday summary' : 'Friday recap';
+    return prefix + ': Revenue ' + fmtCurrency(c.revenueTotal || 0) + ', expenses ' + fmtCurrency(c.expenseTotal || 0) + ', open invoices ' + openInvoices + ', delivered projects ' + doneProjects + '.';
+  }
+
+  function wirePersonableActions() {
+    var dash = $('page-dashboard');
+    if (dash && dash.getAttribute('data-crm-wire') !== '1') {
+      dash.setAttribute('data-crm-wire', '1');
+      dash.addEventListener('click', async function (ev) {
+        var done = ev.target.closest('[data-suggestion-done]');
+        if (done) {
+          done.disabled = true;
+          await addCrmEvent('suggestion_done', 'Follow-up suggestion completed', {}, null, 'suggestion:' + Date.now() + ':' + done.getAttribute('data-suggestion-done'));
+          renderPersonableCards();
+          return;
+        }
+      });
+    }
+
+    async function handleSummary(kind) {
+      var txt = buildWeeklySummaryText(kind);
+      var today = dateYMD(new Date());
+      supabase = window.supabaseClient || supabase;
+      currentUser = window.currentUser || currentUser;
+      if (supabase && currentUser) {
+        try {
+          await supabase.from('weekly_summaries').upsert({
+            id: uuid(),
+            user_id: currentUser.id,
+            summary_type: kind,
+            summary_date: today,
+            payload: { text: txt },
+            created_at: new Date().toISOString(),
+          }, { onConflict: 'user_id,summary_type,summary_date' });
+        } catch (_) {}
+      }
+      weeklySummaries.unshift({ summary_type: kind, summary_date: today, payload: { text: txt } });
+      await addCrmEvent('weekly_summary', kind === 'monday' ? 'Monday summary generated' : 'Friday recap generated', { text: txt }, null, 'weekly:' + kind + ':' + today);
+      renderPersonableCards();
+    }
+
+    var mon = $('btn-generate-monday');
+    if (mon) mon.addEventListener('click', function () { handleSummary('monday'); });
+    var fri = $('btn-generate-friday');
+    if (fri) fri.addEventListener('click', function () { handleSummary('friday'); });
+  }
+
   function renderDashAR() {
     var empty = $('dash-ar-empty');
     var table = $('dash-ar-table');
@@ -3863,6 +4054,96 @@ var incomePowerState = {
     renderDashAR();
     renderClients();
     renderTimesheet();
+    renderPersonableCards();
+  }
+
+  function renderPersonableCards() {
+    var now = new Date();
+    var hh = now.getHours();
+    var sal = hh < 12 ? 'Good morning' : (hh < 18 ? 'Good afternoon' : 'Good evening');
+    var owner = ($('setting-owner') && $('setting-owner').value ? $('setting-owner').value.trim() : '') || 'there';
+    setText('crm-welcome', sal + ', ' + owner.split(' ')[0]);
+    setText('crm-local-date', now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }));
+
+    var reminders = [];
+    clients.forEach(function (c) {
+      if (!c || !c.lastTouchAt) return;
+      var d = new Date(c.lastTouchAt + 'T12:00:00');
+      if (isNaN(d.getTime())) return;
+      var days = Math.floor((now - d) / 86400000);
+      if (days >= 30) reminders.push({ client: c, text: days + ' days since last outreach' });
+    });
+    var remEl = $('crm-reminders-list');
+    if (remEl) {
+      remEl.innerHTML = reminders.length ? reminders.slice(0, 6).map(function (r) {
+        return '<div class="kb bn" style="padding:8px 10px;background:var(--bg2);">' + esc(r.client.companyName || 'Client') + ': ' + esc(r.text) + '</div>';
+      }).join('') : '<div style="font-size:13px;color:var(--text3);">No overdue follow-ups right now.</div>';
+    }
+
+    var suggestions = [];
+    clients.forEach(function (c) {
+      if (!c) return;
+      if (c.lastTouchAt) {
+        var daysSince = Math.floor((now - new Date(c.lastTouchAt + 'T12:00:00')) / 86400000);
+        if (daysSince > 30) suggestions.push({ c: c, text: 'Send a quick check-in via ' + (c.preferredChannel || 'email') + '.' });
+      }
+      var overdue = invoices.some(function (inv) { return inv && inv.status !== 'paid' && inv.dueDate && (new Date(inv.dueDate) < now); });
+      if (overdue && c.preferredChannel) suggestions.push({ c: c, text: 'Overdue invoice: follow up on ' + c.preferredChannel + '.' });
+      var completed = projects.some(function (p) { return p && p.clientId === c.id && String(p.status || '').toLowerCase().indexOf('complete') !== -1; });
+      if (completed) suggestions.push({ c: c, text: 'Ask for a testimonial for the delivered project.' });
+    });
+    var sugEl = $('crm-suggestions-list');
+    if (sugEl) {
+      sugEl.innerHTML = suggestions.length ? suggestions.slice(0, 5).map(function (s, idx) {
+        return '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:10px;">' +
+          '<div style="font-size:13px;color:var(--text2);"><strong style="color:var(--text);">' + esc(s.c.companyName || 'Client') + '</strong> - ' + esc(s.text) + '</div>' +
+          '<button type="button" class="btn" data-suggestion-done="' + idx + '">Done</button>' +
+        '</div>';
+      }).join('') : '<div style="font-size:13px;color:var(--text3);">No suggestions for now.</div>';
+    }
+
+    var milestones = [];
+    var firstPaid = invoices.filter(function (x) { return x && x.status === 'paid'; }).sort(function (a, b) { return String(a.paidAt || '').localeCompare(String(b.paidAt || '')); })[0];
+    if (firstPaid) {
+      milestones.push('First paid invoice: #' + (firstPaid.number || '—'));
+      addCrmEvent('milestone', 'First paid invoice', { invoiceNumber: firstPaid.number || '' }, null, 'milestone:first-paid');
+    }
+    var monthMap = {};
+    (state.transactions || []).forEach(function (tx) {
+      if (!tx || (tx.category !== 'svc' && tx.category !== 'ret') || !tx.date) return;
+      var ym = tx.date.slice(0, 7);
+      monthMap[ym] = (monthMap[ym] || 0) + (Number(tx.amount) || 0);
+    });
+    var bestMonth = Object.keys(monthMap).sort(function (a, b) { return monthMap[b] - monthMap[a]; })[0];
+    if (bestMonth) {
+      milestones.push('Best month: ' + bestMonth + ' (' + fmtCurrency(monthMap[bestMonth]) + ')');
+      addCrmEvent('milestone', 'Best revenue month', { month: bestMonth, revenue: monthMap[bestMonth] }, null, 'milestone:best-month:' + bestMonth);
+    }
+    if (projects.some(function (p) { return p && String(p.status || '').toLowerCase().indexOf('complete') !== -1; })) {
+      milestones.push('Project delivered');
+      addCrmEvent('milestone', 'Project delivered', {}, null, 'milestone:project-delivered');
+    }
+    var milEl = $('crm-milestones-list');
+    if (milEl) milEl.innerHTML = milestones.length ? milestones.map(function (m) { return '<div class="kb bn" style="padding:8px 10px;background:var(--bg2);">' + esc(m) + '</div>'; }).join('') : '<div style="font-size:13px;color:var(--text3);">No milestones yet.</div>';
+
+    var evEl = $('crm-events-timeline');
+    if (evEl) {
+      evEl.innerHTML = crmEvents.length ? crmEvents.slice(0, 8).map(function (ev) {
+        var when = ev.eventAt ? new Date(ev.eventAt).toLocaleDateString() : '—';
+        return '<div style="padding:8px 10px;border:1px solid var(--border);border-radius:10px;"><div style="font-size:12px;color:var(--text3);">' + esc(when) + ' • ' + esc(ev.kind || 'event') + '</div><div style="font-size:13px;color:var(--text2);">' + esc(ev.title || '') + '</div></div>';
+      }).join('') : '<div style="font-size:13px;color:var(--text3);">No timeline events yet.</div>';
+    }
+
+    var latestSummary = $('crm-latest-summary');
+    if (latestSummary) {
+      if (weeklySummaries.length) {
+        var ws = weeklySummaries[0];
+        var txt = ws && ws.payload && ws.payload.text ? ws.payload.text : '';
+        latestSummary.textContent = txt || 'Latest summary saved.';
+      } else {
+        latestSummary.textContent = 'No summary generated yet.';
+      }
+    }
   }
 
   function renderRevenueByVertical(c) {
@@ -5786,6 +6067,8 @@ var incomePowerState = {
           '<td>' + (c.contactName || '—') + '</td>' +
           '<td>' + (c.email || '—') + '</td>' +
           '<td>' + (c.phone || '—') + '</td>' +
+          '<td>' + esc(c.preferredChannel || '—') + '</td>' +
+          '<td>' + esc(c.communicationStyle || '—') + '</td>' +
           '<td>' + esc(c.status || '—') +
             (clientIsRetainer(c) ? ' <span style="font-size:10px;font-weight:600;color:var(--coral);white-space:nowrap;">Retainer</span>' : '') +
           '</td>' +
@@ -7634,6 +7917,12 @@ var incomePowerState = {
           $('client-email').value = client.email || '';
           $('client-phone').value = client.phone || '';
           $('client-notes').value = client.notes || '';
+          if ($('client-birthday')) $('client-birthday').value = client.birthday || '';
+          if ($('client-preferred-channel')) $('client-preferred-channel').value = client.preferredChannel || '';
+          if ($('client-communication-style')) $('client-communication-style').value = client.communicationStyle || '';
+          if ($('client-last-touch')) $('client-last-touch').value = client.lastTouchAt || '';
+          if ($('client-next-follow-up')) $('client-next-follow-up').value = client.nextFollowUpAt || '';
+          if ($('client-relationship-notes')) $('client-relationship-notes').value = client.relationshipNotes || '';
           var cr = $('client-cust-revenue');
           var cc = $('client-cust-cost');
           if (cr) cr.value = client.custTabRevenue != null ? String(client.custTabRevenue) : '';
@@ -8031,6 +8320,12 @@ var incomePowerState = {
       $('client-email').value = '';
       $('client-phone').value = '';
       $('client-notes').value = '';
+      if ($('client-birthday')) $('client-birthday').value = '';
+      if ($('client-preferred-channel')) $('client-preferred-channel').value = '';
+      if ($('client-communication-style')) $('client-communication-style').value = '';
+      if ($('client-last-touch')) $('client-last-touch').value = '';
+      if ($('client-next-follow-up')) $('client-next-follow-up').value = '';
+      if ($('client-relationship-notes')) $('client-relationship-notes').value = '';
       var cr = $('client-cust-revenue');
       var cc = $('client-cust-cost');
       if (cr) cr.value = '';
@@ -8084,6 +8379,12 @@ var incomePowerState = {
               email: $('client-email').value.trim(),
               phone: $('client-phone').value.trim(),
               notes: $('client-notes').value.trim(),
+              birthday: $('client-birthday') ? $('client-birthday').value : '',
+              preferredChannel: $('client-preferred-channel') ? $('client-preferred-channel').value.trim() : '',
+              communicationStyle: $('client-communication-style') ? $('client-communication-style').value.trim() : '',
+              lastTouchAt: $('client-last-touch') ? $('client-last-touch').value : '',
+              nextFollowUpAt: $('client-next-follow-up') ? $('client-next-follow-up').value : '',
+              relationshipNotes: $('client-relationship-notes') ? $('client-relationship-notes').value.trim() : '',
               totalRevenue: c.totalRevenue || 0,
               createdAt: c.createdAt || Date.now(),
               retainer: !!retainerChecked,
@@ -8122,6 +8423,12 @@ var incomePowerState = {
             email: $('client-email').value.trim(),
             phone: $('client-phone').value.trim(),
             notes: $('client-notes').value.trim(),
+            birthday: $('client-birthday') ? $('client-birthday').value : '',
+            preferredChannel: $('client-preferred-channel') ? $('client-preferred-channel').value.trim() : '',
+            communicationStyle: $('client-communication-style') ? $('client-communication-style').value.trim() : '',
+            lastTouchAt: $('client-last-touch') ? $('client-last-touch').value : '',
+            nextFollowUpAt: $('client-next-follow-up') ? $('client-next-follow-up').value : '',
+            relationshipNotes: $('client-relationship-notes') ? $('client-relationship-notes').value.trim() : '',
             totalRevenue: 0,
             createdAt: Date.now(),
             retainer: !!retainerChecked,
@@ -8141,6 +8448,14 @@ var incomePowerState = {
           saveClients(clients);
           renderClients();
           if (state.computed) renderInsights();
+        }
+        if (client) {
+          if (client.lastTouchAt) {
+            addCrmEvent('touch', 'Last touch updated for ' + (client.companyName || 'client'), { lastTouchAt: client.lastTouchAt }, client.id, 'touch:' + client.id + ':' + client.lastTouchAt);
+          }
+          if (client.nextFollowUpAt) {
+            addCrmEvent('follow_up', 'Follow-up scheduled for ' + (client.companyName || 'client'), { nextFollowUpAt: client.nextFollowUpAt }, client.id, 'followup:' + client.id + ':' + client.nextFollowUpAt);
+          }
         }
         refreshCloudSyncStatus();
         populateProjectClientOptions();
@@ -8532,6 +8847,8 @@ var incomePowerState = {
         if (remoteTimesheet.length) {
           timesheetEntries = mergeRemoteWithLocalOrphans(timesheetEntries, remoteTimesheet, function (x) { return x; });
         }
+        crmEvents = await fetchCrmEventsFromSupabase();
+        weeklySummaries = await fetchWeeklySummariesFromSupabase();
 
         var settingsRow = await fetchAppSettingsFromSupabase();
         if (settingsRow && settingsRow.dashboard_settings) {
@@ -8574,6 +8891,8 @@ var incomePowerState = {
       campaigns = loadCampaigns();
       timesheetEntries = loadTimesheetEntries();
       projectStatuses = loadStatuses();
+      crmEvents = [];
+      weeklySummaries = [];
       expandRecurringExpenseInstances();
       state.computed = compute(state.filter);
       renderAll();
@@ -8650,6 +8969,7 @@ var incomePowerState = {
     wireIncomePowerTable();
     wireSpendingReport();
     wireSettingsSave();
+    wirePersonableActions();
     wireCloudSyncPanel();
     wireMarketingCampaign();
     if (typeof window.wireDashboardAssistant === 'function') {

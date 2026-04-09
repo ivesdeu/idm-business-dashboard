@@ -51,9 +51,9 @@ DROP POLICY IF EXISTS "clients_select_own" ON public.clients;
 DROP POLICY IF EXISTS "clients_insert_own" ON public.clients;
 DROP POLICY IF EXISTS "clients_update_own" ON public.clients;
 DROP POLICY IF EXISTS "clients_delete_own" ON public.clients;
-CREATE POLICY "clients_select_own" ON public.clients FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
+CREATE POLICY "clients_select_own" ON public.clients FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "clients_insert_own" ON public.clients FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "clients_update_own" ON public.clients FOR UPDATE USING (auth.uid() = user_id OR user_id IS NULL) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "clients_update_own" ON public.clients FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "clients_delete_own" ON public.clients FOR DELETE USING (auth.uid() = user_id);
 
 -- If `clients` was created via SQL only, PostgREST may lack table grants; browser + JWT use role `authenticated`.
@@ -64,9 +64,9 @@ DROP POLICY IF EXISTS "transactions_select_own" ON public.transactions;
 DROP POLICY IF EXISTS "transactions_insert_own" ON public.transactions;
 DROP POLICY IF EXISTS "transactions_update_own" ON public.transactions;
 DROP POLICY IF EXISTS "transactions_delete_own" ON public.transactions;
-CREATE POLICY "transactions_select_own" ON public.transactions FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
+CREATE POLICY "transactions_select_own" ON public.transactions FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "transactions_insert_own" ON public.transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "transactions_update_own" ON public.transactions FOR UPDATE USING (auth.uid() = user_id OR user_id IS NULL) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "transactions_update_own" ON public.transactions FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "transactions_delete_own" ON public.transactions FOR DELETE USING (auth.uid() = user_id);
 
 -- ---- Extend existing rows: extra columns (skipped entirely if `transactions` is missing) ----
