@@ -1036,6 +1036,7 @@
   .spend-dd-lbl { font-size: 11px; font-weight: 500; color: var(--text3); letter-spacing: 0.02em; }
   .spend-dd .fi { width: auto; min-width: 118px; font-size: 13px; padding: 7px 10px; }
   .spend-dd select.fi { padding: 7px 32px 7px 10px; background-position: right 10px center; }
+  .rev-trend-dd .fi { min-width: 132px; }
   .spend-download { padding: 7px 10px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; color: var(--text2); }
   .spend-download:hover { color: var(--text); }
   .spend-kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
@@ -1096,6 +1097,86 @@
   .ts-weekday { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text2); }
   .ts-radio { display:inline-flex; align-items:center; gap:12px; font-size:13px; color:var(--text2); margin-top:4px; }
   .ts-row-actions { white-space:nowrap; }
+  .ts-week-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px 4px 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--rl);
+    background: var(--bg2);
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .ts-week-nav-btn {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: var(--r);
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ts-week-nav-btn:hover { background: var(--bg3); color: var(--text); }
+  .ts-week-nav-mid {
+    min-width: 0;
+    padding: 0 8px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .ts-week-nav-range {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .ts-week-nav-today {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--coral);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .ts-week-nav-today:hover { color: var(--coral2); }
+  .ts-week-nav-today[hidden] { display: none !important; }
+  .ts-timesheet-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+  }
+  .ts-period-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px 12px;
+    flex-wrap: wrap;
+    margin: -8px 0 14px;
+  }
+  .ts-period-dd { min-width: 0; }
+  .ts-period-dd .fi { min-width: 128px; }
+  .ts-period-all-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 42px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--rl);
+    background: var(--bg2);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+  }
   @media (max-width: 960px) {
     .ts-grid { grid-template-columns: 1fr 1fr; }
   }
@@ -1155,41 +1236,41 @@
   <nav class="sb-nav">
     <div class="nav-lbl">Overview</div>
     <div class="ni active" data-nav="dashboard" onclick="nav('dashboard',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Dashboard
     </div>
     <div class="ni" data-nav="customers" onclick="nav('customers',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Customers
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/></svg>Customers
     </div>
     <div class="ni" data-nav="revenue" onclick="nav('revenue',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Income
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Income
     </div>
     <div class="ni" data-nav="expenses" onclick="nav('expenses',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Expenses
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>Expenses
     </div>
     <div class="ni" data-nav="timesheet" onclick="nav('timesheet',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Timesheet
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>Timesheet
     </div>
     <div class="nav-lbl">Analytics</div>
     <div class="ni" data-nav="performance" onclick="nav('performance',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Performance
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>Performance
     </div>
     <div class="ni" data-nav="retention" onclick="nav('retention',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>Retention
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>Retention
     </div>
     <div class="ni" data-nav="insights" onclick="nav('insights',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Insights
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>Insights
     </div>
     <!-- Hidden in internal-mode via .nav-public-facing (route/page kept). -->
     <div class="ni nav-public-facing" data-nav="marketing" onclick="nav('marketing',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Marketing
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>Marketing
     </div>
     <div class="ni" data-nav="chat" onclick="nav('chat',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></svg>Chat
     </div>
     <div class="sb-spacer"></div>
     <div class="sb-div"></div>
     <div class="ni" data-nav="settings" onclick="nav('settings',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>Settings
     </div>
   </nav>
   <div class="sb-user" id="sb-user-menu" title="Account" data-public-title="Account">
@@ -1312,7 +1393,20 @@
       <div class="kc"><div class="kl">Avg. Days to Pay</div><div class="kv" id="rev-kpi-4">—</div><div class="kb bn" id="rev-kpi-4b">—</div></div>
     </div>
     <div class="gm mb">
-      <div class="card"><div class="sh"><div class="st">Revenue Trend</div><div class="ss">Last 6 months</div></div><div class="cw"><canvas id="cRevT"></canvas></div></div>
+      <div class="card">
+        <div class="sh">
+          <div><div class="st">Revenue Trend</div><div class="ss" id="rev-trend-hint">Last 90 days</div></div>
+          <div class="spend-dd rev-trend-dd">
+            <span class="spend-dd-lbl">Date range</span>
+            <select class="fi" id="rev-trend-range" title="Revenue trend range">
+              <option value="30d">Past month</option>
+              <option value="90d" selected>Last 90 days</option>
+              <option value="all">All time</option>
+            </select>
+          </div>
+        </div>
+        <div class="cw"><canvas id="cRevT"></canvas></div>
+      </div>
       <div class="card">
         <div class="sh"><div class="st">AR Aging</div></div>
         <div style="display:flex;flex-direction:column;gap:12px;margin-top:4px;">
@@ -1404,7 +1498,7 @@
             </select>
           </div>
           <button type="button" class="btn spend-download" id="spend-download" title="Download CSV" aria-label="Download CSV">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
           </button>
         </div>
       </div>
@@ -1474,6 +1568,56 @@
         <button type="button" class="btn btn-p" id="btn-add-time">+ Add Time</button>
       </div>
     </div>
+    <div class="ts-period-toolbar">
+      <div class="ts-timesheet-toolbar">
+        <div class="spend-dd ts-period-dd">
+          <span class="spend-dd-lbl">View</span>
+          <select class="fi" id="ts-period-mode" title="Time period" aria-label="Time period">
+            <option value="week">Week</option>
+            <option value="month">Month</option>
+            <option value="quarter">Quarter</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+        <div id="ts-period-week-wrap" class="ts-week-nav" role="group" aria-label="Timesheet week">
+          <button type="button" class="ts-week-nav-btn" id="ts-week-prev" title="Previous week" aria-label="Previous week">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <div class="ts-week-nav-mid">
+            <div class="ts-week-nav-range" id="ts-week-label">—</div>
+            <button type="button" class="ts-week-nav-today" id="ts-week-today" hidden>This week</button>
+          </div>
+          <button type="button" class="ts-week-nav-btn" id="ts-week-next" title="Next week" aria-label="Next week">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div id="ts-period-month-wrap" class="ts-week-nav" role="group" aria-label="Timesheet month" style="display:none;">
+          <button type="button" class="ts-week-nav-btn" id="ts-month-prev" title="Previous month" aria-label="Previous month">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <div class="ts-week-nav-mid">
+            <div class="ts-week-nav-range" id="ts-month-label">—</div>
+            <button type="button" class="ts-week-nav-today" id="ts-month-today" hidden>This month</button>
+          </div>
+          <button type="button" class="ts-week-nav-btn" id="ts-month-next" title="Next month" aria-label="Next month">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div id="ts-period-quarter-wrap" class="ts-week-nav" role="group" aria-label="Timesheet quarter" style="display:none;">
+          <button type="button" class="ts-week-nav-btn" id="ts-quarter-prev" title="Previous quarter" aria-label="Previous quarter">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <div class="ts-week-nav-mid">
+            <div class="ts-week-nav-range" id="ts-quarter-label">—</div>
+            <button type="button" class="ts-week-nav-today" id="ts-quarter-today" hidden>This quarter</button>
+          </div>
+          <button type="button" class="ts-week-nav-btn" id="ts-quarter-next" title="Next quarter" aria-label="Next quarter">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div id="ts-period-all-wrap" class="ts-period-all-pill" style="display:none;" aria-hidden="true">All recorded time</div>
+      </div>
+    </div>
     <div class="ts-grid mb">
       <div class="ts-kpi"><div class="ts-kpi-lbl">Total hours</div><div class="ts-kpi-val" id="ts-kpi-total">0.0h</div><div class="ts-kpi-sub" id="ts-kpi-total-sub">0 entries</div></div>
       <div class="ts-kpi"><div class="ts-kpi-lbl">Billable</div><div class="ts-kpi-val" id="ts-kpi-billable">0.0h</div><div class="ts-kpi-sub" id="ts-kpi-billable-sub">0.0%</div></div>
@@ -1482,7 +1626,7 @@
       <div class="ts-kpi"><div class="ts-kpi-lbl">Avg / employee</div><div class="ts-kpi-val" id="ts-kpi-avg">0.0h</div><div class="ts-kpi-sub" id="ts-kpi-avg-sub">total period</div></div>
     </div>
     <div class="card mb">
-      <div class="sh"><div class="st">Hours by employee</div><div class="ss">Based on the Account field in each time entry</div></div>
+      <div class="sh"><div class="st">Hours by employee</div><div class="ss" id="ts-sub-by-emp">Based on the Account field · selected week</div></div>
       <div id="timesheet-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No time logged yet.</div>
       <table class="dt" id="timesheet-table" style="display:none;">
         <thead><tr><th>Employee (Account)</th><th>Total</th><th>Billable</th><th>Non-Billable</th><th>Entries</th><th>Utilization</th></tr></thead>
@@ -1490,7 +1634,7 @@
       </table>
     </div>
     <div class="card">
-      <div class="sh"><div class="st">Recent entries</div><div class="ss">Newest first</div></div>
+      <div class="sh"><div class="st">Recent entries</div><div class="ss" id="ts-sub-log">Newest first · selected week</div></div>
       <div id="timesheet-log-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No entries yet.</div>
       <table class="dt" id="timesheet-log-table" style="display:none;">
         <thead><tr><th>Date</th><th>Employee</th><th>Project</th><th>Task</th><th>Activity</th><th>Hours</th><th>Type</th><th>Notes</th><th style="width:110px;">Actions</th></tr></thead>
@@ -1658,38 +1802,38 @@
               <img id="chat-image-thumb" src="" alt="Attached preview" />
             </button>
             <button type="button" class="chat-image-preview-remove" id="chat-image-remove" aria-label="Remove image">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>
           <textarea id="chat-input" class="chat-prompt-ta" rows="1" placeholder="Ask anything." maxlength="2000" autocomplete="off"></textarea>
           <div class="chat-prompt-toolbar">
             <button type="button" class="chat-prompt-icon-btn" id="chat-attach-btn" title="Attach image" aria-label="Attach image">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
             </button>
             <div class="chat-tools-wrap">
               <button type="button" class="chat-prompt-tools-trigger" id="chat-tools-trigger" aria-expanded="false" aria-haspopup="true" title="Explore tools">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>
                 <span id="chat-tools-label">Tools</span>
               </button>
               <div id="chat-tools-pop" class="chat-tools-pop" hidden role="menu" aria-label="Tools">
                 <button type="button" class="chat-tool-row" data-chat-tool="createImage" role="menuitem">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
                   <span>Create an image</span>
                 </button>
                 <button type="button" class="chat-tool-row" data-chat-tool="searchWeb" role="menuitem">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
                   <span>Search the web</span>
                 </button>
                 <button type="button" class="chat-tool-row" data-chat-tool="writeCode" role="menuitem">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>
                   <span>Write or code</span>
                 </button>
                 <button type="button" class="chat-tool-row" data-chat-tool="deepResearch" role="menuitem">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
                   <span>Run deep research</span><span class="chat-tool-row-extra">N/A</span>
                 </button>
                 <button type="button" class="chat-tool-row" data-chat-tool="thinkLonger" role="menuitem">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 7C9.24 7 7 9.24 7 12c0 1.36.54 2.6 1.42 3.5.34.35.62.77.7 1.25l.53 2.64c.19.93.98 1.61 1.92 1.61h.86c.94 0 1.73-.68 1.92-1.61l.53-2.64c.08-.48.36-.9.7-1.25A4.84 4.84 0 0 0 17 12c0-2.76-2.24-5-5-5Z"/><path d="M12 4V3M18 6l1-1M20 12h1M4 12H3M6 6L5 5M10 18h4"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
                   <span>Think for longer</span>
                 </button>
               </div>
@@ -1699,15 +1843,15 @@
               <button type="button" class="chat-active-tool-chip" id="chat-active-tool-clear" title="Clear tool">
                 <span id="chat-active-tool-icon"></span>
                 <span id="chat-active-tool-name"></span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
               </button>
             </div>
             <div class="chat-prompt-toolbar-spacer"></div>
             <button type="button" class="chat-prompt-icon-btn" id="chat-mic-btn" title="Voice input isn’t available in this dashboard" aria-label="Voice input unavailable">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>
             </button>
             <button type="button" class="chat-prompt-send" id="chat-send" disabled title="Send" aria-label="Send message">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.25v13.5"/><path d="m18.75 12-6.75-6.75L5.25 12"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
             </button>
           </div>
         </div>

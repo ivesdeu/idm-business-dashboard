@@ -300,6 +300,15 @@
   }
 
   var timesheetEntries = loadTimesheetEntries();
+  /** Monday YYYY-MM-DD for timesheet week filter (ISO week starting Monday). */
+  var timesheetWeekMondayYmd = null;
+  /** 'week' | 'month' | 'quarter' | 'all' */
+  var timesheetPeriodMode = 'week';
+  /** Calendar month anchor YYYY-MM (first day of month). */
+  var timesheetMonthYm = null;
+  var timesheetQuarterYear = null;
+  /** 1–4 */
+  var timesheetQuarterQ = null;
 
   // ---------- Timesheet entries (Supabase) ----------
   function mapTimesheetRow(row) {
@@ -2196,6 +2205,8 @@ var spendReportUi = {
   costType: 'all',
 };
 var INCOME_POWER_PREFS_KEY = 'bizdash:income-power-prefs:v1';
+var INCOME_TREND_RANGE_KEY = 'bizdash:income-trend-range:v1';
+var incomeTrendRange = '90d';
 var incomePowerColumns = [
   { id: 'date', label: 'Date', type: 'date' },
   { id: 'source', label: 'Source', type: 'text' },
@@ -2229,6 +2240,19 @@ var incomePowerState = {
     } catch (_) {}
   }
 
+  function loadIncomeTrendRange() {
+    try {
+      var raw = localStorage.getItem(INCOME_TREND_RANGE_KEY);
+      if (raw === '30d' || raw === '90d' || raw === 'all') incomeTrendRange = raw;
+    } catch (_) {}
+  }
+
+  function saveIncomeTrendRange() {
+    try {
+      localStorage.setItem(INCOME_TREND_RANGE_KEY, incomeTrendRange);
+    } catch (_) {}
+  }
+
   function saveIncomePowerPrefs() {
     try {
       localStorage.setItem(INCOME_POWER_PREFS_KEY, JSON.stringify({
@@ -2247,6 +2271,9 @@ var incomePowerState = {
   var CHART_TICK = '#71717a';
   var CHART_GRID = 'rgba(0, 0, 0, 0.04)';
   var CHART_EXPENSE_GRAY = '#d4d4d8';
+  /** Dashboard expense doughnut: blue (software) vs magenta (advertising) — avoid slate vs stone confusion. */
+  var CHART_EXPENSE_SOFTWARE = '#2563eb';
+  var CHART_EXPENSE_ADVERTISING = '#c026d3';
   var CHART_PALETTE_REST = ['#71717a', '#a1a1aa', '#d4d4d8', '#e4e4e7', '#52525b', '#94a3b8'];
   var CHART_VENDOR_PAL = [CHART_ORANGE, '#71717a', '#64748b', '#a1a1aa', '#94a3b8', '#78716c', '#d4d4d8', '#cbd5e1'];
 
@@ -2264,7 +2291,6 @@ var incomePowerState = {
 
     var labels = [];
     var data = [];
-    var colors = [CHART_ORANGE, '#64748b', '#78716c', CHART_EXPENSE_GRAY];
 
     var map = [
       ['Labor', c.expenseByCat.lab],
@@ -2273,6 +2299,17 @@ var incomePowerState = {
       ['Other', c.expenseByCat.oth],
     ].filter(function (x) { return x[1] > 0.01; });
 
+    function expenseBreakdownSliceColor(label) {
+      switch (label) {
+        case 'Labor': return CHART_ORANGE;
+        case 'Software': return CHART_EXPENSE_SOFTWARE;
+        case 'Advertising': return CHART_EXPENSE_ADVERTISING;
+        case 'Other': return CHART_EXPENSE_GRAY;
+        default: return CHART_PALETTE_REST[0];
+      }
+    }
+
+    var colors = [];
     if (map.length === 0) {
       labels = ['No expense data'];
       data = [1];
@@ -2280,6 +2317,7 @@ var incomePowerState = {
       map.forEach(function (pair) {
         labels.push(pair[0]);
         data.push(pair[1]);
+        colors.push(expenseBreakdownSliceColor(pair[0]));
       });
     }
 
@@ -2316,7 +2354,7 @@ var incomePowerState = {
     }
     leg.innerHTML = map.map(function (pair, idx) {
       var pct = Math.round(pair[1] / c.expenseTotal * 100);
-      var color = colors[idx % colors.length];
+      var color = colors[idx];
       return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">' +
         '<span style="display:flex;align-items:center;gap:7px;color:var(--text2);">' +
         '<span style="width:9px;height:9px;border-radius:2px;background:' + color + ';display:inline-block;flex-shrink:0;"></span>' +
@@ -5309,7 +5347,34 @@ var incomePowerState = {
     // Revenue Trend chart (cRevT)
     var canvas = document.getElementById('cRevT');
     if (canvas && window.Chart) {
-      var monthKeys = Object.keys(revByMonth);
+      var rangeMode = incomeTrendRange || '90d';
+      var hint = $('rev-trend-hint');
+      if (hint) {
+        hint.textContent = rangeMode === '30d' ? 'Past month' : (rangeMode === 'all' ? 'All time' : 'Last 90 days');
+      }
+      var rangeSel = $('rev-trend-range');
+      if (rangeSel) rangeSel.value = rangeMode;
+
+      var today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+      var cutoff = null;
+      if (rangeMode === '30d') cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30, 12, 0, 0, 0);
+      if (rangeMode === '90d') cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 90, 12, 0, 0, 0);
+
+      var chartRevByMonth = {};
+      var chartMonthLatestTxDate = {};
+      revTxs.forEach(function (tx) {
+        var d = parseDate(tx.date);
+        if (!d) return;
+        if (cutoff && d < cutoff) return;
+        var key = d.getFullYear() + '-' + d.getMonth();
+        chartRevByMonth[key] = (chartRevByMonth[key] || 0) + (+tx.amount || 0);
+        var ds = (tx.date || '').trim();
+        if (ds && (!chartMonthLatestTxDate[key] || ds > chartMonthLatestTxDate[key])) {
+          chartMonthLatestTxDate[key] = ds;
+        }
+      });
+
+      var monthKeys = Object.keys(chartRevByMonth);
       if (monthKeys.length) {
         monthKeys.sort(function (a, b) {
           var pa = a.split('-').map(Number);
@@ -5317,17 +5382,14 @@ var incomePowerState = {
           if (pa[0] !== pb[0]) return pa[0] - pb[0];
           return pa[1] - pb[1];
         });
-        if (monthKeys.length > 6) {
-          monthKeys = monthKeys.slice(monthKeys.length - 6);
-        }
       }
       var labels = monthKeys.map(function (key) {
         var parts = key.split('-').map(Number);
         var y = parts[0];
         var m0 = parts[1];
-        return chartPointDateLabel(revMonthLatestTxDate[key], y, m0);
+        return chartPointDateLabel(chartMonthLatestTxDate[key], y, m0);
       });
-      var data = monthKeys.map(function (k) { return revByMonth[k] || 0; });
+      var data = monthKeys.map(function (k) { return chartRevByMonth[k] || 0; });
 
       if (revTrendChart && revTrendChart.config && revTrendChart.config.type !== 'line') {
         revTrendChart.destroy();
@@ -5691,6 +5753,73 @@ var incomePowerState = {
     return x;
   }
 
+  function calendarQuarterFromDate(d) {
+    var m = d.getMonth();
+    return { year: d.getFullYear(), q: Math.floor(m / 3) + 1 };
+  }
+
+  function shiftMonthYm(ym, deltaMonths) {
+    var y = parseInt((ym || '').slice(0, 4), 10);
+    var m0 = parseInt((ym || '').slice(5, 7), 10) - 1 + deltaMonths;
+    var dt = new Date(y, m0, 1, 12, 0, 0, 0);
+    if (isNaN(dt.getTime())) return ym;
+    return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+  }
+
+  function shiftQuarter(year, q, deltaQ) {
+    var y = year;
+    var qq = q + deltaQ;
+    while (qq < 1) {
+      qq += 4;
+      y -= 1;
+    }
+    while (qq > 4) {
+      qq -= 4;
+      y += 1;
+    }
+    return { year: y, q: qq };
+  }
+
+  function timesheetEntryYmd(e) {
+    return (e && e.date ? String(e.date) : '').slice(0, 10);
+  }
+
+  function timesheetEnsurePeriodAnchors() {
+    if (!timesheetWeekMondayYmd) {
+      timesheetWeekMondayYmd = dateYMD(startOfWeekMonday(new Date()));
+    }
+    if (!timesheetMonthYm) {
+      var n = new Date();
+      timesheetMonthYm = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+    }
+    if (timesheetQuarterYear == null || timesheetQuarterQ == null) {
+      var cq = calendarQuarterFromDate(new Date());
+      timesheetQuarterYear = cq.year;
+      timesheetQuarterQ = cq.q;
+    }
+  }
+
+  /** Monday Date for spreading new entries by weekday checkboxes. */
+  function timesheetBaseMondayForNewEntry() {
+    timesheetEnsurePeriodAnchors();
+    var mode = timesheetPeriodMode || 'week';
+    if (mode === 'week') {
+      var ymd = timesheetWeekMondayYmd || dateYMD(startOfWeekMonday(new Date()));
+      var w = parseYMD(ymd);
+      return isNaN(w.getTime()) ? startOfWeekMonday(new Date()) : w;
+    }
+    if (mode === 'month') {
+      var first = parseYMD(timesheetMonthYm + '-01');
+      return isNaN(first.getTime()) ? startOfWeekMonday(new Date()) : startOfWeekMonday(first);
+    }
+    if (mode === 'quarter') {
+      var q0 = (timesheetQuarterQ - 1) * 3;
+      var first = new Date(timesheetQuarterYear, q0, 1, 12, 0, 0, 0);
+      return startOfWeekMonday(first);
+    }
+    return startOfWeekMonday(new Date());
+  }
+
   function renderTimesheet() {
     var empty = $('timesheet-empty');
     var table = $('timesheet-table');
@@ -5700,11 +5829,89 @@ var incomePowerState = {
     var logBody = $('timesheet-log-tbody');
     if (!tbody || !logBody) return;
 
+    timesheetEnsurePeriodAnchors();
+    var mode = timesheetPeriodMode || 'week';
+    var periodSel = $('ts-period-mode');
+    if (periodSel) periodSel.value = mode;
+
+    var weekWrap = $('ts-period-week-wrap');
+    var monthWrap = $('ts-period-month-wrap');
+    var quarterWrap = $('ts-period-quarter-wrap');
+    var allWrap = $('ts-period-all-wrap');
+    if (weekWrap) weekWrap.style.display = mode === 'week' ? '' : 'none';
+    if (monthWrap) monthWrap.style.display = mode === 'month' ? '' : 'none';
+    if (quarterWrap) quarterWrap.style.display = mode === 'quarter' ? '' : 'none';
+    if (allWrap) allWrap.style.display = mode === 'all' ? '' : 'none';
+
+    var allEntries = timesheetEntries || [];
+    var filteredEntries;
+    if (mode === 'all') {
+      filteredEntries = allEntries.filter(function (e) {
+        var ds = timesheetEntryYmd(e);
+        return ds.length === 10;
+      });
+    } else if (mode === 'week') {
+      var wkStartD = parseYMD(timesheetWeekMondayYmd);
+      var wkEndD = new Date(wkStartD.getFullYear(), wkStartD.getMonth(), wkStartD.getDate() + 6, 12, 0, 0, 0);
+      var weekEndYmd = dateYMD(wkEndD);
+      filteredEntries = allEntries.filter(function (e) {
+        var ds = timesheetEntryYmd(e);
+        return ds && ds >= timesheetWeekMondayYmd && ds <= weekEndYmd;
+      });
+      var weekLabelEl = $('ts-week-label');
+      if (weekLabelEl && !isNaN(wkStartD.getTime()) && !isNaN(wkEndD.getTime())) {
+        var lo = { month: 'short', day: 'numeric', year: 'numeric' };
+        weekLabelEl.textContent =
+          wkStartD.toLocaleDateString('en-US', lo) + ' – ' + wkEndD.toLocaleDateString('en-US', lo);
+      }
+      var thisWeekMon = dateYMD(startOfWeekMonday(new Date()));
+      var todayWeekBtn = $('ts-week-today');
+      if (todayWeekBtn) todayWeekBtn.hidden = timesheetWeekMondayYmd === thisWeekMon;
+    } else if (mode === 'month') {
+      var y = parseInt(timesheetMonthYm.slice(0, 4), 10);
+      var m0 = parseInt(timesheetMonthYm.slice(5, 7), 10) - 1;
+      var monthFirst = new Date(y, m0, 1, 12, 0, 0, 0);
+      var monthLast = new Date(y, m0 + 1, 0, 12, 0, 0, 0);
+      var monthStartYmd = dateYMD(monthFirst);
+      var monthEndYmd = dateYMD(monthLast);
+      filteredEntries = allEntries.filter(function (e) {
+        var ds = timesheetEntryYmd(e);
+        return ds && ds >= monthStartYmd && ds <= monthEndYmd;
+      });
+      var monthLabelEl = $('ts-month-label');
+      if (monthLabelEl && !isNaN(monthFirst.getTime())) {
+        monthLabelEl.textContent = monthFirst.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      }
+      var nowM = new Date();
+      var curYm = nowM.getFullYear() + '-' + String(nowM.getMonth() + 1).padStart(2, '0');
+      var todayMonthBtn = $('ts-month-today');
+      if (todayMonthBtn) todayMonthBtn.hidden = timesheetMonthYm === curYm;
+    } else {
+      var q0m = (timesheetQuarterQ - 1) * 3;
+      var qFirst = new Date(timesheetQuarterYear, q0m, 1, 12, 0, 0, 0);
+      var qLast = new Date(timesheetQuarterYear, q0m + 3, 0, 12, 0, 0, 0);
+      var qStartYmd = dateYMD(qFirst);
+      var qEndYmd = dateYMD(qLast);
+      filteredEntries = allEntries.filter(function (e) {
+        var ds = timesheetEntryYmd(e);
+        return ds && ds >= qStartYmd && ds <= qEndYmd;
+      });
+      var quarterLabelEl = $('ts-quarter-label');
+      if (quarterLabelEl) {
+        quarterLabelEl.textContent = 'Q' + timesheetQuarterQ + ' ' + timesheetQuarterYear;
+      }
+      var cq = calendarQuarterFromDate(new Date());
+      var todayQuarterBtn = $('ts-quarter-today');
+      if (todayQuarterBtn) {
+        todayQuarterBtn.hidden = timesheetQuarterYear === cq.year && timesheetQuarterQ === cq.q;
+      }
+    }
+
     var byEmp = {};
     var total = 0;
     var bill = 0;
     var non = 0;
-    (timesheetEntries || []).forEach(function (e) {
+    filteredEntries.forEach(function (e) {
       var key = (e.account || '').trim() || '—';
       if (!byEmp[key]) byEmp[key] = { total: 0, billable: 0, nonBillable: 0, entries: 0 };
       var mins = Math.max(0, Number(e.minutes) || 0);
@@ -5740,16 +5947,23 @@ var incomePowerState = {
     }
 
     setText('ts-kpi-total', formatMinutesToHours(total));
-    setText('ts-kpi-total-sub', (timesheetEntries || []).length + ' entries');
+    setText('ts-kpi-total-sub', filteredEntries.length + ' entries');
     setText('ts-kpi-billable', formatMinutesToHours(bill));
     setText('ts-kpi-billable-sub', total > 0 ? ((bill / total) * 100).toFixed(1) + '%' : '0.0%');
     setText('ts-kpi-nonbillable', formatMinutesToHours(non));
     setText('ts-kpi-nonbillable-sub', total > 0 ? ((non / total) * 100).toFixed(1) + '%' : '0.0%');
     setText('ts-kpi-employees', String(empKeys.length));
     setText('ts-kpi-avg', formatMinutesToHours(empKeys.length ? total / empKeys.length : 0));
-    setText('ts-kpi-avg-sub', 'total period');
+    var avgSub = mode === 'all' ? 'all time' : mode === 'month' ? 'selected month' : mode === 'quarter' ? 'selected quarter' : 'selected week';
+    setText('ts-kpi-avg-sub', avgSub);
 
-    var list = (timesheetEntries || []).slice().sort(function (a, b) {
+    var subEmp = $('ts-sub-by-emp');
+    var subLog = $('ts-sub-log');
+    var rangePhrase = mode === 'all' ? 'all time' : mode === 'month' ? 'selected month' : mode === 'quarter' ? 'selected quarter' : 'selected week';
+    if (subEmp) subEmp.textContent = 'Based on the Account field · ' + rangePhrase;
+    if (subLog) subLog.textContent = 'Newest first · ' + rangePhrase;
+
+    var list = filteredEntries.slice().sort(function (a, b) {
       var ad = (a.date || '') + ' ' + (a.createdAt || '');
       var bd = (b.date || '') + ' ' + (b.createdAt || '');
       return bd.localeCompare(ad);
@@ -5783,6 +5997,98 @@ var incomePowerState = {
   }
 
   function wireTimesheet() {
+    var weekPrev = $('ts-week-prev');
+    var weekNext = $('ts-week-next');
+    var weekToday = $('ts-week-today');
+    if (weekPrev) {
+      weekPrev.addEventListener('click', function () {
+        if (!timesheetWeekMondayYmd) timesheetWeekMondayYmd = dateYMD(startOfWeekMonday(new Date()));
+        var d = parseYMD(timesheetWeekMondayYmd);
+        d.setDate(d.getDate() - 7);
+        timesheetWeekMondayYmd = dateYMD(d);
+        renderTimesheet();
+      });
+    }
+    if (weekNext) {
+      weekNext.addEventListener('click', function () {
+        if (!timesheetWeekMondayYmd) timesheetWeekMondayYmd = dateYMD(startOfWeekMonday(new Date()));
+        var d = parseYMD(timesheetWeekMondayYmd);
+        d.setDate(d.getDate() + 7);
+        timesheetWeekMondayYmd = dateYMD(d);
+        renderTimesheet();
+      });
+    }
+    if (weekToday) {
+      weekToday.addEventListener('click', function () {
+        timesheetWeekMondayYmd = dateYMD(startOfWeekMonday(new Date()));
+        renderTimesheet();
+      });
+    }
+
+    var periodModeSel = $('ts-period-mode');
+    if (periodModeSel) {
+      periodModeSel.addEventListener('change', function () {
+        timesheetPeriodMode = periodModeSel.value || 'week';
+        timesheetEnsurePeriodAnchors();
+        renderTimesheet();
+      });
+    }
+
+    var monthPrev = $('ts-month-prev');
+    var monthNext = $('ts-month-next');
+    var monthToday = $('ts-month-today');
+    if (monthPrev) {
+      monthPrev.addEventListener('click', function () {
+        timesheetEnsurePeriodAnchors();
+        timesheetMonthYm = shiftMonthYm(timesheetMonthYm, -1);
+        renderTimesheet();
+      });
+    }
+    if (monthNext) {
+      monthNext.addEventListener('click', function () {
+        timesheetEnsurePeriodAnchors();
+        timesheetMonthYm = shiftMonthYm(timesheetMonthYm, 1);
+        renderTimesheet();
+      });
+    }
+    if (monthToday) {
+      monthToday.addEventListener('click', function () {
+        var n = new Date();
+        timesheetMonthYm = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+        renderTimesheet();
+      });
+    }
+
+    var quarterPrev = $('ts-quarter-prev');
+    var quarterNext = $('ts-quarter-next');
+    var quarterToday = $('ts-quarter-today');
+    if (quarterPrev) {
+      quarterPrev.addEventListener('click', function () {
+        timesheetEnsurePeriodAnchors();
+        var s = shiftQuarter(timesheetQuarterYear, timesheetQuarterQ, -1);
+        timesheetQuarterYear = s.year;
+        timesheetQuarterQ = s.q;
+        renderTimesheet();
+      });
+    }
+    if (quarterNext) {
+      quarterNext.addEventListener('click', function () {
+        timesheetEnsurePeriodAnchors();
+        var s = shiftQuarter(timesheetQuarterYear, timesheetQuarterQ, 1);
+        timesheetQuarterYear = s.year;
+        timesheetQuarterQ = s.q;
+        renderTimesheet();
+      });
+    }
+    if (quarterToday) {
+      quarterToday.addEventListener('click', function () {
+        var cq = calendarQuarterFromDate(new Date());
+        timesheetQuarterYear = cq.year;
+        timesheetQuarterQ = cq.q;
+        renderTimesheet();
+      });
+    }
+
     var m = $('timesheetModal');
     var btnAdd = $('btn-add-time');
     var btnSave = $('btn-timesheet-save');
@@ -5898,7 +6204,8 @@ var incomePowerState = {
           if (changedEntry) await persistTimesheetEntryToSupabase(changedEntry);
         } else {
           var newEntries = [];
-          var base = startOfWeekMonday(new Date());
+          var base = timesheetBaseMondayForNewEntry();
+          if (isNaN(base.getTime())) base = startOfWeekMonday(new Date());
           selectedDow.forEach(function (dow) {
             var dt = new Date(base.getTime());
             var idx = dow === 0 ? 6 : (dow - 1);
@@ -6079,8 +6386,20 @@ var incomePowerState = {
 
   function wireIncomePowerTable() {
     loadIncomePowerPrefs();
+    loadIncomeTrendRange();
     renderIncomePowerColumnChooser();
     renderIncomePowerFilterRows();
+
+    var trendRange = $('rev-trend-range');
+    if (trendRange) {
+      trendRange.value = incomeTrendRange;
+      trendRange.addEventListener('change', function () {
+        var v = trendRange.value;
+        incomeTrendRange = (v === '30d' || v === 'all') ? v : '90d';
+        saveIncomeTrendRange();
+        if (state.computed) renderIncomeSection(state.computed);
+      });
+    }
 
     var search = $('income-power-search');
     if (search) {
