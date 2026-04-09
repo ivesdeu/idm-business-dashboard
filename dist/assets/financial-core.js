@@ -8,13 +8,19 @@
   var supabase = window.supabaseClient || null;
   var currentUser = window.currentUser || null;
 
-  var STORAGE_KEY = 'bizdash:transactions:v1';
+  var STORAGE_KEY = 'transactions:v1';
   // Ids the user deleted locally; applied after remote merge so a row does not reappear in the ledger (expenses + transaction log) if the server delete lags or fails once.
-  var TX_DELETED_IDS_KEY = 'bizdash:tx-deleted-ids:v1';
+  var TX_DELETED_IDS_KEY = 'tx-deleted-ids:v1';
+
+  function storageKey(suffix) {
+    var activeUser = window.currentUser || currentUser;
+    var scope = activeUser && activeUser.id ? String(activeUser.id) : 'guest';
+    return 'bizdash:' + scope + ':' + suffix;
+  }
 
   function loadDeletedTxIdMap() {
     try {
-      var raw = localStorage.getItem(TX_DELETED_IDS_KEY);
+      var raw = localStorage.getItem(storageKey(TX_DELETED_IDS_KEY));
       var o = raw ? JSON.parse(raw) : {};
       return o && typeof o === 'object' ? o : {};
     } catch (_) {
@@ -24,7 +30,7 @@
 
   function saveDeletedTxIdMap(map) {
     try {
-      localStorage.setItem(TX_DELETED_IDS_KEY, JSON.stringify(map || {}));
+      localStorage.setItem(storageKey(TX_DELETED_IDS_KEY), JSON.stringify(map || {}));
     } catch (_) {}
   }
 
@@ -65,7 +71,7 @@
 
   function loadTransactions() {
     try {
-      var raw = localStorage.getItem(STORAGE_KEY);
+      var raw = localStorage.getItem(storageKey(STORAGE_KEY));
       return raw ? JSON.parse(raw) : [];
     } catch (_) {
       return [];
@@ -74,7 +80,7 @@
 
   function saveTransactions(list) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      localStorage.setItem(storageKey(STORAGE_KEY), JSON.stringify(list));
     } catch (_) {}
   }
 
@@ -167,11 +173,11 @@
 
   // ---------- Clients store ----------
 
-  var CLIENTS_KEY = 'bizdash:clients:v1';
+  var CLIENTS_KEY = 'clients:v1';
 
   function loadClients() {
     try {
-      var raw = localStorage.getItem(CLIENTS_KEY);
+      var raw = localStorage.getItem(storageKey(CLIENTS_KEY));
       return raw ? JSON.parse(raw) : [];
     } catch (_) {
       return [];
@@ -180,7 +186,7 @@
 
   function saveClients(list) {
     try {
-      localStorage.setItem(CLIENTS_KEY, JSON.stringify(list));
+      localStorage.setItem(storageKey(CLIENTS_KEY), JSON.stringify(list));
     } catch (_) {}
   }
 
@@ -189,11 +195,11 @@
   var weeklySummaries = [];
 
   // Project statuses (for Manage statuses modal)
-  var STATUS_KEY = 'bizdash:project-statuses:v1';
+  var STATUS_KEY = 'project-statuses:v1';
 
   function loadStatuses() {
     try {
-      var raw = localStorage.getItem(STATUS_KEY);
+      var raw = localStorage.getItem(storageKey(STATUS_KEY));
       if (!raw) {
         return ['Not started', 'In progress', 'Blocked', 'Complete'];
       }
@@ -206,18 +212,18 @@
 
   function saveStatuses(list) {
     try {
-      localStorage.setItem(STATUS_KEY, JSON.stringify(list));
+      localStorage.setItem(storageKey(STATUS_KEY), JSON.stringify(list));
     } catch (_) {}
   }
 
   var projectStatuses = loadStatuses();
 
   // Projects store
-  var PROJECTS_KEY = 'bizdash:projects:v1';
+  var PROJECTS_KEY = 'projects:v1';
 
   function loadProjects() {
     try {
-      var raw = localStorage.getItem(PROJECTS_KEY);
+      var raw = localStorage.getItem(storageKey(PROJECTS_KEY));
       return raw ? JSON.parse(raw) : [];
     } catch (_) {
       return [];
@@ -226,18 +232,18 @@
 
   function saveProjects(list) {
     try {
-      localStorage.setItem(PROJECTS_KEY, JSON.stringify(list));
+      localStorage.setItem(storageKey(PROJECTS_KEY), JSON.stringify(list));
     } catch (_) {}
   }
 
   var projects = [];
 
   // Invoices store
-  var INVOICES_KEY = 'bizdash:invoices:v1';
+  var INVOICES_KEY = 'invoices:v1';
 
   function loadInvoices() {
     try {
-      var raw = localStorage.getItem(INVOICES_KEY);
+      var raw = localStorage.getItem(storageKey(INVOICES_KEY));
       return raw ? JSON.parse(raw) : [];
     } catch (_) {
       return [];
@@ -246,14 +252,14 @@
 
   function saveInvoices(list) {
     try {
-      localStorage.setItem(INVOICES_KEY, JSON.stringify(list));
+      localStorage.setItem(storageKey(INVOICES_KEY), JSON.stringify(list));
     } catch (_) {}
   }
 
   var invoices = [];
 
   // Marketing campaigns (local only)
-  var CAMPAIGNS_KEY = 'bizdash:campaigns:v1';
+  var CAMPAIGNS_KEY = 'campaigns:v1';
 
   var CAMPAIGN_STATUS_PIPELINE = 'pipeline';
   var CAMPAIGN_STATUS_WON = 'won';
@@ -271,7 +277,7 @@
 
   function loadCampaigns() {
     try {
-      var raw = localStorage.getItem(CAMPAIGNS_KEY);
+      var raw = localStorage.getItem(storageKey(CAMPAIGNS_KEY));
       var arr = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(arr)) return [];
       return arr.map(normalizeCampaign).filter(Boolean);
@@ -282,18 +288,18 @@
 
   function saveCampaigns(list) {
     try {
-      localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(list));
+      localStorage.setItem(storageKey(CAMPAIGNS_KEY), JSON.stringify(list));
     } catch (_) {}
   }
 
   var campaigns = [];
 
   // Timesheet entries (local)
-  var TIMESHEET_KEY = 'bizdash:timesheet:v1';
+  var TIMESHEET_KEY = 'timesheet:v1';
 
   function loadTimesheetEntries() {
     try {
-      var raw = localStorage.getItem(TIMESHEET_KEY);
+      var raw = localStorage.getItem(storageKey(TIMESHEET_KEY));
       var arr = raw ? JSON.parse(raw) : [];
       return Array.isArray(arr) ? arr : [];
     } catch (_) {
@@ -303,7 +309,7 @@
 
   function saveTimesheetEntries(list) {
     try {
-      localStorage.setItem(TIMESHEET_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+      localStorage.setItem(storageKey(TIMESHEET_KEY), JSON.stringify(Array.isArray(list) ? list : []));
     } catch (_) {}
   }
 
@@ -420,12 +426,12 @@
 
   // ---------- Budgets store ----------
 
-  var BUDGETS_KEY = 'bizdash:budgets:v1';
-  var BUDGET_MONTHS_KEY = 'bizdash:budget_months:v1';
+  var BUDGETS_KEY = 'budgets:v1';
+  var BUDGET_MONTHS_KEY = 'budget_months:v1';
 
   function loadBudgets() {
     try {
-      var raw = localStorage.getItem(BUDGETS_KEY);
+      var raw = localStorage.getItem(storageKey(BUDGETS_KEY));
       var b = raw ? JSON.parse(raw) : {};
       return {
         lab: Math.max(0, Number(b.lab) || 0),
@@ -440,7 +446,7 @@
 
   function loadBudgetMonthSnapshots() {
     try {
-      var raw = localStorage.getItem(BUDGET_MONTHS_KEY);
+      var raw = localStorage.getItem(storageKey(BUDGET_MONTHS_KEY));
       var o = raw ? JSON.parse(raw) : {};
       return o && typeof o === 'object' ? o : {};
     } catch (_) {
@@ -456,7 +462,7 @@
 
   function saveBudgetMonthSnapshotsToStorage(snaps) {
     try {
-      localStorage.setItem(BUDGET_MONTHS_KEY, JSON.stringify(snaps && typeof snaps === 'object' ? snaps : {}));
+      localStorage.setItem(storageKey(BUDGET_MONTHS_KEY), JSON.stringify(snaps && typeof snaps === 'object' ? snaps : {}));
     } catch (_) {}
   }
 
@@ -468,7 +474,7 @@
       oth: Math.max(0, Number(b.oth) || 0),
     };
     try {
-      localStorage.setItem(BUDGETS_KEY, JSON.stringify(payload));
+      localStorage.setItem(storageKey(BUDGETS_KEY), JSON.stringify(payload));
     } catch (_) {}
     try {
       var snaps = loadBudgetMonthSnapshots();
@@ -1111,18 +1117,6 @@
     }
   }
 
-  async function claimUnassignedProjects(ids) {
-    supabase = window.supabaseClient || supabase;
-    currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !ids || !ids.length) return;
-    try {
-      var res = await supabase.from('projects').update({ user_id: currentUser.id }).in('id', ids).is('user_id', null);
-      if (res.error) console.warn('claimUnassignedProjects', res.error);
-    } catch (e) {
-      console.warn('claimUnassignedProjects error', e);
-    }
-  }
-
   async function fetchProjectsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
@@ -1134,13 +1128,6 @@
         return loadProjects();
       }
       var rows = result.data || [];
-      if (!rows.length) {
-        var legacy = await supabase.from('projects').select('*').is('user_id', null).order('created_at', { ascending: true });
-        if (!legacy.error && legacy.data && legacy.data.length) {
-          rows = legacy.data;
-          claimUnassignedProjects(rows.map(function (r) { return r.id; }).filter(Boolean));
-        }
-      }
       return rows.map(mapProjectRow);
     } catch (err) {
       console.error('fetchProjectsFromSupabase error', err);
@@ -1256,18 +1243,6 @@
     }
   }
 
-  async function claimUnassignedInvoices(ids) {
-    supabase = window.supabaseClient || supabase;
-    currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !ids || !ids.length) return;
-    try {
-      var res = await supabase.from('invoices').update({ user_id: currentUser.id }).in('id', ids).is('user_id', null);
-      if (res.error) console.warn('claimUnassignedInvoices', res.error);
-    } catch (e) {
-      console.warn('claimUnassignedInvoices error', e);
-    }
-  }
-
   async function fetchInvoicesFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
@@ -1279,13 +1254,6 @@
         return loadInvoices();
       }
       var rows = result.data || [];
-      if (!rows.length) {
-        var legacy = await supabase.from('invoices').select('*').is('user_id', null);
-        if (!legacy.error && legacy.data && legacy.data.length) {
-          rows = legacy.data;
-          claimUnassignedInvoices(rows.map(function (r) { return r.id; }).filter(Boolean));
-        }
-      }
       return rows.map(mapInvoiceRow);
     } catch (err) {
       console.error('fetchInvoicesFromSupabase error', err);
@@ -1368,18 +1336,6 @@
     }
   }
 
-  async function claimUnassignedCampaigns(ids) {
-    supabase = window.supabaseClient || supabase;
-    currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !ids || !ids.length) return;
-    try {
-      var res = await supabase.from('campaigns').update({ user_id: currentUser.id }).in('id', ids).is('user_id', null);
-      if (res.error) console.warn('claimUnassignedCampaigns', res.error);
-    } catch (e) {
-      console.warn('claimUnassignedCampaigns error', e);
-    }
-  }
-
   async function fetchCampaignsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
@@ -1391,13 +1347,6 @@
         return loadCampaigns();
       }
       var rows = result.data || [];
-      if (!rows.length) {
-        var legacy = await supabase.from('campaigns').select('*').is('user_id', null);
-        if (!legacy.error && legacy.data && legacy.data.length) {
-          rows = legacy.data;
-          claimUnassignedCampaigns(rows.map(function (r) { return r.id; }).filter(Boolean));
-        }
-      }
       return rows.map(mapCampaignRow);
     } catch (err) {
       console.error('fetchCampaignsFromSupabase error', err);
@@ -1549,7 +1498,7 @@
       });
       try {
         localStorage.setItem(
-          BUDGETS_KEY,
+          storageKey(BUDGETS_KEY),
           JSON.stringify({
             lab: budgets.lab,
             sw: budgets.sw,
@@ -1693,22 +1642,6 @@
     return applyTransactionMetadata(tx, meta);
   }
 
-  async function claimUnassignedTransactions(ids) {
-    if (!supabase || !currentUser || !ids || !ids.length) return;
-    try {
-      var res = await supabase
-        .from('transactions')
-        .update({ user_id: currentUser.id })
-        .in('id', ids)
-        .is('user_id', null);
-      if (res.error) {
-        console.warn('Could not assign user_id to legacy rows (RLS may block). Run SQL in Supabase to set user_id, or add an UPDATE policy for unassigned rows.', res.error);
-      }
-    } catch (e) {
-      console.warn('claimUnassignedTransactions error', e);
-    }
-  }
-
   async function fetchTransactionsFromSupabase() {
     // If Supabase or user is not ready, fall back to local cache.
     supabase = window.supabaseClient || supabase;
@@ -1730,22 +1663,6 @@
       }
 
       var rows = result.data || [];
-
-      // Legacy rows were often inserted with user_id NULL; .eq(user_id) returns nothing on other devices.
-      if (!rows.length) {
-        var legacy = await supabase
-          .from('transactions')
-          .select('*')
-          .is('user_id', null)
-          .order('date', { ascending: false });
-        if (legacy.error) {
-          console.error('load legacy transactions error', legacy.error);
-        } else if (legacy.data && legacy.data.length) {
-          rows = legacy.data;
-          var ids = rows.map(function (r) { return r.id; }).filter(Boolean);
-          claimUnassignedTransactions(ids);
-        }
-      }
 
       return rows.map(mapTransactionRow);
     } catch (err) {
@@ -1922,24 +1839,6 @@
     });
   }
 
-  async function claimUnassignedClients(ids) {
-    supabase = window.supabaseClient || supabase;
-    currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !ids || !ids.length) return;
-    try {
-      var res = await supabase
-        .from('clients')
-        .update({ user_id: currentUser.id })
-        .in('id', ids)
-        .is('user_id', null);
-      if (res.error) {
-        console.warn('Could not assign user_id to legacy clients (RLS).', res.error);
-      }
-    } catch (e) {
-      console.warn('claimUnassignedClients error', e);
-    }
-  }
-
   async function fetchClientsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
@@ -1960,21 +1859,6 @@
       }
 
       var rows = result.data || [];
-
-      if (!rows.length) {
-        var legacy = await supabase
-          .from('clients')
-          .select('*')
-          .is('user_id', null)
-          .order('created_at', { ascending: true });
-        if (legacy.error) {
-          console.error('load legacy clients error', legacy.error);
-        } else if (legacy.data && legacy.data.length) {
-          rows = legacy.data;
-          var ids = rows.map(function (r) { return r.id; }).filter(Boolean);
-          claimUnassignedClients(ids);
-        }
-      }
 
       return rows.map(mapClientRow);
     } catch (err) {
@@ -2360,8 +2244,8 @@ var spendReportUi = {
   q: '',
   costType: 'all',
 };
-var INCOME_POWER_PREFS_KEY = 'bizdash:income-power-prefs:v1';
-var INCOME_TREND_RANGE_KEY = 'bizdash:income-trend-range:v1';
+var INCOME_POWER_PREFS_KEY = 'income-power-prefs:v1';
+var INCOME_TREND_RANGE_KEY = 'income-trend-range:v1';
 var incomeTrendRange = '90d';
 var incomePowerColumns = [
   { id: 'date', label: 'Date', type: 'date' },
@@ -2381,7 +2265,7 @@ var incomePowerState = {
 
   function loadIncomePowerPrefs() {
     try {
-      var raw = localStorage.getItem(INCOME_POWER_PREFS_KEY);
+      var raw = localStorage.getItem(storageKey(INCOME_POWER_PREFS_KEY));
       var parsed = raw ? JSON.parse(raw) : null;
       if (!parsed || typeof parsed !== 'object') return;
       if (typeof parsed.search === 'string') incomePowerState.search = parsed.search;
@@ -2398,20 +2282,20 @@ var incomePowerState = {
 
   function loadIncomeTrendRange() {
     try {
-      var raw = localStorage.getItem(INCOME_TREND_RANGE_KEY);
+      var raw = localStorage.getItem(storageKey(INCOME_TREND_RANGE_KEY));
       if (raw === '30d' || raw === '90d' || raw === 'ytd' || raw === 'all') incomeTrendRange = raw;
     } catch (_) {}
   }
 
   function saveIncomeTrendRange() {
     try {
-      localStorage.setItem(INCOME_TREND_RANGE_KEY, incomeTrendRange);
+      localStorage.setItem(storageKey(INCOME_TREND_RANGE_KEY), incomeTrendRange);
     } catch (_) {}
   }
 
   function saveIncomePowerPrefs() {
     try {
-      localStorage.setItem(INCOME_POWER_PREFS_KEY, JSON.stringify({
+      localStorage.setItem(storageKey(INCOME_POWER_PREFS_KEY), JSON.stringify({
         search: incomePowerState.search || '',
         filters: incomePowerState.filters || [],
         visible: incomePowerState.visible || {},
@@ -8901,7 +8785,25 @@ var incomePowerState = {
     }
   }
 
-  // Expose so supabase-auth.js can trigger a reload after login.
+  function clearRuntimeDataForAuthChange(nextUser) {
+    currentUser = nextUser || null;
+    window.currentUser = currentUser;
+    state.transactions = [];
+    clients = [];
+    projects = [];
+    invoices = [];
+    campaigns = [];
+    timesheetEntries = [];
+    crmEvents = [];
+    weeklySummaries = [];
+    state.computed = compute(state.filter);
+    renderAll();
+    renderProjects();
+    refreshCloudSyncStatus();
+  }
+
+  // Expose so supabase-auth.js can reset state on auth transitions and trigger reload.
+  window.clearRuntimeDataForAuthChange = clearRuntimeDataForAuthChange;
   window.initDataFromSupabase = initDataFromSupabase;
 
   /**

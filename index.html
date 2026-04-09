@@ -1307,24 +1307,6 @@
           <div class="st" id="crm-welcome">Good day</div>
           <div class="ss" id="crm-local-date">—</div>
         </div>
-        <div class="hr">
-          <button type="button" class="btn" id="btn-generate-monday">Generate Monday summary</button>
-          <button type="button" class="btn" id="btn-generate-friday">Generate Friday recap</button>
-        </div>
-      </div>
-      <div class="g2" style="margin-top:12px;grid-template-columns:1.3fr 1fr;">
-        <div>
-          <div class="st" style="font-size:13px;margin-bottom:8px;">Follow-up suggestions</div>
-          <div id="crm-suggestions-list" style="display:flex;flex-direction:column;gap:8px;"></div>
-        </div>
-        <div>
-          <div class="st" style="font-size:13px;margin-bottom:8px;">Milestones</div>
-          <div id="crm-milestones-list" style="display:flex;flex-direction:column;gap:8px;"></div>
-        </div>
-      </div>
-      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-        <div class="st" style="font-size:13px;margin-bottom:8px;">Latest summary</div>
-        <div id="crm-latest-summary" style="font-size:13px;color:var(--text2);">No summary generated yet.</div>
       </div>
     </div>
     <div class="kg kg-dash">
@@ -1343,6 +1325,29 @@
         <div class="sh"><div class="st">Expense Breakdown</div></div>
         <div class="cw" style="height:175px;"><canvas id="cExp"></canvas></div>
         <div style="margin-top:14px;display:flex;flex-direction:column;gap:7px;" id="exp-leg"></div>
+      </div>
+    </div>
+    <div class="card mb" style="margin-top:12px;">
+      <div class="sh" style="align-items:flex-start;gap:14px;">
+        <div><div class="st">Personable CRM</div><div class="ss">Suggestions, milestones, and quick weekly recaps</div></div>
+        <div class="hr">
+          <button type="button" class="btn" id="btn-generate-monday">Generate Monday summary</button>
+          <button type="button" class="btn" id="btn-generate-friday">Generate Friday recap</button>
+        </div>
+      </div>
+      <div class="g2" style="margin-top:12px;grid-template-columns:1.3fr 1fr;">
+        <div>
+          <div class="st" style="font-size:13px;margin-bottom:8px;">Follow-up suggestions</div>
+          <div id="crm-suggestions-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+        <div>
+          <div class="st" style="font-size:13px;margin-bottom:8px;">Milestones</div>
+          <div id="crm-milestones-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+        <div class="st" style="font-size:13px;margin-bottom:8px;">Latest summary</div>
+        <div id="crm-latest-summary" style="font-size:13px;color:var(--text2);">No summary generated yet.</div>
       </div>
     </div>
     <div class="g2">
