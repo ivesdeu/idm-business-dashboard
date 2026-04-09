@@ -181,6 +181,7 @@
     margin: 6px 0 0;
     max-width: 68rem;
   }
+  .chat-shell-sub-mobile { display: none; }
   .chat-transcript {
     flex: 1;
     min-height: 0;
@@ -548,6 +549,15 @@
       min-height: calc(100dvh - 170px);
     }
     .chat-shell-header { padding: 4px 0 12px; }
+    .chat-shell-sub { display: none; }
+    .chat-shell-sub-mobile {
+      display: block;
+      font-size: 0.8125rem;
+      color: var(--text2);
+      line-height: 1.4;
+      margin: 6px 0 0;
+      max-width: 100%;
+    }
     .chat-log { padding: 10px 0; }
     .chat-composer-stack { padding: 8px 0 4px; }
     .chat-starters { padding-left: 0; padding-right: 0; }
@@ -694,12 +704,13 @@
   #customers-table td:nth-child(1).td-truncate { max-width: 200px; }
   #customers-table td:nth-child(3).td-truncate { max-width: 220px; }
   #customers-table td:nth-child(4).td-truncate { max-width: 130px; }
-  .customers-columns-wrap { position: relative; }
+  #page-customers .ph { position: relative; z-index: 120; }
+  .customers-columns-wrap { position: relative; z-index: 130; }
   #customers-columns-panel {
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    z-index: 30;
+    z-index: 999;
     min-width: 220px;
     padding: 10px;
     border: 1px solid var(--border);
@@ -1324,7 +1335,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>Marketing
     </div>
     <div class="ni" data-nav="chat" onclick="nav('chat',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></svg>Chat
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></svg>Advisor
     </div>
     <div class="sb-spacer"></div>
     <div class="sb-div"></div>
@@ -1884,14 +1895,15 @@
   <div class="pg" id="page-chat">
     <div class="chat-shell">
       <header class="chat-shell-header">
-        <p class="chat-shell-title">Chat</p>
-        <p class="chat-shell-sub">Built-in helper: Supabase, your ledger, and repo facts. No external AI key—uses this app and your session.</p>
+        <p class="chat-shell-title">Advisor</p>
+        <p class="chat-shell-sub">Your business copilot for this dashboard. Turn your numbers into clear next steps with focused recommendations and drafts.</p>
+        <p class="chat-shell-sub-mobile">Your business copilot. Get prioritized next steps from your dashboard data.</p>
       </header>
       <div class="chat-transcript">
         <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
       </div>
       <div class="chat-composer-stack">
-        <p class="chat-prompt-heading">Where should we begin?</p>
+        <p class="chat-prompt-heading">Choose a task or type a request</p>
         <div class="chat-prompt-box" id="chat-prompt-box" role="group" aria-label="Message composer">
           <input type="file" id="chat-file-input" class="chat-file-input-hidden" accept="image/*" tabindex="-1" aria-hidden="true" />
           <div id="chat-image-preview-wrap" class="chat-image-preview-wrap" hidden>
@@ -1902,7 +1914,7 @@
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>
-          <textarea id="chat-input" class="chat-prompt-ta" rows="1" placeholder="Ask anything." maxlength="2000" autocomplete="off"></textarea>
+          <textarea id="chat-input" class="chat-prompt-ta" rows="1" placeholder="Describe the outcome you want (e.g. weekly recap)." maxlength="2000" autocomplete="off"></textarea>
           <div class="chat-prompt-toolbar">
             <button type="button" class="chat-prompt-icon-btn" id="chat-attach-btn" title="Attach image" aria-label="Attach image">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
@@ -1954,11 +1966,10 @@
         </div>
       </div>
       <div class="chat-starters" id="chat-starters">
-        <button type="button" class="chat-chip" data-chat-q="What tables are in Supabase for this dashboard?">Supabase tables</button>
-        <button type="button" class="chat-chip" data-chat-q="How does row level security work?">RLS</button>
-        <button type="button" class="chat-chip" data-chat-q="What are my expenses this month?">Expenses this month</button>
-        <button type="button" class="chat-chip" data-chat-q="How many clients do I have?">Count clients</button>
-        <button type="button" class="chat-chip" data-chat-q="Where is the production build defined?">Build</button>
+        <button type="button" class="chat-chip" data-advisor-task="daily_brief" data-chat-q="Generate my daily action brief">Daily action brief</button>
+        <button type="button" class="chat-chip" data-advisor-task="followup_draft" data-chat-q="Draft a client follow-up message">Follow-up draft</button>
+        <button type="button" class="chat-chip" data-advisor-task="variance_explain" data-chat-q="Explain month-over-month profit variance">Variance explanation</button>
+        <button type="button" class="chat-chip" data-advisor-task="weekly_recap" data-chat-q="Generate this week's recap">Weekly recap</button>
       </div>
     </div>
     <div class="chat-lightbox" id="chat-lightbox" hidden role="dialog" aria-modal="true" aria-label="Image preview">

@@ -1,5 +1,5 @@
-// Rule-based in-dashboard assistant: answers from bundled knowledge + optional live Supabase counts (signed-in user). No LLM API.
-// Chat UI is a vanilla port of a ChatGPT-style prompt box (rounded shell, toolbar, tools menu, attach preview).
+// Advisor scaffolding before external AI provider integration.
+// Uses a stable task contract and Supabase Edge Function stubs.
 
 (function () {
   'use strict';
@@ -8,10 +8,18 @@
   var THINKING_MIN_MS = 2500;
 
   var WELCOME =
-    'Hi — I’m a built-in helper for this dashboard.\n\n' +
-    'I can explain the Supabase schema, where things live in the repo, and how auth/build work. ' +
-    'If you’re signed in, ask things like “how many clients do I have?” and I’ll count rows you’re allowed to see.\n\n' +
-    'I don’t call an external AI—only this app’s logic and your Supabase session.';
+    'Hi — I am your business copilot for this dashboard.\n\n' +
+    'I help turn your numbers into clear next steps, not just answers.\n\n' +
+    'Use Advisor to:\n' +
+    '• Prioritize today\'s most important actions\n' +
+    '• Follow up on overdue invoices and client outreach\n' +
+    '• Understand profit or expense changes over time\n' +
+    '• Generate Monday plans and Friday recaps\n\n' +
+    'Advisor uses your dashboard data and signed-in session context to provide focused recommendations and drafts. You stay in control of final decisions and actions.';
+  var WELCOME_MOBILE =
+    'Hi — I am your business copilot.\n\n' +
+    'I turn dashboard numbers into prioritized next steps.\n\n' +
+    'Use the task chips for Daily brief, Follow-up draft, Variance explanation, and Weekly recap.';
 
   var TOOL_META = {
     createImage: { short: 'Image' },
@@ -20,6 +28,20 @@
     deepResearch: { short: 'Deep Search' },
     thinkLonger: { short: 'Think' },
   };
+  var ADVISOR_TASKS = {
+    daily_brief: 'daily_brief',
+    followup_draft: 'followup_draft',
+    variance_explain: 'variance_explain',
+    weekly_recap: 'weekly_recap',
+    general: 'general',
+  };
+
+  function mkUuid() {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    } catch (_) {}
+    return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  }
 
   function norm(s) {
     return (s || '').toLowerCase().trim();
@@ -376,34 +398,99 @@
     return null;
   }
 
-  async function replyForQuestion(q, hadImage) {
+  function normalizeTask(task, message) {
+    if (task && ADVISOR_TASKS[task]) return task;
+    var q = norm(message || '');
+    if (/brief|today|priority|action/.test(q)) return ADVISOR_TASKS.daily_brief;
+    if (/follow|outreach|draft|email|message/.test(q)) return ADVISOR_TASKS.followup_draft;
+    if (/variance|month[-\s]?over[-\s]?month|mo[m]?/.test(q)) return ADVISOR_TASKS.variance_explain;
+    if (/week|recap|summary/.test(q)) return ADVISOR_TASKS.weekly_recap;
+    return ADVISOR_TASKS.general;
+  }
+
+  function renderAdvisorPayload(el, payload) {
+    if (!el) return;
+    while (el.firstChild) el.removeChild(el.firstChild);
+    var p = payload || {};
+    if (p.title) {
+      var ttl = document.createElement('div');
+      ttl.style.fontWeight = '600';
+      ttl.style.marginBottom = '6px';
+      ttl.textContent = String(p.title);
+      el.appendChild(ttl);
+    }
+    if (Array.isArray(p.bullets) && p.bullets.length) {
+      var ul = document.createElement('ul');
+      ul.style.margin = '0 0 8px 18px';
+      ul.style.padding = '0';
+      p.bullets.forEach(function (b) {
+        var li = document.createElement('li');
+        li.textContent = String(b);
+        ul.appendChild(li);
+      });
+      el.appendChild(ul);
+    }
+    if (p.draft) {
+      var draft = document.createElement('div');
+      draft.style.marginTop = '8px';
+      draft.style.padding = '8px 10px';
+      draft.style.border = '1px solid var(--border)';
+      draft.style.borderRadius = '10px';
+      draft.style.background = 'var(--bg2)';
+      draft.textContent = String(p.draft);
+      el.appendChild(draft);
+    }
+    if ((!p.title && (!p.bullets || !p.bullets.length) && !p.draft) && p.text) {
+      el.textContent = String(p.text);
+    }
+  }
+
+  async function logAdvisorUsage(entry) {
     var supabase = window.supabaseClient;
     var user = window.currentUser;
+    if (!supabase || !user || !entry) return;
+    try {
+      await supabase.from('ai_usage_events').insert(entry);
+    } catch (_) {}
+  }
 
-    var imageNote = hadImage
-      ? 'Images aren’t analyzed in this built-in helper—only text and your Supabase session are used.\n\n'
-      : '';
+  async function logAdvisorFeedback(entry) {
+    var supabase = window.supabaseClient;
+    var user = window.currentUser;
+    if (!supabase || !user || !entry) return;
+    try {
+      await supabase.from('ai_feedback').insert(entry);
+    } catch (_) {}
+  }
 
-    var ledgerAns = tryLedgerFinancialAnswer(q);
-    if (ledgerAns) return imageNote + ledgerAns;
+  async function logAdvisorActionOutcome(entry) {
+    var supabase = window.supabaseClient;
+    var user = window.currentUser;
+    if (!supabase || !user || !entry) return;
+    try {
+      await supabase.from('ai_action_outcomes').insert(entry);
+    } catch (_) {}
+  }
 
-    var live = await tryLiveCount(q, supabase, user);
-    if (live) return imageNote + live;
-
-    if (/\b(how many|count|number of)\b/.test(norm(q)) && !user) {
-      return imageNote + 'Sign in to count your rows in Supabase. I can still explain tables and schema without a session.';
+  async function invokeAdvisorTask(req) {
+    var supabase = window.supabaseClient;
+    var user = window.currentUser;
+    if (!supabase || !user) {
+      return {
+        ok: false,
+        error: 'Sign in to use Advisor task stubs.',
+        response: { title: 'Sign in required', bullets: ['Advisor tasks are scoped per user session.'] },
+      };
     }
-
-    var stat = answerStatic(q);
-    if (stat) return imageNote + stat;
-
-    return (
-      imageNote +
-      'I don’t have a scripted answer for that. Try rephrasing, or ask about:\n' +
-      '• Expenses / revenue / profit for a period (e.g. “What are my expenses this month?”, “Revenue YTD”, “Net profit last month”)\n' +
-      '• Supabase tables, RLS, Stripe invoice fields, build/deploy, MRR/retainers\n' +
-      '• “How many [clients|transactions|projects|…] do I have?” when signed in'
-    );
+    try {
+      var res = await supabase.functions.invoke('ai-assistant', { body: req });
+      if (res.error) {
+        return { ok: false, error: res.error.message || 'Invoke failed', response: { title: 'Stub call failed', bullets: [res.error.message || 'Unknown function error'] } };
+      }
+      return { ok: true, response: res.data || { title: 'No data', bullets: [] } };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err), response: { title: 'Stub call failed', bullets: ['Advisor function could not be reached.'] } };
+    }
   }
 
   window.wireDashboardAssistant = function () {
@@ -607,10 +694,94 @@
 
     var seeded = false;
     var isThinking = false;
+    var pendingTask = null;
     function seedWelcome() {
       if (seeded) return;
       seeded = true;
-      appendBubble(logEl, 'asst', WELCOME);
+      var isMobile = false;
+      try {
+        isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 960px)').matches);
+      } catch (_) {}
+      appendBubble(logEl, 'asst', isMobile ? WELCOME_MOBILE : WELCOME);
+    }
+
+    function appendFeedbackControls(messageEl, usageMeta) {
+      if (!messageEl || !usageMeta || !usageMeta.usageEventId) return;
+      var row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.gap = '6px';
+      row.style.marginTop = '8px';
+      var up = document.createElement('button');
+      var down = document.createElement('button');
+      up.type = 'button';
+      down.type = 'button';
+      up.className = 'btn';
+      down.className = 'btn';
+      up.textContent = 'Useful';
+      down.textContent = 'Not useful';
+      function lock(sel) {
+        up.disabled = true;
+        down.disabled = true;
+        if (sel) sel.style.borderColor = 'var(--coral)';
+      }
+      up.addEventListener('click', function () {
+        lock(up);
+        logAdvisorFeedback({
+          id: mkUuid(),
+          user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+          usage_event_id: usageMeta.usageEventId,
+          task: usageMeta.task,
+          sentiment: 'up',
+          note: null,
+          created_at: new Date().toISOString(),
+        });
+      });
+      down.addEventListener('click', function () {
+        lock(down);
+        logAdvisorFeedback({
+          id: mkUuid(),
+          user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+          usage_event_id: usageMeta.usageEventId,
+          task: usageMeta.task,
+          sentiment: 'down',
+          note: null,
+          created_at: new Date().toISOString(),
+        });
+      });
+      row.appendChild(up);
+      row.appendChild(down);
+      messageEl.appendChild(row);
+    }
+
+    function appendActionButtons(messageEl, usageMeta, actions) {
+      if (!messageEl || !Array.isArray(actions) || !actions.length || !usageMeta || !usageMeta.usageEventId) return;
+      var row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.gap = '6px';
+      row.style.flexWrap = 'wrap';
+      row.style.marginTop = '8px';
+      actions.forEach(function (action) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn';
+        btn.textContent = action.label || action.id || 'Action';
+        btn.addEventListener('click', function () {
+          btn.disabled = true;
+          logAdvisorActionOutcome({
+            id: mkUuid(),
+            user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+            usage_event_id: usageMeta.usageEventId,
+            task: usageMeta.task,
+            action_id: action.id || btn.textContent,
+            action_label: action.label || btn.textContent,
+            outcome: 'applied',
+            details: {},
+            created_at: new Date().toISOString(),
+          });
+        });
+        row.appendChild(btn);
+      });
+      messageEl.appendChild(row);
     }
 
     async function handleSend(text) {
@@ -635,10 +806,34 @@
 
       var t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
       var out;
+      var usageMeta = null;
       try {
-        out = await replyForQuestion(t, hadImage);
+        var task = normalizeTask(pendingTask, t);
+        var request = {
+          task: task,
+          message: t,
+          context: {
+            page: 'advisor',
+            hadImage: !!hadImage,
+            selectedTool: selectedTool || null,
+          },
+          constraints: { maxBullets: 5, tone: 'concise' },
+        };
+        out = await invokeAdvisorTask(request);
+        var t1req = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+        usageMeta = { usageEventId: mkUuid(), task: task };
+        await logAdvisorUsage({
+          id: usageMeta.usageEventId,
+          user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+          task: task,
+          request_payload: request,
+          response_payload: out && out.response ? out.response : {},
+          status: out && out.ok ? 'ok' : 'error',
+          latency_ms: Math.max(0, Math.round(t1req - t0)),
+          created_at: new Date().toISOString(),
+        });
       } catch (err) {
-        out = 'Something went wrong while preparing a reply. Try again.';
+        out = { ok: false, response: { title: 'Advisor unavailable', bullets: ['Something went wrong while preparing a reply. Try again.'] } };
         if (typeof console !== 'undefined' && console.error) console.error(err);
       }
       var t1 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
@@ -653,7 +848,12 @@
       while (thinkingEl.firstChild) {
         thinkingEl.removeChild(thinkingEl.firstChild);
       }
-      thinkingEl.textContent = out;
+      renderAdvisorPayload(thinkingEl, out && out.response ? out.response : { text: 'No response.' });
+      if (out && out.response && Array.isArray(out.response.actions) && usageMeta) {
+        appendActionButtons(thinkingEl, usageMeta, out.response.actions);
+      }
+      if (usageMeta) appendFeedbackControls(thinkingEl, usageMeta);
+      pendingTask = null;
 
       logEl.scrollTop = logEl.scrollHeight;
       isThinking = false;
@@ -676,7 +876,9 @@
         var btn = ev.target.closest('[data-chat-q]');
         if (!btn) return;
         var q = btn.getAttribute('data-chat-q');
+        var task = btn.getAttribute('data-advisor-task');
         if (q) {
+          pendingTask = task || null;
           ta.value = q;
           autoResizeTa();
           syncSendDisabled();

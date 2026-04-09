@@ -9057,7 +9057,7 @@ var incomePowerState = {
           retention: 'Retention',
           insights: 'Insights',
           marketing: 'Marketing',
-          chat: 'Chat',
+          chat: 'Advisor',
           settings: 'Settings',
         };
         mobileTitle.textContent = titles[pageId] || 'Dashboard';

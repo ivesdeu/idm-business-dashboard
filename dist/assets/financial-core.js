@@ -174,6 +174,56 @@
   // ---------- Clients store ----------
 
   var CLIENTS_KEY = 'clients:v1';
+  var CUSTOMERS_COLUMNS_PREFS_KEY = 'customers-columns:v1';
+  var CUSTOMERS_COLUMN_DEFS = [
+    { id: 'company', label: 'Company', index: 1 },
+    { id: 'contact', label: 'Contact', index: 2 },
+    { id: 'email', label: 'Email', index: 3 },
+    { id: 'phone', label: 'Phone', index: 4 },
+    { id: 'preferred', label: 'Preferred', index: 5 },
+    { id: 'style', label: 'Style', index: 6 },
+    { id: 'status', label: 'Status', index: 7 },
+    { id: 'projects', label: 'Projects', index: 8 },
+    { id: 'revenue', label: 'Revenue', index: 9 },
+    { id: 'allocated', label: 'Allocated cost', index: 10 },
+    { id: 'profit', label: 'Profit', index: 11 },
+    { id: 'margin', label: 'Margin', index: 12 },
+    { id: 'roi', label: 'ROI', index: 13 },
+    { id: 'actions', label: 'Actions', index: 14, locked: true },
+  ];
+
+  function defaultCustomersColumnPrefs() {
+    var prefs = {};
+    CUSTOMERS_COLUMN_DEFS.forEach(function (col) {
+      prefs[col.id] = true;
+    });
+    return prefs;
+  }
+
+  function loadCustomersColumnPrefs() {
+    var defaults = defaultCustomersColumnPrefs();
+    try {
+      var raw = localStorage.getItem(storageKey(CUSTOMERS_COLUMNS_PREFS_KEY));
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || typeof parsed !== 'object') return defaults;
+      CUSTOMERS_COLUMN_DEFS.forEach(function (col) {
+        if (col.locked) return;
+        if (Object.prototype.hasOwnProperty.call(parsed, col.id)) {
+          defaults[col.id] = parsed[col.id] !== false;
+        }
+      });
+      defaults.actions = true;
+      return defaults;
+    } catch (_) {
+      return defaults;
+    }
+  }
+
+  function saveCustomersColumnPrefs(prefs) {
+    try {
+      localStorage.setItem(storageKey(CUSTOMERS_COLUMNS_PREFS_KEY), JSON.stringify(prefs || defaultCustomersColumnPrefs()));
+    } catch (_) {}
+  }
 
   function loadClients() {
     try {
@@ -191,6 +241,7 @@
   }
 
   var clients = [];
+  var customersColumnPrefs = loadCustomersColumnPrefs();
   var crmEvents = [];
   var weeklySummaries = [];
 
@@ -2075,6 +2126,14 @@
 
   function $(id) {
     return document.getElementById(id);
+  }
+
+  function escAttr(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   function setText(id, value) {
@@ -5923,6 +5982,73 @@ var incomePowerState = {
     };
   }
 
+  function applyCustomersColumnVisibility() {
+    var table = $('customers-table');
+    if (!table) return;
+    CUSTOMERS_COLUMN_DEFS.forEach(function (col) {
+      var show = col.locked ? true : customersColumnPrefs[col.id] !== false;
+      var selector = 'thead th:nth-child(' + col.index + '), tbody td:nth-child(' + col.index + ')';
+      table.querySelectorAll(selector).forEach(function (cell) {
+        cell.style.display = show ? '' : 'none';
+      });
+    });
+  }
+
+  function renderCustomersColumnsPanel() {
+    var panel = $('customers-columns-panel');
+    if (!panel) return;
+    var optionsHtml = CUSTOMERS_COLUMN_DEFS.map(function (col) {
+      var checked = col.locked || customersColumnPrefs[col.id] !== false;
+      var disabled = col.locked ? ' disabled' : '';
+      var label = esc(col.label) + (col.locked ? ' (required)' : '');
+      return '<label class="customers-col-opt">' +
+        '<input type="checkbox" data-customer-col="' + col.id + '"' + (checked ? ' checked' : '') + disabled + ' />' +
+        '<span>' + label + '</span>' +
+      '</label>';
+    }).join('');
+    panel.innerHTML = optionsHtml +
+      '<div class="customers-col-actions">' +
+        '<button type="button" class="btn" id="btn-customers-columns-reset">Reset columns</button>' +
+      '</div>';
+  }
+
+  function wireCustomersColumnsPicker() {
+    var btn = $('btn-customers-columns');
+    var panel = $('customers-columns-panel');
+    if (!btn || !panel) return;
+
+    renderCustomersColumnsPanel();
+    btn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      panel.classList.toggle('on');
+    });
+    panel.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+    });
+    panel.addEventListener('change', function (ev) {
+      var input = ev.target;
+      if (!input || !input.matches || !input.matches('input[data-customer-col]')) return;
+      var colId = input.getAttribute('data-customer-col');
+      if (!colId) return;
+      var def = CUSTOMERS_COLUMN_DEFS.find(function (c) { return c.id === colId; });
+      if (!def || def.locked) return;
+      customersColumnPrefs[colId] = input.checked !== false;
+      saveCustomersColumnPrefs(customersColumnPrefs);
+      applyCustomersColumnVisibility();
+    });
+    panel.addEventListener('click', function (ev) {
+      var resetBtn = ev.target.closest('#btn-customers-columns-reset');
+      if (!resetBtn) return;
+      customersColumnPrefs = defaultCustomersColumnPrefs();
+      saveCustomersColumnPrefs(customersColumnPrefs);
+      renderCustomersColumnsPanel();
+      applyCustomersColumnVisibility();
+    });
+    document.addEventListener('click', function () {
+      panel.classList.remove('on');
+    });
+  }
+
   function renderClients() {
     var tbody = $('customers-tbody');
     var empty = $('customers-empty');
@@ -5946,11 +6072,15 @@ var incomePowerState = {
         var pcount = clientProjectCount(c.id);
         var revTitle = c.custTabRevenue != null ? ' title="Custom revenue — edit client to change"' : '';
         var costTitle = c.custTabAllocatedCost != null ? ' title="Custom allocated cost — edit client to change"' : '';
+        var companyText = c.companyName || '—';
+        var contactText = c.contactName || '—';
+        var emailText = c.email || '—';
+        var phoneText = c.phone || '—';
         return '<tr>' +
-          '<td class="tdp">' + (c.companyName || '—') + '</td>' +
-          '<td>' + (c.contactName || '—') + '</td>' +
-          '<td>' + (c.email || '—') + '</td>' +
-          '<td>' + (c.phone || '—') + '</td>' +
+          '<td class="tdp td-truncate" title="' + escAttr(companyText) + '">' + esc(companyText) + '</td>' +
+          '<td class="td-truncate" title="' + escAttr(contactText) + '">' + esc(contactText) + '</td>' +
+          '<td class="td-truncate" title="' + escAttr(emailText) + '">' + esc(emailText) + '</td>' +
+          '<td class="td-truncate" title="' + escAttr(phoneText) + '">' + esc(phoneText) + '</td>' +
           '<td>' + esc(c.preferredChannel || '—') + '</td>' +
           '<td>' + esc(c.communicationStyle || '—') + '</td>' +
           '<td>' + esc(c.status || '—') +
@@ -5970,6 +6100,7 @@ var incomePowerState = {
           '</td>' +
         '</tr>';
       }).join('');
+      applyCustomersColumnVisibility();
     }
 
     var k = computeClientKpis();
@@ -8790,6 +8921,8 @@ var incomePowerState = {
   function clearRuntimeDataForAuthChange(nextUser) {
     currentUser = nextUser || null;
     window.currentUser = currentUser;
+    customersColumnPrefs = loadCustomersColumnPrefs();
+    renderCustomersColumnsPanel();
     state.transactions = [];
     clients = [];
     projects = [];
@@ -8870,6 +9003,7 @@ var incomePowerState = {
     wireInvoicePreviewModal();
     wireProjectsAndStatuses();
     wireFilter();
+    wireCustomersColumnsPicker();
     wireIncomePowerTable();
     wireSpendingReport();
     wireSettingsSave();
@@ -8923,7 +9057,7 @@ var incomePowerState = {
           retention: 'Retention',
           insights: 'Insights',
           marketing: 'Marketing',
-          chat: 'Chat',
+          chat: 'Advisor',
           settings: 'Settings',
         };
         mobileTitle.textContent = titles[pageId] || 'Dashboard';
