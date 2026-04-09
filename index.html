@@ -673,6 +673,58 @@
   .dt .btn { font-size:0.75rem; padding:5px 10px; border-radius:6px; font-weight:500; }
   #customers-table th:last-child,
   #customers-table td:last-child { min-width: 120px; }
+  /* Keep customer rows visually aligned when some cells wrap to multiple lines. */
+  #customers-table thead th { vertical-align: top; }
+  #customers-table tbody td {
+    vertical-align: top;
+    line-height: 1.35;
+    padding-top: 11px;
+    padding-bottom: 11px;
+  }
+  #customers-table tbody td:last-child > div {
+    align-items: flex-start;
+    flex-wrap: nowrap;
+  }
+  #customers-table .td-truncate {
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #customers-table td:nth-child(1).td-truncate { max-width: 200px; }
+  #customers-table td:nth-child(3).td-truncate { max-width: 220px; }
+  #customers-table td:nth-child(4).td-truncate { max-width: 130px; }
+  .customers-columns-wrap { position: relative; }
+  #customers-columns-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 30;
+    min-width: 220px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg2);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    display: none;
+  }
+  #customers-columns-panel.on { display: block; }
+  .customers-col-opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text2);
+    padding: 6px 4px;
+  }
+  .customers-col-opt input { margin: 0; }
+  .customers-col-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
   .dt select.fi {
     border-radius:6px;
     background-color:transparent;
@@ -1406,7 +1458,7 @@
 
   <!-- CUSTOMERS -->
   <div class="pg" id="page-customers">
-    <div class="ph"><div><div class="pt">Customers</div><div class="ps">All active clients and pipeline. Allocated cost sums expenses you tag to each client on the Expenses page; untagged expenses are firm-wide only. To override revenue or cost in the table, edit a client and set custom amounts under <strong>Customers tab</strong>.</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
+    <div class="ph"><div><div class="pt">Customers</div><div class="ps">All active clients and pipeline. Allocated cost sums expenses you tag to each client on the Expenses page; untagged expenses are firm-wide only. To override revenue or cost in the table, edit a client and set custom amounts under <strong>Customers tab</strong>.</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><div class="customers-columns-wrap"><button type="button" class="btn" id="btn-customers-columns">Columns</button><div id="customers-columns-panel" aria-label="Choose visible customer columns"></div></div><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
     <div class="kg" style="grid-template-columns:repeat(3,1fr);">
       <div class="kc"><div class="kl">Total Clients</div><div class="kv" id="cust-kpi-1">0</div><div class="kb bn" id="cust-kpi-1b">—</div></div>
       <div class="kc hi"><div class="kl">Active Retainers</div><div class="kv" id="cust-kpi-2">0</div><div class="kb bn" id="cust-kpi-2b">—</div></div>
