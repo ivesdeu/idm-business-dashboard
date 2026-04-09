@@ -165,6 +165,22 @@
     });
   }
 
+  /** When set, initDataFromSupabase skips automatic upload/backfill so screenshot demo stays local. */
+  var SCREENSHOT_NO_CLOUD_KEY = 'bizdash_screenshot_no_cloud';
+  function setScreenshotNoCloudUpload(on) {
+    try {
+      if (on) sessionStorage.setItem(SCREENSHOT_NO_CLOUD_KEY, '1');
+      else sessionStorage.removeItem(SCREENSHOT_NO_CLOUD_KEY);
+    } catch (_) {}
+  }
+  function isScreenshotNoCloudUpload() {
+    try {
+      return sessionStorage.getItem(SCREENSHOT_NO_CLOUD_KEY) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
   var state = {
     transactions: [],
     filter: { mode: 'all', start: null, end: null }, // all | month | range
@@ -1808,6 +1824,7 @@
   }
 
   async function addCrmEvent(kind, title, details, clientId, idempotencyKey) {
+    if (isScreenshotNoCloudUpload()) return;
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser) return;
@@ -3747,6 +3764,20 @@ var incomePowerState = {
         var orig = saveBtn.textContent;
         saveBtn.textContent = 'Saved!';
         setTimeout(function () { saveBtn.textContent = orig; }, 1400);
+      });
+    }
+
+    var demoLoad = document.getElementById('btn-screenshot-demo-load');
+    if (demoLoad) {
+      demoLoad.addEventListener('click', function () {
+        if (!confirm('Load sample clients, projects, transactions, and campaigns for screenshots? Data is saved in this browser only. Automatic upload to the cloud is paused until you tap “Resume cloud upload”.')) return;
+        loadScreenshotMockData();
+      });
+    }
+    var demoResume = document.getElementById('btn-screenshot-demo-resume');
+    if (demoResume) {
+      demoResume.addEventListener('click', function () {
+        resumeScreenshotCloudUpload();
       });
     }
   }
@@ -8340,6 +8371,12 @@ var incomePowerState = {
     el.textContent = 'Cloud: ' + (user.email || 'Signed in') + ' · ' + (clients && clients.length) + ' client(s) in this workspace';
     if (syncBtn) syncBtn.disabled = false;
     if (authBtn) authBtn.textContent = 'Sign out';
+    var shot = $('settings-screenshot-status');
+    if (shot) {
+      shot.textContent = isScreenshotNoCloudUpload()
+        ? 'Active: automatic cloud upload (empty-remote backfill) is paused. Tap Resume when finished.'
+        : 'Inactive. Loading the demo pauses auto-upload until you resume.';
+    }
   }
 
   function openCloudAuthModal() {
@@ -8983,13 +9020,15 @@ var incomePowerState = {
         var remoteClients = await fetchClientsFromSupabase();
 
         // One-time backfill: if remote is empty but local has data, upload local records.
-        if (!remoteTxs.length && state.transactions.length) {
-          await uploadTransactionsToSupabase(state.transactions);
-          remoteTxs = await fetchTransactionsFromSupabase();
-        }
-        if (!remoteClients.length && clients.length) {
-          await uploadClientsToSupabase(clients);
-          remoteClients = await fetchClientsFromSupabase();
+        if (!isScreenshotNoCloudUpload()) {
+          if (!remoteTxs.length && state.transactions.length) {
+            await uploadTransactionsToSupabase(state.transactions);
+            remoteTxs = await fetchTransactionsFromSupabase();
+          }
+          if (!remoteClients.length && clients.length) {
+            await uploadClientsToSupabase(clients);
+            remoteClients = await fetchClientsFromSupabase();
+          }
         }
 
         // Prefer remote when available; otherwise keep local fallback.
@@ -9007,14 +9046,14 @@ var incomePowerState = {
         var localOnlyClients = clients.filter(function (c) {
           return c && c.id && !remoteClientIdSet[c.id];
         });
-        if (localOnlyClients.length) {
+        if (!isScreenshotNoCloudUpload() && localOnlyClients.length) {
           await uploadClientsToSupabase(localOnlyClients);
           remoteClients = await fetchClientsFromSupabase();
           clients = mergeClientsPreserveRetainer(clients, remoteClients);
         }
 
         var remoteProjects = await fetchProjectsFromSupabase();
-        if (!remoteProjects.length && projects.length) {
+        if (!isScreenshotNoCloudUpload() && !remoteProjects.length && projects.length) {
           await uploadProjectsToSupabase(projects);
           remoteProjects = await fetchProjectsFromSupabase();
         }
@@ -9023,7 +9062,7 @@ var incomePowerState = {
         }
 
         var remoteInvoices = await fetchInvoicesFromSupabase();
-        if (!remoteInvoices.length && invoices.length) {
+        if (!isScreenshotNoCloudUpload() && !remoteInvoices.length && invoices.length) {
           await uploadInvoicesToSupabase(invoices);
           remoteInvoices = await fetchInvoicesFromSupabase();
         }
@@ -9032,7 +9071,7 @@ var incomePowerState = {
         }
 
         var remoteCampaigns = await fetchCampaignsFromSupabase();
-        if (!remoteCampaigns.length && campaigns.length) {
+        if (!isScreenshotNoCloudUpload() && !remoteCampaigns.length && campaigns.length) {
           await uploadCampaignsToSupabase(campaigns);
           remoteCampaigns = await fetchCampaignsFromSupabase();
         }
@@ -9041,7 +9080,7 @@ var incomePowerState = {
         }
 
         var remoteTimesheet = await fetchTimesheetEntriesFromSupabase();
-        if (!remoteTimesheet.length && timesheetEntries.length) {
+        if (!isScreenshotNoCloudUpload() && !remoteTimesheet.length && timesheetEntries.length) {
           await uploadTimesheetEntriesToSupabase(timesheetEntries);
           remoteTimesheet = await fetchTimesheetEntriesFromSupabase();
         }
@@ -9058,7 +9097,7 @@ var incomePowerState = {
         if (settingsRow && Array.isArray(settingsRow.project_statuses) && settingsRow.project_statuses.length) {
           projectStatuses = settingsRow.project_statuses.map(function (s) { return String(s); }).filter(Boolean);
           saveStatuses(projectStatuses);
-        } else {
+        } else if (!isScreenshotNoCloudUpload()) {
           await persistAppSettingsToSupabase();
         }
 
@@ -9102,6 +9141,205 @@ var incomePowerState = {
     }
   }
 
+  /**
+   * Fills local dashboard state for screenshots. Sets session flag so initDataFromSupabase does not
+   * backfill mock rows to Supabase. Does not call persist* / upload* itself.
+   */
+  function loadScreenshotMockData() {
+    setScreenshotNoCloudUpload(true);
+
+    function pad2(n) {
+      return String(n).padStart(2, '0');
+    }
+    function ymdOffset(daysAgo) {
+      var d = new Date();
+      d.setDate(d.getDate() - daysAgo);
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    }
+
+    var specs = [
+      { co: 'Aurora Analytics', contact: 'Morgan Chen', email: 'morgan@aurora.example', phone: '(415) 555-0142', status: 'Retainer', industry: 'SaaS', ret: true, notes: 'Primary analytics retainer.' },
+      { co: 'Brightline Health', contact: 'Sam Rivera', email: 'sam@brightline.example', phone: '(206) 555-0198', status: 'Retainer', industry: 'Healthcare', ret: true, notes: '' },
+      { co: 'Copper Kettle Co.', contact: 'Alex Kim', email: 'alex@copperkettle.example', phone: '(512) 555-0101', status: 'Active', industry: 'Hospitality', ret: false, notes: 'Seasonal campaigns.' },
+      { co: 'Driftwood Studio', contact: 'Riley Ng', email: 'riley@driftwood.example', phone: '(503) 555-0122', status: 'Retainer', industry: 'Design', ret: true, notes: '' },
+      { co: 'Evergreen Supply', contact: 'Casey Park', email: 'casey@evergreen.example', phone: '(303) 555-0144', status: 'Active', industry: 'Retail', ret: false, notes: '' },
+      { co: 'Falcon Mobility', contact: 'Jordan Blake', email: 'jordan@falcon.example', phone: '(617) 555-0166', status: 'Pipeline', industry: 'Mobility', ret: false, notes: 'Pilot Q1.' },
+      { co: 'Greenleaf Farms', contact: 'Taylor Moss', email: 'taylor@greenleaf.example', phone: '(406) 555-0188', status: 'Active', industry: 'Agriculture', ret: false, notes: '' },
+      { co: 'Harborlight Capital', contact: 'Morgan Diaz', email: 'morgan.h@harborlight.example', phone: '(212) 555-0199', status: 'Retainer', industry: 'Finance', ret: true, notes: '' },
+      { co: 'Inkwell Publishing', contact: 'Jamie Frost', email: 'jamie@inkwell.example', phone: '(718) 555-0200', status: 'On hold', industry: 'Media', ret: false, notes: '' },
+      { co: 'Juniper Learning', contact: 'Quinn Patel', email: 'quinn@juniper.example', phone: '(650) 555-0211', status: 'Active', industry: 'EdTech', ret: false, notes: '' },
+      { co: 'Kindred Robotics', contact: 'Reese Lopez', email: 'reese@kindred.example', phone: '(408) 555-0222', status: 'Pipeline', industry: 'Robotics', ret: false, notes: '' },
+      { co: 'Lumen Architecture', contact: 'Skyler Fox', email: 'skyler@lumenarch.example', phone: '(312) 555-0233', status: 'Active', industry: 'Architecture', ret: false, notes: '' },
+    ];
+
+    var t0 = Date.now();
+    clients = specs.map(function (s, i) {
+      return {
+        id: uuid(),
+        companyName: s.co,
+        contactName: s.contact,
+        status: s.status,
+        industry: s.industry,
+        email: s.email,
+        phone: s.phone,
+        notes: s.notes,
+        birthday: '',
+        communicationStyle: i % 3 === 0 ? 'Direct' : i % 3 === 1 ? 'Collaborative' : 'Async',
+        preferredChannel: i % 2 === 0 ? 'Email' : 'Slack',
+        lastTouchAt: ymdOffset(3 + (i % 5)),
+        nextFollowUpAt: ymdOffset(-7 - i),
+        relationshipNotes: i % 4 === 0 ? 'Champion: legal approved SOW renewal.' : '',
+        totalRevenue: 12000 + i * 4200,
+        createdAt: new Date(t0 - (120 - i * 7) * 86400000).toISOString(),
+        retainer: s.ret === true,
+        custTabRevenue: 8000 + i * 900,
+        custTabAllocatedCost: 2000 + i * 400,
+      };
+    });
+
+    var now = Date.now();
+    projects = [
+      { id: uuid(), clientId: clients[0].id, name: 'Analytics refresh & dashboards', status: 'In progress', type: 'Retainer', startDate: ymdOffset(60), dueDate: ymdOffset(-5), value: 42000, description: 'BI dashboards and weekly KPI pack.', notes: '', satisfaction: 9, archived: false, createdAt: now - 86400000 * 55, caseStudyPublished: false, caseStudyChallenge: '', caseStudyStrategy: [], caseStudyResults: [], caseStudyCategory: '' },
+      { id: uuid(), clientId: clients[1].id, name: 'Member portal v2', status: 'In progress', type: 'Project', startDate: ymdOffset(45), dueDate: ymdOffset(20), value: 68000, description: 'Accessibility and performance pass.', notes: '', satisfaction: null, archived: false, createdAt: now - 86400000 * 40, caseStudyPublished: false, caseStudyChallenge: '', caseStudyStrategy: [], caseStudyResults: [], caseStudyCategory: '' },
+      { id: uuid(), clientId: clients[2].id, name: 'Loyalty program launch', status: 'Complete', type: 'Campaign', startDate: ymdOffset(90), dueDate: ymdOffset(25), value: 18500, description: 'Email and in-store signage.', notes: 'Delivered on time.', satisfaction: 10, archived: false, createdAt: now - 86400000 * 88, caseStudyPublished: true, caseStudyChallenge: 'Low repeat visits.', caseStudyStrategy: [{ title: 'Approach', body: 'Segmented offers.' }], caseStudyResults: [{ metric: 'Repeat rate', value: '+18%' }], caseStudyCategory: 'Hospitality' },
+      { id: uuid(), clientId: clients[3].id, name: 'Brand system 2026', status: 'In progress', type: 'Retainer', startDate: ymdOffset(30), dueDate: ymdOffset(45), value: 24000, description: 'Typography and component library.', notes: '', satisfaction: 8, archived: false, createdAt: now - 86400000 * 28, caseStudyPublished: false, caseStudyChallenge: '', caseStudyStrategy: [], caseStudyResults: [], caseStudyCategory: '' },
+      { id: uuid(), clientId: clients[4].id, name: 'Inventory forecasting', status: 'Blocked', type: 'Sprint', startDate: ymdOffset(20), dueDate: ymdOffset(5), value: 12000, description: 'Waiting on ERP export format.', notes: '', satisfaction: null, archived: false, createdAt: now - 86400000 * 18, caseStudyPublished: false, caseStudyChallenge: '', caseStudyStrategy: [], caseStudyResults: [], caseStudyCategory: '' },
+      { id: uuid(), clientId: clients[5].id, name: 'Fleet dashboard MVP', status: 'Not started', type: 'MVP', startDate: ymdOffset(10), dueDate: ymdOffset(55), value: 95000, description: 'Phase 0 discovery.', notes: '', satisfaction: null, archived: false, createdAt: now - 86400000 * 8, caseStudyPublished: false, caseStudyChallenge: '', caseStudyStrategy: [], caseStudyResults: [], caseStudyCategory: '' },
+      { id: uuid(), clientId: clients[7].id, name: 'LP reporting templates', status: 'Complete', type: 'Project', startDate: ymdOffset(75), dueDate: ymdOffset(40), value: 31000, description: 'Quarterly LP pack automation.', notes: '', satisfaction: 9, archived: false, createdAt: now - 86400000 * 70, caseStudyPublished: false, caseStudyChallenge: '', caseStudyStrategy: [], caseStudyResults: [], caseStudyCategory: '' },
+      { id: uuid(), clientId: clients[9].id, name: 'Course CMS migration', status: 'In progress', type: 'Project', startDate: ymdOffset(14), dueDate: ymdOffset(30), value: 52000, description: 'Headless CMS and SSO.', notes: '', satisfaction: 8, archived: false, createdAt: now - 86400000 * 12, caseStudyPublished: false, caseStudyChallenge: '', caseStudyStrategy: [], caseStudyResults: [], caseStudyCategory: '' },
+    ];
+
+    var txs = [];
+    function addTx(o) {
+      txs.push({
+        id: uuid(),
+        date: o.d,
+        category: o.c,
+        amount: o.a,
+        description: o.desc || '',
+        note: o.note || o.desc || '',
+        clientId: o.cid || null,
+        projectId: o.pid || null,
+        otherLabel: o.ol || '',
+        otherType: o.ot || '',
+        source: o.src || '',
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    var i;
+    var p;
+    for (i = 0; i < 95; i += 3) {
+      if (i % 9 === 0) {
+        addTx({ d: ymdOffset(i), c: 'svc', a: 4800 + (i % 7) * 200, desc: 'Services invoice', cid: clients[i % clients.length].id, pid: projects[i % projects.length].id });
+      }
+      if (i % 11 === 2) {
+        addTx({ d: ymdOffset(i), c: 'ret', a: 6200 + (i % 5) * 150, desc: 'Monthly retainer', cid: clients[(i + 1) % clients.length].id });
+      }
+      if (i % 5 === 1) addTx({ d: ymdOffset(i), c: 'lab', a: 2100 + (i % 4) * 180, desc: 'Contract labor', note: 'Design + engineering' });
+      if (i % 6 === 3) addTx({ d: ymdOffset(i), c: 'sw', a: 180 + (i % 3) * 40, desc: 'SaaS subscriptions', note: 'Figma, Linear, hosting' });
+      if (i % 8 === 4) addTx({ d: ymdOffset(i), c: 'ads', a: 950 + (i % 5) * 120, desc: 'Paid search and social' });
+      if (i % 10 === 6) addTx({ d: ymdOffset(i), c: 'oth', a: 320 + (i % 4) * 55, desc: 'Travel and meals', ol: 'Travel', ot: 'One-time' });
+    }
+    addTx({ d: ymdOffset(1), c: 'own', a: 15000, desc: 'Owner capital contribution', note: 'Operating buffer' });
+
+    state.transactions = txs;
+
+    var incomeForInvoices = txs.filter(function (t) { return t.category === 'svc' && t.clientId; }).slice(0, 4);
+    invoices = incomeForInvoices.map(function (t, idx) {
+      return {
+        id: uuid(),
+        incomeTxId: t.id,
+        number: 'INV-' + String(2400 + idx).padStart(4, '0'),
+        dateIssued: t.date,
+        dueDate: ymdOffset(-20 + idx * 5),
+        amount: t.amount,
+        status: idx === 0 ? 'paid' : idx === 1 ? 'sent' : 'sent',
+        paidAt: idx === 0 ? ymdOffset(2) : null,
+        stripeCheckoutSessionId: null,
+        stripePaymentIntentId: null,
+        stripeCustomerId: null,
+        stripeStatus: null,
+      };
+    });
+
+    campaigns = [
+      normalizeCampaign({ id: uuid(), name: 'Spring webinar series', channel: 'LinkedIn + email', startDate: ymdOffset(40), notes: 'MQL goal 120.', pipelineValue: 45000, status: CAMPAIGN_STATUS_PIPELINE, createdAt: now - 86400000 * 35 }),
+      normalizeCampaign({ id: uuid(), name: 'Partner co-marketing', channel: 'Events', startDate: ymdOffset(25), notes: 'Two field events.', pipelineValue: 28000, status: CAMPAIGN_STATUS_PIPELINE, createdAt: now - 86400000 * 20 }),
+      normalizeCampaign({ id: uuid(), name: 'Brand refresh launch', channel: 'Organic + PR', startDate: ymdOffset(70), notes: 'Case study push.', pipelineValue: 0, status: CAMPAIGN_STATUS_WON, createdAt: now - 86400000 * 65 }),
+      normalizeCampaign({ id: uuid(), name: 'Legacy nurture pilot', channel: 'Email', startDate: ymdOffset(90), notes: 'Sunset Q4.', pipelineValue: 8000, status: CAMPAIGN_STATUS_LOST, createdAt: now - 86400000 * 85 }),
+    ];
+
+    timesheetEntries = [];
+    for (p = 0; p < 5; p++) {
+      timesheetEntries.push({
+        id: uuid(),
+        date: ymdOffset(p),
+        account: 'Client delivery',
+        project: projects[p % projects.length].name,
+        task: p % 2 === 0 ? 'Implementation' : 'Review',
+        activityCode: 'BILL',
+        minutes: 240 + p * 45,
+        billable: true,
+        notes: 'Screenshot sample entry',
+        externalNote: '',
+        weekdays: [],
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    crmEvents = [
+      { id: uuid(), clientId: clients[0].id, kind: 'note', title: 'QBR scheduled', details: {}, eventAt: new Date(now - 86400000 * 2).toISOString() },
+      { id: uuid(), clientId: clients[2].id, kind: 'note', title: 'Sent revised SOW', details: {}, eventAt: new Date(now - 86400000 * 5).toISOString() },
+      { id: uuid(), clientId: clients[5].id, kind: 'note', title: 'Discovery call — budget confirmed', details: {}, eventAt: new Date(now - 86400000 * 8).toISOString() },
+    ];
+    weeklySummaries = [];
+
+    budgets = { lab: 8500, sw: 950, ads: 2200, oth: 650 };
+    saveBudgets(budgets);
+
+    normalizeLocalIdsForSupabase();
+    saveClients(clients);
+    saveProjects(projects);
+    saveTransactions(state.transactions);
+    saveInvoices(invoices);
+    saveCampaigns(campaigns);
+    saveTimesheetEntries(timesheetEntries);
+
+    var sn = $('setting-name');
+    if (sn) sn.value = 'Northwind Creative Studio';
+    var so = $('setting-owner');
+    if (so) so.value = 'Alex Morgan';
+    var spe = $('setting-period');
+    if (spe) spe.value = 'Q1 2026';
+    ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
+      var el = document.getElementById('budget-input-' + k);
+      if (el && budgets[k] > 0) el.value = budgets[k];
+    });
+
+    expandRecurringExpenseInstances();
+    populateProjectClientOptions();
+    populateIncomeClientOptions();
+    populateProjectStatusOptions();
+    state.computed = compute(state.filter);
+    renderAll();
+    renderProjects();
+    refreshCloudSyncStatus();
+  }
+
+  function resumeScreenshotCloudUpload() {
+    if (!isScreenshotNoCloudUpload()) {
+      alert('Screenshot upload pause is not active.');
+      return;
+    }
+    if (!confirm('Resume automatic cloud upload? Sign-in and Sync will behave normally again. Local demo data stays until you replace or clear it. If your cloud account is empty, the next Sync may upload what is in this browser.')) return;
+    setScreenshotNoCloudUpload(false);
+    refreshCloudSyncStatus();
+    if (window.currentUser && window.supabaseClient) {
+      alert('Upload pause is off. Use Sync if you want to merge with your account.');
+    }
+  }
+
   function clearRuntimeDataForAuthChange(nextUser) {
     currentUser = nextUser || null;
     window.currentUser = currentUser;
@@ -9124,6 +9362,8 @@ var incomePowerState = {
   // Expose so supabase-auth.js can reset state on auth transitions and trigger reload.
   window.clearRuntimeDataForAuthChange = clearRuntimeDataForAuthChange;
   window.initDataFromSupabase = initDataFromSupabase;
+  window.loadScreenshotMockData = loadScreenshotMockData;
+  window.resumeScreenshotCloudUpload = resumeScreenshotCloudUpload;
 
   /**
    * Read-only ledger rollups for the in-dashboard assistant (same rules as compute(): categories svc/ret = revenue, lab/sw/ads/oth = expense, own excluded).
