@@ -722,7 +722,9 @@
     try {
       var body = Object.assign({}, payload);
       var result;
-      var maxAttempts = 6;
+      // Older DBs can be missing multiple optional client columns; allow enough retries
+      // to progressively strip unsupported fields and still save core edits.
+      var maxAttempts = 14;
       for (var attempt = 0; attempt < maxAttempts; attempt++) {
         result = await runWrite(body);
         if (!result.error) {
@@ -734,8 +736,17 @@
         }
         console.error('persist client error', result.error);
         var errStr = JSON.stringify(result.error || {});
+        var errLower = errStr.toLowerCase();
         var changed = false;
-        if ((/industry|schema cache|could not find.*column/i.test(errStr)) && Object.prototype.hasOwnProperty.call(body, 'industry')) {
+        var missingColMatch = errLower.match(/could not find the '([^']+)' column/);
+        if (missingColMatch && missingColMatch[1]) {
+          var missingCol = missingColMatch[1];
+          if (Object.prototype.hasOwnProperty.call(body, missingCol)) {
+            delete body[missingCol];
+            changed = true;
+          }
+        }
+        if (!changed && (/industry|schema cache|could not find.*column/i.test(errStr)) && Object.prototype.hasOwnProperty.call(body, 'industry')) {
           delete body.industry;
           changed = true;
           console.warn('bizdash: retrying client persist without industry — run ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS industry text;');
@@ -752,7 +763,7 @@
         if (!changed) {
           ['birthday', 'communication_style', 'preferred_channel', 'last_touch_at', 'next_follow_up_at', 'relationship_notes'].some(function (col) {
             if (changed) return true;
-            if (errStr.toLowerCase().indexOf(col) !== -1 && Object.prototype.hasOwnProperty.call(body, col)) {
+            if (errLower.indexOf(col) !== -1 && Object.prototype.hasOwnProperty.call(body, col)) {
               delete body[col];
               changed = true;
               return true;
@@ -3996,6 +4007,7 @@ var incomePowerState = {
     renderMarketing();
     renderDashAR();
     renderClients();
+    renderRetention();
     renderTimesheet();
     renderPersonableCards();
   }
@@ -4148,6 +4160,178 @@ var incomePowerState = {
   // ---------- Insights ----------
 
   var insTrendChart = null;
+  var retTrendChart = null;
+
+  function monthKeyShift(ym, deltaMonths) {
+    var y = parseInt(String(ym || '').slice(0, 4), 10);
+    var m = parseInt(String(ym || '').slice(5, 7), 10);
+    if (!isFinite(y) || !isFinite(m) || m < 1 || m > 12) return null;
+    var d = new Date(y, m - 1 + deltaMonths, 1, 12, 0, 0, 0);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function computeRetentionMetrics() {
+    var allTxs = state.transactions || [];
+    var totalClients = clients.length;
+    var retainerClients = clients.filter(clientIsRetainer);
+    var retentionRatePct = totalClients > 0 ? (retainerClients.length / totalClients) * 100 : null;
+
+    var revenueByClient = {};
+    allTxs.forEach(function (tx) {
+      if (!tx || !tx.clientId || !tx.date) return;
+      if (tx.category !== 'svc' && tx.category !== 'ret') return;
+      var amt = Number(tx.amount || 0);
+      if (!isFinite(amt) || amt <= 0) return;
+      revenueByClient[tx.clientId] = (revenueByClient[tx.clientId] || 0) + amt;
+    });
+    var lifetimeRevenueTotal = clients.reduce(function (sum, c) {
+      return sum + (revenueByClient[c.id] || 0);
+    }, 0);
+    // Denominator = all clients for stable KPI behavior across account sizes.
+    var avgClientLtv = totalClients > 0 ? (lifetimeRevenueTotal / totalClients) : 0;
+
+    var today = new Date();
+    var todayYmd = dateYMD(new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12));
+    var churnedThisMonth = clients.filter(function (c) {
+      if (!c || clientIsRetainer(c)) return false;
+      var incomeTxs = allTxs.filter(function (tx) {
+        return tx && tx.clientId === c.id && (tx.category === 'svc' || tx.category === 'ret') && tx.date;
+      });
+      if (!incomeTxs.length) return false;
+      var latestDate = incomeTxs.map(function (tx) { return tx.date; }).sort().pop();
+      var diff = (parseYMD(todayYmd) - parseYMD(latestDate)) / 86400000;
+      return diff >= 60;
+    }).length;
+
+    return {
+      totalClients: totalClients,
+      retainerClients: retainerClients,
+      retentionRatePct: retentionRatePct,
+      avgClientLtv: avgClientLtv,
+      churnedThisMonth: churnedThisMonth,
+      revenueByClient: revenueByClient,
+      todayYmd: todayYmd,
+    };
+  }
+
+  function computeRetentionTrendSeries(lookbackMonths) {
+    var monthsBack = Math.max(3, Number(lookbackMonths) || 6);
+    var now = new Date();
+    var currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    var allTxs = state.transactions || [];
+    var out = [];
+    for (var i = monthsBack - 1; i >= 0; i--) {
+      var mk = monthKeyShift(currentMonth, -i);
+      if (!mk) continue;
+      var activeById = {};
+      allTxs.forEach(function (tx) {
+        if (!tx || !tx.clientId || !tx.date) return;
+        if (tx.date.slice(0, 7) !== mk) return;
+        if (tx.category !== 'svc' && tx.category !== 'ret') return;
+        var amt = Number(tx.amount || 0);
+        if (!isFinite(amt) || amt <= 0) return;
+        activeById[tx.clientId] = true;
+      });
+      var activeClients = clients.filter(function (c) { return c && c.id && activeById[c.id]; });
+      var activeRetainers = activeClients.filter(clientIsRetainer).length;
+      var pct = activeClients.length ? (activeRetainers / activeClients.length) * 100 : 0;
+      out.push({ month: mk, pct: pct });
+    }
+    return out;
+  }
+
+  function renderRetention() {
+    var m = computeRetentionMetrics();
+    if (m.retentionRatePct == null) {
+      setText('ret-kpi-1', '—');
+      setText('ret-kpi-1b', 'no clients');
+    } else {
+      setText('ret-kpi-1', m.retentionRatePct.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + '%');
+      setText('ret-kpi-1b', m.retainerClients.length + ' of ' + m.totalClients + ' on retainer');
+    }
+    setText('ret-kpi-2', fmtCurrency(m.avgClientLtv));
+    setText('ret-kpi-2b', 'lifetime avg (all clients)');
+    setText('ret-kpi-3', String(m.churnedThisMonth));
+    setText('ret-kpi-3b', 'no activity 60d+');
+
+    var listEl = $('retainers-list');
+    var emptyEl = $('retainers-empty');
+    if (listEl && emptyEl) {
+      if (!m.retainerClients.length) {
+        emptyEl.style.display = 'block';
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+      } else {
+        emptyEl.style.display = 'none';
+        listEl.style.display = 'flex';
+        listEl.innerHTML = m.retainerClients
+          .slice()
+          .sort(function (a, b) {
+            var ar = m.revenueByClient[a.id] || 0;
+            var br = m.revenueByClient[b.id] || 0;
+            return br - ar;
+          })
+          .map(function (c) {
+            var rev = m.revenueByClient[c.id] || 0;
+            var status = c.status ? esc(c.status) : 'Retainer';
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">' +
+              '<div style="min-width:0;">' +
+                '<div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c.companyName || c.contactName || 'Client') + '</div>' +
+                '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + status + '</div>' +
+              '</div>' +
+              '<div style="font-size:12px;font-weight:600;color:var(--text2);font-variant-numeric:tabular-nums;padding-left:10px;">' + fmtCurrency(rev) + '</div>' +
+            '</div>';
+          }).join('');
+      }
+    }
+
+    var trendSeries = computeRetentionTrendSeries(6);
+    var trendCanvas = document.getElementById('cRet');
+    if (trendCanvas && window.Chart) {
+      var labels = trendSeries.map(function (p) { return fmtMonthLabel(p.month); });
+      var values = trendSeries.map(function (p) { return Math.round(p.pct * 10) / 10; });
+      if (!retTrendChart) {
+        retTrendChart = new Chart(trendCanvas, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Retention %',
+              data: values,
+              borderColor: CHART_ORANGE,
+              backgroundColor: CHART_ORANGE_FILL,
+              borderWidth: 2,
+              pointRadius: 3,
+              fill: true,
+              tension: 0.3,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { grid: { display: false }, ticks: { color: CHART_TICK, font: { size: 11 } } },
+              y: {
+                min: 0,
+                max: 100,
+                grid: { color: CHART_GRID },
+                ticks: {
+                  color: CHART_TICK,
+                  font: { size: 11 },
+                  callback: function (v) { return v + '%'; },
+                },
+              },
+            },
+          },
+        });
+      } else {
+        retTrendChart.data.labels = labels;
+        retTrendChart.data.datasets[0].data = values;
+        retTrendChart.update('none');
+      }
+    }
+  }
 
   function computeMonthlyRevenueSeries() {
     var byMonth = {};
@@ -6093,7 +6277,7 @@ var incomePowerState = {
           '<td>' + pr.marginStr + '</td>' +
           '<td>' + pr.roiStr + '</td>' +
           '<td style="min-width:120px;">' +
-            '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+            '<div style="display:flex;gap:6px;flex-wrap:nowrap;">' +
               '<button type="button" class="btn" data-client-edit="' + c.id + '">Edit</button>' +
               '<button type="button" class="btn" data-client-del="' + c.id + '" style="color:var(--red);">Delete</button>' +
             '</div>' +

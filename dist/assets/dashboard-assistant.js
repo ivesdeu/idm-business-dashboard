@@ -522,11 +522,12 @@
 
     var imagePreview = null;
     var selectedTool = null;
-    var docked = false;
+    var docked = true;
+    if (pageChat) pageChat.classList.add('chat-compose-docked');
 
     function setComposeDocked(on) {
       if (!pageChat || !composerStack) return;
-      var next = !!on;
+      var next = true;
       if (next === docked) return;
       docked = next;
       pageChat.classList.toggle('chat-compose-docked', next);
@@ -583,15 +584,7 @@
     ta.addEventListener('focus', function () {
       setComposeDocked(true);
     });
-    ta.addEventListener('blur', function () {
-      setTimeout(function () {
-        var active = document.activeElement;
-        var keepDocked = !!(promptBox && active && promptBox.contains(active));
-        if (!keepDocked && !(ta.value || '').trim()) {
-          setComposeDocked(false);
-        }
-      }, 80);
-    });
+    ta.addEventListener('blur', function () {});
 
     if (promptBox) {
       promptBox.addEventListener('click', function (ev) {
@@ -798,7 +791,6 @@
       autoResizeTa();
       setImagePreview(null);
       ta.blur();
-      setComposeDocked(false);
 
       isThinking = true;
       sendBtn.disabled = true;

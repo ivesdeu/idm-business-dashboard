@@ -649,6 +649,7 @@
 
   /* Insights alerts (revenue vs spending) */
   .insights-alerts-wrap { margin-bottom: 18px; }
+  #page-insights .insights-alerts-wrap { margin-bottom: 8px; }
   .insights-alerts-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -663,6 +664,7 @@
     color: var(--text3);
     margin-bottom: 8px;
   }
+  #page-insights .insights-alerts-lbl { margin-bottom: 2px; }
   .insights-alerts-list {
     display: flex;
     flex-direction: column;
@@ -704,13 +706,14 @@
   #customers-table td:nth-child(1).td-truncate { max-width: 200px; }
   #customers-table td:nth-child(3).td-truncate { max-width: 220px; }
   #customers-table td:nth-child(4).td-truncate { max-width: 130px; }
-  #page-customers .ph { position: relative; z-index: 120; }
-  .customers-columns-wrap { position: relative; z-index: 130; }
+  /* Keep columns menu above customer cards but below modal overlays. */
+  #page-customers .ph { position: relative; z-index: 90; }
+  .customers-columns-wrap { position: relative; z-index: 91; }
   #customers-columns-panel {
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    z-index: 999;
+    z-index: 95;
     min-width: 220px;
     padding: 10px;
     border: 1px solid var(--border);
@@ -1469,7 +1472,7 @@
 
   <!-- CUSTOMERS -->
   <div class="pg" id="page-customers">
-    <div class="ph"><div><div class="pt">Customers</div><div class="ps">All active clients and pipeline. Allocated cost sums expenses you tag to each client on the Expenses page; untagged expenses are firm-wide only. To override revenue or cost in the table, edit a client and set custom amounts under <strong>Customers tab</strong>.</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><div class="customers-columns-wrap"><button type="button" class="btn" id="btn-customers-columns">Columns</button><div id="customers-columns-panel" aria-label="Choose visible customer columns"></div></div><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
+    <div class="ph"><div><div class="pt">Customers</div><div class="ps">Active clients and pipeline. Allocated cost reflects tagged expenses; untagged costs stay firm-wide.</div></div><div class="hr"><input class="fi" id="customers-search" placeholder="Search clients..." style="width:200px;" title="Search" /><div class="customers-columns-wrap"><button type="button" class="btn" id="btn-customers-columns">Columns</button><div id="customers-columns-panel" aria-label="Choose visible customer columns"></div></div><button type="button" class="btn btn-p" id="btn-add-client">+ Add Client</button></div></div>
     <div class="kg" style="grid-template-columns:repeat(3,1fr);">
       <div class="kc"><div class="kl">Total Clients</div><div class="kv" id="cust-kpi-1">0</div><div class="kb bn" id="cust-kpi-1b">—</div></div>
       <div class="kc hi"><div class="kl">Active Retainers</div><div class="kv" id="cust-kpi-2">0</div><div class="kb bn" id="cust-kpi-2b">—</div></div>
