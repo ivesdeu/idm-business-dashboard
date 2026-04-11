@@ -596,6 +596,9 @@
     if (tx.expenseRecurringLead === true) m.expenseRecurringLead = true;
     if (tx.expenseRecurrenceInstance === true) m.expenseRecurrenceInstance = true;
     if (tx.recurring === true) m.recurring = true;
+    if (tx.incomeCategoryLabel && String(tx.incomeCategoryLabel).trim()) {
+      m.incomeCategoryLabel = String(tx.incomeCategoryLabel).trim();
+    }
     return Object.keys(m).length ? m : null;
   }
 
@@ -611,6 +614,9 @@
     if (meta.expenseRecurringLead === true) out.expenseRecurringLead = true;
     if (meta.expenseRecurrenceInstance === true) out.expenseRecurrenceInstance = true;
     if (meta.recurring === true) out.recurring = true;
+    if (meta.incomeCategoryLabel != null && String(meta.incomeCategoryLabel).trim()) {
+      out.incomeCategoryLabel = String(meta.incomeCategoryLabel).trim();
+    }
     return out;
   }
 
@@ -1917,6 +1923,9 @@
       if (textMissing(next.vendor) && !textMissing(p.vendor)) next.vendor = p.vendor;
       if (textMissing(next.notes) && !textMissing(p.notes)) next.notes = p.notes;
       if (textMissing(next.source) && !textMissing(p.source)) next.source = p.source;
+      if (textMissing(next.incomeCategoryLabel) && !textMissing(p.incomeCategoryLabel)) {
+        next.incomeCategoryLabel = p.incomeCategoryLabel;
+      }
       // Prefer cloud copy for recurring metadata so a stale local row cannot wipe synced fields.
       if (!remoteHasExpenseRecurrenceMeta(t)) {
         TX_RECURRENCE_KEYS.forEach(function (k) {
@@ -2744,15 +2753,18 @@ var incomePowerState = {
 
     tbody.innerHTML = c.txs.map(function (tx) {
       var d = tx.date ? tx.date : '—';
-      var catLabel = {
-        svc: 'Services',
-        ret: 'Retainers',
-        own: 'Owner investment',
-        lab: 'Labor',
-        sw: 'Software',
-        ads: 'Ads',
-        oth: 'Other',
-      }[tx.category] || tx.category || '—';
+      var catLabel;
+      if (tx.category === 'svc' || tx.category === 'ret') {
+        catLabel = displayIncomeCategory(tx);
+      } else {
+        catLabel = {
+          own: 'Owner investment',
+          lab: 'Labor',
+          sw: 'Software',
+          ads: 'Ads',
+          oth: 'Other',
+        }[tx.category] || tx.category || '—';
+      }
       return '<tr>' +
         '<td>' + d + '</td>' +
         '<td>' + catLabel + '</td>' +
@@ -5758,7 +5770,7 @@ var incomePowerState = {
           source: tx.description || '—',
           client: (cl && cl.companyName) || '—',
           project: (pr && pr.name) || '—',
-          category: tx.category === 'ret' ? 'Retainer' : 'Services',
+          category: displayIncomeCategory(tx),
           amount: Number(tx.amount || 0),
           invoice: inv2 ? (inv2.status === 'paid' ? 'Paid' : 'Sent') : 'No invoice',
           invoiceObj: inv2,
@@ -7783,6 +7795,14 @@ var incomePowerState = {
     return 'svc';
   }
 
+  /** User-facing income category for tables and the income modal; ledger still uses svc vs ret. */
+  function displayIncomeCategory(tx) {
+    if (!tx) return 'Services';
+    var custom = tx.incomeCategoryLabel != null ? String(tx.incomeCategoryLabel).trim() : '';
+    if (custom) return custom;
+    return tx.category === 'ret' ? 'Retainer' : 'Services';
+  }
+
   function wireIncomeExpenseForms() {
     // Expenses tab
     var btnAddExpense = $('btn-add-expense');
@@ -7910,7 +7930,7 @@ var incomePowerState = {
         }
         var date = $('income-date').value || todayISO();
         var source = $('income-source').value || '';
-        var catText = $('income-category').value || '';
+        var catText = ($('income-category').value || '').trim();
         var notes = $('income-notes').value || '';
         var cat = mapIncomeCategory(catText);
         var desc = source || notes;
@@ -7920,22 +7940,24 @@ var incomePowerState = {
         if (editId) {
           state.transactions = state.transactions.map(function (tx) {
             if (tx.id !== editId) return tx;
-            return {
-              id: tx.id,
+            var next = Object.assign({}, tx, {
               date: date,
               description: desc,
               amount: amount,
               category: cat,
               clientId: clientId || null,
               projectId: projectId || null,
-            };
+            });
+            if (catText) next.incomeCategoryLabel = catText;
+            else delete next.incomeCategoryLabel;
+            return next;
           });
           saveTransactions(state.transactions);
           recomputeAndRender();
           var incomeUpdated = state.transactions.find(function (t) { return t.id === editId; });
           if (incomeUpdated) persistTransactionToSupabase(incomeUpdated);
         } else {
-          addTransaction({
+          var newInc = {
             id: uuid(),
             date: date,
             description: desc,
@@ -7943,7 +7965,9 @@ var incomePowerState = {
             category: cat,
             clientId: clientId || null,
             projectId: projectId || null,
-          });
+          };
+          if (catText) newInc.incomeCategoryLabel = catText;
+          addTransaction(newInc);
         }
         closeIncomeModal();
       });
@@ -8324,7 +8348,7 @@ var incomePowerState = {
           if (fDate) fDate.value = tx.date || todayISO();
           if (fAmount) fAmount.value = tx.amount != null ? String(tx.amount) : '';
           if (fSource) fSource.value = tx.description || '';
-          if (fCat) fCat.value = tx.category === 'ret' ? 'Retainer' : 'Services';
+          if (fCat) fCat.value = displayIncomeCategory(tx);
           if (fNotes) fNotes.value = '';
           populateIncomeClientOptions();
           populateIncomeProjectOptions();
