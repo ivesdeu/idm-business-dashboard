@@ -545,7 +545,17 @@
           response: { title: 'Sign in required', bullets: ['Your session expired or demo mode is active. Sign in to use Advisor.'] },
         };
       }
-      var res = await supabase.functions.invoke('ai-assistant', { body: req });
+      // #region agent log
+      emitDebugLog('post-fix', 'H7', 'dashboard-assistant.js:invokeAdvisorTask:invoke-headers', 'invoking with explicit bearer token header', {
+        hasAccessToken: !!(session && session.access_token),
+      });
+      // #endregion
+      var res = await supabase.functions.invoke('ai-assistant', {
+        body: req,
+        headers: {
+          Authorization: 'Bearer ' + session.access_token,
+        },
+      });
       if (res.error) {
         // #region agent log
         emitDebugLog('initial', 'H3', 'dashboard-assistant.js:invokeAdvisorTask:invoke-error', 'invoke returned error object', {
