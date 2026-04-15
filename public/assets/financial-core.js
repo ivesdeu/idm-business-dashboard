@@ -1801,11 +1801,61 @@
     if (!img) return;
     var light = String(lightUrl || '').trim();
     var dark = String(darkUrl || '').trim();
-    if (light) {
-      img.src = light;
-      img.setAttribute('data-logo-light', light);
-    }
+    var nextSrc = light || dark;
+    if (nextSrc) img.src = nextSrc;
+    if (light) img.setAttribute('data-logo-light', light);
     if (dark) img.setAttribute('data-logo-dark', dark);
+  }
+
+  /** Re-skin live charts when branding changes (without waiting for a full rerender). */
+  function syncBrandingAcrossCharts() {
+    function expenseColorForLabel(label) {
+      if (label === 'Labor') return CHART_EXPENSE_LABOR;
+      if (label === 'Software') return CHART_EXPENSE_SOFTWARE;
+      if (label === 'Advertising') return CHART_EXPENSE_ADVERTISING;
+      if (label === 'Other') return CHART_EXPENSE_GRAY;
+      return CHART_PALETTE_REST[0];
+    }
+    if (revExpChart && revExpChart.data && revExpChart.data.datasets) {
+      if (revExpChart.data.datasets[0]) revExpChart.data.datasets[0].backgroundColor = CHART_ORANGE;
+      if (revExpChart.data.datasets[1]) revExpChart.data.datasets[1].backgroundColor = CHART_EXPENSE_GRAY;
+      revExpChart.update('none');
+    }
+    if (expenseChart && expenseChart.data && expenseChart.data.datasets && expenseChart.data.datasets[0]) {
+      var expLabels = expenseChart.data.labels || [];
+      if (expLabels.length === 1 && expLabels[0] === 'No expense data') {
+        expenseChart.data.datasets[0].backgroundColor = [CHART_EMPTY];
+      } else {
+        expenseChart.data.datasets[0].backgroundColor = expLabels.map(expenseColorForLabel);
+      }
+      expenseChart.update('none');
+    }
+    if (revTrendChart && revTrendChart.data && revTrendChart.data.datasets && revTrendChart.data.datasets[0]) {
+      syncBrandedRevenueLineDataset(revTrendChart.data.datasets[0]);
+      revTrendChart.update('none');
+    }
+    if (insTrendChart && insTrendChart.data && insTrendChart.data.datasets && insTrendChart.data.datasets[0]) {
+      syncBrandedRevenueLineDataset(insTrendChart.data.datasets[0]);
+      insTrendChart.update('none');
+    }
+    if (retTrendChart && retTrendChart.data && retTrendChart.data.datasets && retTrendChart.data.datasets[0]) {
+      syncBrandedRevenueLineDataset(retTrendChart.data.datasets[0]);
+      retTrendChart.update('none');
+    }
+    if (projMonthlyChart && projMonthlyChart.data && projMonthlyChart.data.datasets && projMonthlyChart.data.datasets[0]) {
+      projMonthlyChart.data.datasets[0].backgroundColor = CHART_ORANGE;
+      projMonthlyChart.update('none');
+    }
+    if (verticalChart && verticalChart.data && verticalChart.data.datasets && verticalChart.data.datasets[0]) {
+      var vLabels = verticalChart.data.labels || [];
+      verticalChart.data.datasets[0].backgroundColor = vLabels.length && vLabels[0] !== 'No data' ? chartMultiColors(vLabels.length) : [CHART_EMPTY];
+      verticalChart.update('none');
+    }
+    if (leadSourceChart && leadSourceChart.data && leadSourceChart.data.datasets && leadSourceChart.data.datasets[0]) {
+      var lLabels = leadSourceChart.data.labels || [];
+      leadSourceChart.data.datasets[0].backgroundColor = lLabels.length ? chartMultiColors(lLabels.length) : [CHART_EMPTY];
+      leadSourceChart.update('none');
+    }
   }
 
   function applyAccentBranding(accentHex) {
@@ -1817,6 +1867,10 @@
     root.style.setProperty('--coral', accent);
     root.style.setProperty('--coral2', darkenHex(accent, 0.1));
     root.style.setProperty('--coral-bg', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.08)');
+    root.style.setProperty('--coral-border-soft', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.14)');
+    root.style.setProperty('--coral-border-mid', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.18)');
+    root.style.setProperty('--coral-border-strong', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.2)');
+    root.style.setProperty('--coral-border-focus', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.35)');
 
     // Chart "branding kit" derived from accent (revenue line, bars, doughnut slices, spend borders).
     CHART_ORANGE = accent;
@@ -1828,6 +1882,7 @@
     // Keep one non-accent category color for stronger visual separation in 2-slice doughnuts.
     CHART_EXPENSE_ADVERTISING = '#475569';
     CHART_VENDOR_PAL = [CHART_ORANGE, '#71717a', '#64748b', '#a1a1aa', '#94a3b8', '#78716c', '#d4d4d8', '#cbd5e1'];
+    syncBrandingAcrossCharts();
   }
 
   async function persistAppSettingsToSupabase(opts) {
@@ -4566,10 +4621,26 @@ var incomePowerState = {
       var ext = (String(file.name || '').split('.').pop() || 'png').toLowerCase();
       var path = currentUser.id + '/' + variant + '-' + Date.now() + '.' + ext;
       var upload = await supabase.storage.from('brand-assets').upload(path, file, { upsert: true, cacheControl: '3600' });
-      if (upload.error) return '';
+      if (upload.error) throw upload.error;
       var pub = supabase.storage.from('brand-assets').getPublicUrl(path);
       return pub && pub.data && pub.data.publicUrl ? pub.data.publicUrl : '';
     }
+
+    function wireLogoPreviewInput(inputId, variant) {
+      var input = document.getElementById(inputId);
+      if (!input) return;
+      input.addEventListener('change', function () {
+        if (!input.files || !input.files.length) return;
+        var file = input.files[0];
+        if (!file || String(file.type || '').indexOf('image/') !== 0) return;
+        var previewUrl = URL.createObjectURL(file);
+        if (variant === 'light') applyBrandLogo(previewUrl, '');
+        else applyBrandLogo('', previewUrl);
+      });
+    }
+
+    wireLogoPreviewInput('setting-logo-light', 'light');
+    wireLogoPreviewInput('setting-logo-dark', 'dark');
 
     ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
       var el = document.getElementById('budget-input-' + k);
@@ -4582,12 +4653,18 @@ var incomePowerState = {
     var saveBtn = document.getElementById('btn-save-settings');
     if (saveBtn) {
       saveBtn.addEventListener('click', async function () {
-        var lightUrl = '';
-        var darkUrl = '';
+        var brandImg = document.getElementById('sb-brand-img');
+        var lightUrl = brandImg && brandImg.getAttribute('data-logo-light') ? String(brandImg.getAttribute('data-logo-light')) : '';
+        var darkUrl = brandImg && brandImg.getAttribute('data-logo-dark') ? String(brandImg.getAttribute('data-logo-dark')) : '';
         try {
-          lightUrl = await uploadBrandLogoInput('setting-logo-light', 'light');
-          darkUrl = await uploadBrandLogoInput('setting-logo-dark', 'dark');
-        } catch (_) {}
+          var nextLight = await uploadBrandLogoInput('setting-logo-light', 'light');
+          var nextDark = await uploadBrandLogoInput('setting-logo-dark', 'dark');
+          if (nextLight) lightUrl = nextLight;
+          if (nextDark) darkUrl = nextDark;
+        } catch (e) {
+          console.warn('brand logo upload failed', e);
+          alert('Logo upload failed. Check brand-assets storage bucket and policies, then try again.');
+        }
         applyBrandLogo(lightUrl, darkUrl);
         await syncBudgetsNow();
         // Brief visual confirmation
