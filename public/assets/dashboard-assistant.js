@@ -273,39 +273,6 @@
     return div;
   }
 
-  async function countRows(supabase, userId, table) {
-    var res = await supabase.from(table).select('*', { count: 'exact', head: true }).eq('user_id', userId);
-    if (res.error) return { ok: false, err: res.error.message };
-    return { ok: true, count: typeof res.count === 'number' ? res.count : 0 };
-  }
-
-  async function tryLiveCount(q, supabase, user) {
-    if (!user || !supabase) return null;
-    var ql = norm(q);
-    if (!/\b(how many|how\s+much|count|number of|total)\b/.test(ql)) return null;
-
-    var specs = [
-      { re: /\bclients?\b/, table: 'clients', label: 'client' },
-      { re: /\btransactions?\b/, table: 'transactions', label: 'transaction' },
-      { re: /\bprojects?\b/, table: 'projects', label: 'project' },
-      { re: /\binvoices?\b/, table: 'invoices', label: 'invoice' },
-      { re: /\bcampaigns?\b/, table: 'campaigns', label: 'campaign' },
-      { re: /\b(timesheet\s+entries|timesheets?|time\s+entries)\b/, table: 'timesheet_entries', label: 'timesheet entry' },
-    ];
-
-    for (var i = 0; i < specs.length; i++) {
-      if (specs[i].re.test(ql)) {
-        var r = await countRows(supabase, user.id, specs[i].table);
-        if (!r.ok) {
-          return 'Could not count ' + specs[i].table + ': ' + r.err;
-        }
-        var noun = r.count === 1 ? specs[i].label : specs[i].label + 's';
-        return 'You have ' + r.count + ' ' + noun + ' in Supabase (rows with your user_id).';
-      }
-    }
-    return null;
-  }
-
   function answerStatic(q) {
     var ql = norm(q);
 
@@ -319,12 +286,12 @@
         '• How RLS scopes data to your account\n' +
         '• Where SQL migrations and Edge Functions live\n' +
         '• How static builds and deploy work\n' +
-        '• Live counts (clients, transactions, projects, invoices, campaigns, timesheet rows) when you’re signed in'
+        '• Local ledger-based financial Q&A in this tab'
       );
     }
 
     if (/\b(hello|hi\b|hey)\b/.test(ql)) {
-      return 'Hello! Ask about Supabase tables, RLS, Stripe fields, or say “how many projects do I have?” if you’re signed in.';
+      return 'Hello! Ask about dashboard tables, RLS, Stripe fields, or ledger-based money questions.';
     }
 
     if (/\b(table|tables|schema|database|supabase)\b/.test(ql)) {
@@ -398,21 +365,6 @@
     return null;
   }
 
-  function mergeAdvisorCrmDraft(contactRequest, crmProposal) {
-    var o = {};
-    if (contactRequest && typeof contactRequest === 'object') {
-      ['id', 'source', 'companyName', 'contactName', 'email', 'phone', 'notes', 'receivedAt'].forEach(function (k) {
-        if (contactRequest[k] != null && String(contactRequest[k]).trim() !== '') o[k] = contactRequest[k];
-      });
-    }
-    if (crmProposal && typeof crmProposal === 'object') {
-      ['companyName', 'contactName', 'email', 'phone', 'notes', 'status', 'industry'].forEach(function (k) {
-        if (crmProposal[k] != null && String(crmProposal[k]).trim() !== '') o[k] = crmProposal[k];
-      });
-    }
-    return o;
-  }
-
   function normalizeTask(task, message) {
     if (task && ADVISOR_TASKS[task]) return task;
     var q = norm(message || '');
@@ -460,87 +412,30 @@
     }
   }
 
-  async function logAdvisorUsage(entry) {
-    var supabase = window.supabaseClient;
-    var user = window.currentUser;
-    if (window.__advisorUsageEventsUnavailable) return;
-    if (!supabase || !user || !entry) return;
-    try {
-      var r = await supabase.from('ai_usage_events').insert(entry);
-      if (r && r.error && (r.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(r.error.message || '')))) {
-        window.__advisorUsageEventsUnavailable = true;
-      }
-    } catch (_) {}
-  }
-
-  async function logAdvisorFeedback(entry) {
-    var supabase = window.supabaseClient;
-    var user = window.currentUser;
-    if (window.__advisorFeedbackUnavailable) return;
-    if (!supabase || !user || !entry) return;
-    try {
-      var r = await supabase.from('ai_feedback').insert(entry);
-      if (r && r.error && (r.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(r.error.message || '')))) {
-        window.__advisorFeedbackUnavailable = true;
-      }
-    } catch (_) {}
-  }
-
-  async function logAdvisorActionOutcome(entry) {
-    var supabase = window.supabaseClient;
-    var user = window.currentUser;
-    if (window.__advisorActionOutcomeUnavailable) return;
-    if (!supabase || !user || !entry) return;
-    try {
-      var r = await supabase.from('ai_action_outcomes').insert(entry);
-      if (r && r.error && (r.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(r.error.message || '')))) {
-        window.__advisorActionOutcomeUnavailable = true;
-      }
-    } catch (_) {}
-  }
+  async function logAdvisorUsage(_) {}
+  async function logAdvisorFeedback(_) {}
+  async function logAdvisorActionOutcome(_) {}
 
   async function invokeAdvisorTask(req) {
-    var supabase = window.supabaseClient;
-    var user = window.currentUser;
-    if (!supabase || !user) {
-      return {
-        ok: false,
-        error: 'Sign in to use Advisor task stubs.',
-        response: { title: 'Sign in required', bullets: ['Advisor tasks are scoped per user session.'] },
-      };
+    var q = req && req.message ? String(req.message) : '';
+    var money = tryLedgerFinancialAnswer(q);
+    if (money) {
+      return { ok: true, response: { text: money } };
     }
-    try {
-      var session = null;
-      try {
-        var sessRes = await supabase.auth.getSession();
-        session = sessRes && sessRes.data ? sessRes.data.session : null;
-      } catch (sessErr) {
-        return {
-          ok: false,
-          error: 'Could not validate session. Sign in again.',
-          response: { title: 'Sign in required', bullets: ['Your session could not be validated. Sign in and retry.'] },
-        };
-      }
-      if (!session || !session.access_token) {
-        return {
-          ok: false,
-          error: 'No active auth session. Sign in again to use Advisor.',
-          response: { title: 'Sign in required', bullets: ['Your session expired or demo mode is active. Sign in to use Advisor.'] },
-        };
-      }
-      var res = await supabase.functions.invoke('ai-assistant', {
-        body: req,
-        headers: {
-          Authorization: 'Bearer ' + session.access_token,
-        },
-      });
-      if (res.error) {
-        return { ok: false, error: res.error.message || 'Invoke failed', response: { title: 'Stub call failed', bullets: [res.error.message || 'Unknown function error'] } };
-      }
-      return { ok: true, response: res.data || { title: 'No data', bullets: [] } };
-    } catch (err) {
-      return { ok: false, error: String(err && err.message ? err.message : err), response: { title: 'Stub call failed', bullets: ['Advisor function could not be reached.'] } };
+    var staticAnswer = answerStatic(q);
+    if (staticAnswer) {
+      return { ok: true, response: { text: staticAnswer } };
     }
+    return {
+      ok: true,
+      response: {
+        title: 'Advisor display-only mode',
+        bullets: [
+          'Advisor API integration is currently disabled.',
+          'You can still use this tab for static guidance and ledger-based money Q&A.',
+        ],
+      },
+    };
   }
 
   window.wireDashboardAssistant = function () {
@@ -827,80 +722,6 @@
       messageEl.appendChild(row);
     }
 
-    function appendCrmProposalControls(messageEl, usageMeta, crmProposal, contactRequestSnapshot) {
-      if (!messageEl || !usageMeta || !usageMeta.usageEventId) return;
-      var prop = crmProposal && typeof crmProposal === 'object' ? crmProposal : null;
-      if (!prop || !String(prop.companyName || '').trim()) return;
-      var merged = mergeAdvisorCrmDraft(contactRequestSnapshot, prop);
-      delete merged.confidence;
-      var row = document.createElement('div');
-      row.className = 'advisor-crm-proposal-actions';
-      row.style.display = 'flex';
-      row.style.gap = '6px';
-      row.style.flexWrap = 'wrap';
-      row.style.marginTop = '10px';
-      var review = document.createElement('button');
-      review.type = 'button';
-      review.className = 'btn';
-      review.textContent = 'Review in CRM';
-      var addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'btn btn-p';
-      addBtn.textContent = 'Add to CRM';
-      review.addEventListener('click', async function () {
-        if (typeof window.bizDashOpenClientModalWithDraft !== 'function') return;
-        review.disabled = true;
-        try {
-          if (typeof window.nav === 'function') window.nav('customers', null);
-          await window.bizDashOpenClientModalWithDraft(merged);
-          await logAdvisorActionOutcome({
-            id: mkUuid(),
-            user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
-            usage_event_id: usageMeta.usageEventId,
-            task: usageMeta.task,
-            action_id: 'crm-review-modal',
-            action_label: 'Review in CRM',
-            outcome: 'applied',
-            details: { companyName: merged.companyName || null },
-            created_at: new Date().toISOString(),
-          });
-        } finally {
-          review.disabled = false;
-        }
-      });
-      addBtn.addEventListener('click', async function () {
-        if (typeof window.bizDashCreateClientFromDraft !== 'function') return;
-        var label = String(merged.companyName || 'this contact').trim();
-        if (!window.confirm('Add ' + label + ' to your CRM now?')) return;
-        addBtn.disabled = true;
-        review.disabled = true;
-        var result = await window.bizDashCreateClientFromDraft(merged);
-        await logAdvisorActionOutcome({
-          id: mkUuid(),
-          user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
-          usage_event_id: usageMeta.usageEventId,
-          task: usageMeta.task,
-          action_id: 'crm-add-client',
-          action_label: 'Add to CRM',
-          outcome: result && result.ok ? 'applied' : 'error',
-          details: {
-            clientId: result && result.client && result.client.id ? result.client.id : null,
-            error: result && result.error ? result.error : null,
-          },
-          created_at: new Date().toISOString(),
-        });
-        if (result && result.ok && typeof window.nav === 'function') window.nav('customers', null);
-        else if (!result || !result.ok) {
-          window.alert((result && result.error) || 'Could not add client.');
-          addBtn.disabled = false;
-          review.disabled = false;
-        }
-      });
-      row.appendChild(review);
-      row.appendChild(addBtn);
-      messageEl.appendChild(row);
-    }
-
     async function handleSend(text) {
       if (isThinking) return;
       var t = (text || '').trim();
@@ -923,13 +744,8 @@
       var t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
       var out;
       var usageMeta = null;
-      var contactSnapshot = null;
       try {
         var task = normalizeTask(pendingTask, t);
-        contactSnapshot =
-          typeof window.bizDashGetAdvisorContactContext === 'function' ? window.bizDashGetAdvisorContactContext() : null;
-        var clientsDigest =
-          typeof window.bizDashGetClientsDigestForAdvisor === 'function' ? window.bizDashGetClientsDigestForAdvisor() : [];
         var request = {
           task: task,
           message: t,
@@ -937,24 +753,10 @@
             page: 'advisor',
             hadImage: !!hadImage,
             selectedTool: selectedTool || null,
-            contactRequest: contactSnapshot,
-            clientsDigest: clientsDigest,
           },
           constraints: { maxBullets: 5, tone: 'concise' },
         };
         out = await invokeAdvisorTask(request);
-        var t1req = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-        usageMeta = { usageEventId: mkUuid(), task: task };
-        await logAdvisorUsage({
-          id: usageMeta.usageEventId,
-          user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
-          task: task,
-          request_payload: request,
-          response_payload: out && out.response ? out.response : {},
-          status: out && out.ok ? 'ok' : 'error',
-          latency_ms: Math.max(0, Math.round(t1req - t0)),
-          created_at: new Date().toISOString(),
-        });
       } catch (err) {
         out = { ok: false, response: { title: 'Advisor unavailable', bullets: ['Something went wrong while preparing a reply. Try again.'] } };
         if (typeof console !== 'undefined' && console.error) console.error(err);
@@ -972,9 +774,6 @@
         thinkingEl.removeChild(thinkingEl.firstChild);
       }
       renderAdvisorPayload(thinkingEl, out && out.response ? out.response : { text: 'No response.' });
-      if (out && out.response && out.response.crmProposal && usageMeta) {
-        appendCrmProposalControls(thinkingEl, usageMeta, out.response.crmProposal, contactSnapshot);
-      }
       if (out && out.response && Array.isArray(out.response.actions) && usageMeta) {
         appendActionButtons(thinkingEl, usageMeta, out.response.actions);
       }
@@ -1019,24 +818,6 @@
 
     syncSendDisabled();
     autoResizeTa();
-
-    window.bizDashAskAdvisorToAddContactRequest = function (contactRequest) {
-      if (typeof window.bizDashSetAdvisorContactContext === 'function') {
-        window.bizDashSetAdvisorContactContext(contactRequest || null);
-      }
-      if (typeof window.nav === 'function') window.nav('chat', null);
-      seedWelcome();
-      var c = contactRequest && typeof contactRequest === 'object' ? contactRequest : {};
-      var company = String(c.companyName || '').trim();
-      var contact = String(c.contactName || '').trim();
-      var who = [contact, company].filter(Boolean).join(' at ');
-      ta.value = who
-        ? 'Add this contact request to my CRM: ' + who + '. Use Lead status and suggest any missing fields.'
-        : 'Add this contact request to my CRM with Lead status and suggest any missing fields.';
-      autoResizeTa();
-      syncSendDisabled();
-      ta.focus();
-    };
 
     window.seedDashboardChatWelcome = seedWelcome;
   };
