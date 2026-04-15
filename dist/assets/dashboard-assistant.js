@@ -463,51 +463,46 @@
   async function logAdvisorUsage(entry) {
     var supabase = window.supabaseClient;
     var user = window.currentUser;
+    if (window.__advisorUsageEventsUnavailable) return;
     if (!supabase || !user || !entry) return;
     try {
-      await supabase.from('ai_usage_events').insert(entry);
+      var r = await supabase.from('ai_usage_events').insert(entry);
+      if (r && r.error && (r.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(r.error.message || '')))) {
+        window.__advisorUsageEventsUnavailable = true;
+      }
     } catch (_) {}
   }
 
   async function logAdvisorFeedback(entry) {
     var supabase = window.supabaseClient;
     var user = window.currentUser;
+    if (window.__advisorFeedbackUnavailable) return;
     if (!supabase || !user || !entry) return;
     try {
-      await supabase.from('ai_feedback').insert(entry);
+      var r = await supabase.from('ai_feedback').insert(entry);
+      if (r && r.error && (r.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(r.error.message || '')))) {
+        window.__advisorFeedbackUnavailable = true;
+      }
     } catch (_) {}
   }
 
   async function logAdvisorActionOutcome(entry) {
     var supabase = window.supabaseClient;
     var user = window.currentUser;
+    if (window.__advisorActionOutcomeUnavailable) return;
     if (!supabase || !user || !entry) return;
     try {
-      await supabase.from('ai_action_outcomes').insert(entry);
+      var r = await supabase.from('ai_action_outcomes').insert(entry);
+      if (r && r.error && (r.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(r.error.message || '')))) {
+        window.__advisorActionOutcomeUnavailable = true;
+      }
     } catch (_) {}
-  }
-
-  function emitDebugLog(runId, hypothesisId, location, message, data) {
-    fetch('http://127.0.0.1:7914/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ade47e'},body:JSON.stringify({sessionId:'ade47e',runId:runId,hypothesisId:hypothesisId,location:location,message:message,data:data||{},timestamp:Date.now()})}).catch(function(){});
   }
 
   async function invokeAdvisorTask(req) {
     var supabase = window.supabaseClient;
     var user = window.currentUser;
-    // #region agent log
-    emitDebugLog('initial', 'H1', 'dashboard-assistant.js:invokeAdvisorTask:entry', 'invokeAdvisorTask called', {
-      hasSupabase: !!supabase,
-      hasWindowUser: !!user,
-      hasMessage: !!(req && req.message),
-      task: req && req.task ? String(req.task) : null,
-    });
-    // #endregion
     if (!supabase || !user) {
-      // #region agent log
-      emitDebugLog('initial', 'H1', 'dashboard-assistant.js:invokeAdvisorTask:precheck', 'precheck failed before invoke', {
-        reason: !supabase ? 'missing_supabase_client' : 'missing_window_current_user',
-      });
-      // #endregion
       return {
         ok: false,
         error: 'Sign in to use Advisor task stubs.',
@@ -519,37 +514,20 @@
       try {
         var sessRes = await supabase.auth.getSession();
         session = sessRes && sessRes.data ? sessRes.data.session : null;
-        // #region agent log
-        emitDebugLog('initial', 'H2', 'dashboard-assistant.js:invokeAdvisorTask:session', 'session check before invoke', {
-          hasAccessToken: !!(session && session.access_token),
-          userMatchesWindow: !!(session && session.user && user && session.user.id === user.id),
-        });
-        // #endregion
       } catch (sessErr) {
-        // #region agent log
-        emitDebugLog('initial', 'H2', 'dashboard-assistant.js:invokeAdvisorTask:session-error', 'session read failed', {
-          message: String(sessErr && sessErr.message ? sessErr.message : sessErr),
-        });
-        // #endregion
+        return {
+          ok: false,
+          error: 'Could not validate session. Sign in again.',
+          response: { title: 'Sign in required', bullets: ['Your session could not be validated. Sign in and retry.'] },
+        };
       }
       if (!session || !session.access_token) {
-        // #region agent log
-        emitDebugLog('post-fix', 'H2', 'dashboard-assistant.js:invokeAdvisorTask:session-guard', 'blocked invoke due to missing access token', {
-          hasSession: !!session,
-          hasAccessToken: !!(session && session.access_token),
-        });
-        // #endregion
         return {
           ok: false,
           error: 'No active auth session. Sign in again to use Advisor.',
           response: { title: 'Sign in required', bullets: ['Your session expired or demo mode is active. Sign in to use Advisor.'] },
         };
       }
-      // #region agent log
-      emitDebugLog('post-fix', 'H7', 'dashboard-assistant.js:invokeAdvisorTask:invoke-headers', 'invoking with explicit bearer token header', {
-        hasAccessToken: !!(session && session.access_token),
-      });
-      // #endregion
       var res = await supabase.functions.invoke('ai-assistant', {
         body: req,
         headers: {
@@ -557,29 +535,10 @@
         },
       });
       if (res.error) {
-        // #region agent log
-        emitDebugLog('initial', 'H3', 'dashboard-assistant.js:invokeAdvisorTask:invoke-error', 'invoke returned error object', {
-          errorName: res.error && res.error.name ? String(res.error.name) : null,
-          errorMessage: res.error && res.error.message ? String(res.error.message) : null,
-          errorContext: res.error && res.error.context ? String(res.error.context) : null,
-          status: res.error && res.error.status ? String(res.error.status) : null,
-        });
-        // #endregion
         return { ok: false, error: res.error.message || 'Invoke failed', response: { title: 'Stub call failed', bullets: [res.error.message || 'Unknown function error'] } };
       }
-      // #region agent log
-      emitDebugLog('initial', 'H4', 'dashboard-assistant.js:invokeAdvisorTask:invoke-ok', 'invoke succeeded', {
-        hasData: !!(res && res.data),
-        provider: res && res.data && res.data.meta && res.data.meta.provider ? String(res.data.meta.provider) : null,
-      });
-      // #endregion
       return { ok: true, response: res.data || { title: 'No data', bullets: [] } };
     } catch (err) {
-      // #region agent log
-      emitDebugLog('initial', 'H3', 'dashboard-assistant.js:invokeAdvisorTask:catch', 'invoke threw exception', {
-        message: String(err && err.message ? err.message : err),
-      });
-      // #endregion
       return { ok: false, error: String(err && err.message ? err.message : err), response: { title: 'Stub call failed', bullets: ['Advisor function could not be reached.'] } };
     }
   }

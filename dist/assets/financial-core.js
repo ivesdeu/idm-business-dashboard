@@ -1835,7 +1835,7 @@
     var includeDashboard = opts.includeDashboard !== false;
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return;
+    if (!supabase || !currentUser || crmEventsTableUnavailable) return;
     if (isDemoDashboardUser()) return;
     try {
       var dash = includeDashboard ? collectDashboardSettingsForCloud() : null;
@@ -1977,10 +1977,15 @@
   async function fetchCrmEventsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return [];
+    if (!supabase || !currentUser || crmEventsTableUnavailable) return [];
     try {
       var res = await supabase.from('crm_events').select('*').eq('user_id', currentUser.id).order('event_at', { ascending: false }).limit(50);
-      if (res.error) return [];
+      if (res.error) {
+        if (res.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(res.error.message || ''))) {
+          crmEventsTableUnavailable = true;
+        }
+        return [];
+      }
       return (res.data || []).map(mapCrmEventRow);
     } catch (_) {
       return [];
@@ -1990,10 +1995,15 @@
   async function fetchWeeklySummariesFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return [];
+    if (!supabase || !currentUser || weeklySummariesTableUnavailable) return [];
     try {
       var res = await supabase.from('weekly_summaries').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(12);
-      if (res.error) return [];
+      if (res.error) {
+        if (res.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(res.error.message || ''))) {
+          weeklySummariesTableUnavailable = true;
+        }
+        return [];
+      }
       return res.data || [];
     } catch (_) {
       return [];
@@ -2022,6 +2032,7 @@
     try {
       var res = await supabase.from('crm_events').insert(payload);
       if (!res.error) crmEvents.unshift(mapCrmEventRow(payload));
+      else if (res.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(res.error.message || ''))) crmEventsTableUnavailable = true;
     } catch (_) {}
   }
 
@@ -2032,6 +2043,9 @@
   var wfStages = [];
   var wfRules = [];
   var wfTasks = [];
+  var wfSchemaUnavailable = false;
+  var crmEventsTableUnavailable = false;
+  var weeklySummariesTableUnavailable = false;
   var wfDispatchDepth = 0;
   var WF_MAX_ACTIONS = 8;
   var WF_TRIGGER_TYPES = {
@@ -2100,9 +2114,13 @@
     wfTasks = [];
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || isDemoDashboardUser()) return;
+    if (!supabase || !currentUser || isDemoDashboardUser() || wfSchemaUnavailable) return;
     try {
       var pr = await supabase.from('pipelines').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: true });
+      if (pr && pr.error && (pr.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(pr.error.message || '')))) {
+        wfSchemaUnavailable = true;
+        return;
+      }
       wfPipelines = pr.error ? [] : (pr.data || []).map(function (r) {
         return { id: r.id, name: r.name, entity: r.entity, isDefault: !!r.is_default };
       });
