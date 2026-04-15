@@ -22,6 +22,8 @@ type CrmProposal = {
   confidence?: "high" | "low";
 };
 
+const ANTHROPIC_MODEL = "claude-opus-4-6";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -200,8 +202,8 @@ async function callAnthropic(
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-3-5-sonnet-latest",
-      max_tokens: 700,
+      model: ANTHROPIC_MODEL,
+      max_tokens: 1000,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     }),
@@ -265,7 +267,7 @@ async function probeAnthropic(anthropicApiKey: string) {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-3-5-sonnet-latest",
+      model: ANTHROPIC_MODEL,
       max_tokens: 8,
       messages: [{ role: "user", content: "healthcheck" }],
     }),

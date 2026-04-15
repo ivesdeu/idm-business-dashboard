@@ -1835,7 +1835,7 @@
     var includeDashboard = opts.includeDashboard !== false;
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || crmEventsTableUnavailable) return;
+    if (!supabase || !currentUser) return;
     if (isDemoDashboardUser()) return;
     try {
       var dash = includeDashboard ? collectDashboardSettingsForCloud() : null;
@@ -7141,7 +7141,6 @@ var incomePowerState = {
           '<td style="min-width:120px;">' +
             '<div style="display:flex;gap:6px;flex-wrap:nowrap;">' +
               '<button type="button" class="btn" data-client-edit="' + c.id + '">Edit</button>' +
-              '<button type="button" class="btn" data-log-meeting="' + c.id + '">Meeting</button>' +
               '<button type="button" class="btn" data-client-del="' + c.id + '" style="color:var(--red);">Delete</button>' +
             '</div>' +
           '</td>' +
@@ -11233,11 +11232,7 @@ var incomePowerState = {
     if (cur) cur.value = 'USD';
     var fis = document.getElementById('setting-fiscal');
     if (fis) fis.value = 'January';
-    var acc = document.getElementById('setting-accent');
-    var accHex = document.getElementById('setting-accent-hex');
-    if (acc) acc.value = '#e8501a';
-    if (accHex) accHex.value = '#e8501a';
-    applyAccentBranding('#e8501a');
+    // Preserve current branding until account-specific settings are loaded.
     ['setting-logo-light', 'setting-logo-dark'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && el.type === 'file') el.value = '';
