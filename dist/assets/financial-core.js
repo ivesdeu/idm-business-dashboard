@@ -11651,6 +11651,23 @@ var incomePowerState = {
       if (!r) return '—';
       return String(r).charAt(0).toUpperCase() + String(r).slice(1);
     }
+    /** Supabase FunctionsFetchError = fetch never completed (not a 4xx/5xx from the function). */
+    function formatTeamInvokeError(err) {
+      if (!err) return 'Request failed';
+      var msg = err.message || 'Request failed';
+      if (err.name === 'FunctionsFetchError') {
+        var inner =
+          err.context && typeof err.context === 'object' && err.context.message != null
+            ? String(err.context.message)
+            : err.context != null && typeof err.context !== 'object'
+              ? String(err.context)
+              : '';
+        var suffix =
+          ' Usually: deploy `organization-team` to this Supabase project (`supabase functions deploy organization-team`), or open DevTools → Network and inspect …/functions/v1/organization-team.';
+        return inner && inner !== msg ? msg + ' — ' + inner + '.' + suffix : msg + '.' + suffix;
+      }
+      return msg;
+    }
     async function invokeTeam(body) {
       var supabase = window.supabaseClient;
       if (!supabase) return { error: 'Sign in to manage the team.' };
@@ -11659,12 +11676,16 @@ var incomePowerState = {
       var sessRes = await supabase.auth.getSession();
       var sess = sessRes && sessRes.data ? sessRes.data.session : null;
       if (!sess || !sess.access_token) return { error: 'Session expired. Sign in again.' };
-      var res = await supabase.functions.invoke('organization-team', {
-        body: Object.assign({ organizationId: orgId }, body),
-        headers: { Authorization: 'Bearer ' + sess.access_token },
-      });
-      if (res.error) return { error: res.error.message || 'Request failed' };
-      return res.data && typeof res.data === 'object' ? res.data : {};
+      try {
+        var res = await supabase.functions.invoke('organization-team', {
+          body: Object.assign({ organizationId: orgId }, body),
+          headers: { Authorization: 'Bearer ' + sess.access_token },
+        });
+        if (res.error) return { error: formatTeamInvokeError(res.error) };
+        return res.data && typeof res.data === 'object' ? res.data : {};
+      } catch (e) {
+        return { error: formatTeamInvokeError(e) };
+      }
     }
     async function refreshTeamPage() {
       var orgId = typeof getCurrentOrgId === 'function' ? getCurrentOrgId() : null;

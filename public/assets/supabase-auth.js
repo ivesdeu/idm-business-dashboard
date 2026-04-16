@@ -13,6 +13,24 @@
 
   if (!window.supabase) {
     console.error('Supabase JS not loaded. Check CDN <script> tag.');
+    function recoverNoSupabaseClient() {
+      var loading = document.getElementById('auth-loading');
+      var shell = document.getElementById('auth-login-shell');
+      var app = document.getElementById('app-shell');
+      var ge = document.getElementById('gate-auth-error');
+      if (loading) loading.style.display = 'none';
+      if (shell) shell.style.display = 'flex';
+      if (app) app.classList.remove('on');
+      if (ge) {
+        ge.textContent =
+          'The sign-in library did not load. Check your connection, allow cdn.jsdelivr.net, then refresh. Sign-in will not work until this script loads.';
+      }
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', recoverNoSupabaseClient);
+    } else {
+      recoverNoSupabaseClient();
+    }
     return;
   }
 
@@ -21,6 +39,28 @@
 
   function $(id) {
     return document.getElementById(id);
+  }
+
+  /** Shared budget for getSession and related reads (ms). */
+  var SESSION_READ_MS = 45000;
+
+  function withTimeout(promise, ms, errMsg) {
+    return Promise.race([
+      promise,
+      new Promise(function (_, rej) {
+        setTimeout(function () {
+          rej(new Error(errMsg));
+        }, ms);
+      }),
+    ]);
+  }
+
+  async function getSessionWithTimeout() {
+    return withTimeout(
+      supabase.auth.getSession(),
+      SESSION_READ_MS,
+      'Reading your session timed out. Check your connection and try again.'
+    );
   }
 
   function clearOrgContext() {
@@ -151,7 +191,7 @@
     if (!tok) return true;
 
     try {
-      var sessRes = await supabase.auth.getSession();
+      var sessRes = await getSessionWithTimeout();
       var sess = sessRes && sessRes.data ? sessRes.data.session : null;
       if (!sess || !sess.access_token) {
         if (gateErr) gateErr('Sign in to accept this invitation.');
@@ -429,8 +469,14 @@
   }
 
   async function refreshWorkspaceModalList() {
-    var sess = await supabase.auth.getSession();
-    var u = sess && sess.data && sess.data.session && sess.data.session.user;
+    var sessRes;
+    try {
+      sessRes = await getSessionWithTimeout();
+    } catch (_) {
+      renderWorkspaceList([]);
+      return;
+    }
+    var u = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user;
     if (!u) return;
     var listRes = await supabase.rpc('my_organizations');
     if (listRes.error || !listRes.data) {
@@ -545,17 +591,6 @@
   /** In-flight session resolution so bootstrap + INITIAL_SESSION do not run two flows in parallel. */
   var sessionFlowPromise = null;
 
-  function withTimeout(promise, ms, errMsg) {
-    return Promise.race([
-      promise,
-      new Promise(function (_, rej) {
-        setTimeout(function () {
-          rej(new Error(errMsg));
-        }, ms);
-      }),
-    ]);
-  }
-
   /**
    * Resolve org context, optional onboarding modal, then show the app (or login on failure).
    * Used from bootstrap and from auth events (including INITIAL_SESSION; deduped with bootstrap).
@@ -570,12 +605,15 @@
     if (sessionFlowPromise) {
       return sessionFlowPromise;
     }
-    var flowMs = 45000;
     sessionFlowPromise = (async function () {
       showLoading();
       try {
         setCurrentUser(user);
-        var ok = await withTimeout(ensureOrganizationContext(user), flowMs, 'Loading workspace timed out. Check your connection and try again.');
+        var ok = await withTimeout(
+          ensureOrganizationContext(user),
+          SESSION_READ_MS,
+          'Loading workspace timed out. Check your connection and try again.'
+        );
         if (!ok) {
           setCurrentUser(null);
           showLogin();
@@ -584,7 +622,7 @@
         wireOnboardSubmit(user);
         await withTimeout(
           maybeWorkspaceOnboardingThenShowApp(user),
-          flowMs,
+          SESSION_READ_MS,
           'Could not finish workspace setup. Try signing in again.'
         );
       } catch (err) {
@@ -692,12 +730,14 @@
   async function bootstrapSession() {
     showLoading();
     try {
-      var result = await supabase.auth.getSession();
+      var result = await getSessionWithTimeout();
       var session = result && result.data ? result.data.session : null;
       if (result && result.error) {
         console.error('getSession error', result.error);
         setCurrentUser(null);
         clearOrgContext();
+        var geErr = $('gate-auth-error');
+        if (geErr) geErr.textContent = String(result.error.message || result.error || 'Could not read session.');
         showLogin();
         return;
       }
@@ -715,6 +755,8 @@
       console.error('Error checking session', err);
       setCurrentUser(null);
       clearOrgContext();
+      var ge = $('gate-auth-error');
+      if (ge && err && err.message) ge.textContent = String(err.message);
       showLogin();
     }
   }
