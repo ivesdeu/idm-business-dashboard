@@ -45,8 +45,8 @@
    * Ceilings for org / onboarding resolution (not session read — that is driven by INITIAL_SESSION).
    * These are UX timeouts only; the auth session itself has no artificial cap.
    */
-  var ORG_RESOLVE_MS = 45000;
-  var ONBOARDING_GATE_MS = 25000;
+  var ORG_RESOLVE_MS = 4000;
+  var ONBOARDING_GATE_MS = 5000;
 
   function withTimeout(promise, ms, errMsg) {
     return Promise.race([
@@ -328,12 +328,14 @@
         return { ok: false };
       }
       var org = pubRes.data[0];
-      var memRes = await supabase
-        .from('organization_members')
-        .select('role')
-        .eq('organization_id', org.id)
-        .eq('user_id', user.id)
-        .maybeSingle();
+      var memRes = await retryOnAuthLock(function () {
+        return supabase
+          .from('organization_members')
+          .select('role')
+          .eq('organization_id', org.id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+      });
       if (memRes.error || !memRes.data) {
         gateErr('You do not have access to this workspace.');
         clearOrgContext();
@@ -377,12 +379,34 @@
   async function fetchOrgNeedsOnboarding(orgId) {
     if (!orgId) return false;
     try {
-      var r = await supabase.from('organizations').select('onboarding_completed').eq('id', orgId).maybeSingle();
+      var r = await retryOnAuthLock(function () {
+        return supabase.from('organizations').select('onboarding_completed').eq('id', orgId).maybeSingle();
+      });
       if (r.error) return false;
       if (!r.data) return false;
       return r.data.onboarding_completed === false;
     } catch (_) {
       return false;
+    }
+  }
+
+  async function resolveOrgContextWithRetry(user, authSession) {
+    try {
+      return await withTimeout(
+        ensureOrganizationContext(user, authSession),
+        ORG_RESOLVE_MS,
+        'Loading workspace timed out. Check your connection and try again.'
+      );
+    } catch (err) {
+      // One immediate second chance for lock contention only (no extra wait).
+      if (isLockStolenError(err)) {
+        return await withTimeout(
+          ensureOrganizationContext(user, authSession),
+          ORG_RESOLVE_MS,
+          'Loading workspace timed out. Check your connection and try again.'
+        );
+      }
+      throw err;
     }
   }
 
@@ -708,11 +732,7 @@
       showLoading();
       try {
         setCurrentUser(user);
-        var ctx = await withTimeout(
-          ensureOrganizationContext(user, authSession),
-          ORG_RESOLVE_MS,
-          'Loading workspace timed out. Check your connection and try again.'
-        );
+        var ctx = await resolveOrgContextWithRetry(user, authSession);
         if (!ctx || !ctx.ok) {
           setCurrentUser(null);
           showLogin();

@@ -1901,8 +1901,8 @@
       return CHART_PALETTE_REST[0];
     }
     if (revExpChart && revExpChart.data && revExpChart.data.datasets) {
-      if (revExpChart.data.datasets[0]) revExpChart.data.datasets[0].backgroundColor = CHART_ORANGE;
-      if (revExpChart.data.datasets[1]) revExpChart.data.datasets[1].backgroundColor = CHART_EXPENSE_GRAY;
+      if (revExpChart.data.datasets[0]) syncBrandedRevenueBarDataset(revExpChart.data.datasets[0]);
+      if (revExpChart.data.datasets[1]) syncMutedExpenseBarDataset(revExpChart.data.datasets[1]);
       revExpChart.update('none');
     }
     if (expenseChart && expenseChart.data && expenseChart.data.datasets && expenseChart.data.datasets[0]) {
@@ -3345,6 +3345,19 @@ var incomePowerState = {
     ds.pointHoverBackgroundColor = CHART_ORANGE;
   }
 
+  /** Keep branded bar fills in sync after live accent changes as well as on initial render. */
+  function syncBrandedRevenueBarDataset(ds) {
+    if (!ds) return;
+    ds.backgroundColor = CHART_ORANGE;
+    ds.hoverBackgroundColor = CHART_ORANGE;
+  }
+
+  function syncMutedExpenseBarDataset(ds) {
+    if (!ds) return;
+    ds.backgroundColor = CHART_EXPENSE_GRAY;
+    ds.hoverBackgroundColor = CHART_EXPENSE_GRAY;
+  }
+
   function renderExpenseChart(c) {
     var canvas = document.getElementById('cExp');
     if (!canvas || !window.Chart) return;
@@ -3456,12 +3469,14 @@ var incomePowerState = {
               label: 'Revenue',
               data: revData,
               backgroundColor: CHART_ORANGE,
+              hoverBackgroundColor: CHART_ORANGE,
               borderRadius: 4,
             },
             {
               label: 'Expenses',
               data: expData,
               backgroundColor: CHART_EXPENSE_GRAY,
+              hoverBackgroundColor: CHART_EXPENSE_GRAY,
               borderRadius: 4,
             },
           ],
@@ -3498,7 +3513,8 @@ var incomePowerState = {
       revExpChart.data.labels = labels;
       revExpChart.data.datasets[0].data = revData; // Revenue
       revExpChart.data.datasets[1].data = expData; // Expenses
-      revExpChart.data.datasets[0].backgroundColor = CHART_ORANGE;
+      syncBrandedRevenueBarDataset(revExpChart.data.datasets[0]);
+      syncMutedExpenseBarDataset(revExpChart.data.datasets[1]);
       revExpChart.update('none');
     }
   }
