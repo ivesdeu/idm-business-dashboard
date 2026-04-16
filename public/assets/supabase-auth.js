@@ -542,6 +542,36 @@
 
   window.__dashboardShowLogin = showLogin;
 
+  /**
+   * Resolve org context, optional onboarding modal, then show the app (or login on failure).
+   * Used from bootstrap and from auth events (not INITIAL_SESSION — that is covered by bootstrap).
+   */
+  async function runAuthSessionFlow(user) {
+    if (!user || !user.id) {
+      clearOrgContext();
+      setCurrentUser(null);
+      showLogin();
+      return;
+    }
+    showLoading();
+    try {
+      setCurrentUser(user);
+      var ok = await ensureOrganizationContext(user);
+      if (!ok) {
+        setCurrentUser(null);
+        showLogin();
+        return;
+      }
+      wireOnboardSubmit(user);
+      await maybeWorkspaceOnboardingThenShowApp(user);
+    } catch (err) {
+      console.error('runAuthSessionFlow', err);
+      setCurrentUser(null);
+      clearOrgContext();
+      showLogin();
+    }
+  }
+
   function showDemoDashboard() {
     clearOrgContext();
     var demoId = window.DEMO_DASHBOARD_USER_ID || '00000000-0000-4000-8000-000000000001';
@@ -616,28 +646,41 @@
       }
     } catch (_) {}
 
-    setCurrentUser(session.user);
+    if (event === 'INITIAL_SESSION') {
+      return;
+    }
 
     if (event === 'TOKEN_REFRESHED') {
+      setCurrentUser(session.user);
       showApp(session.user);
       return;
     }
 
-    showLoading();
-    var ok = await ensureOrganizationContext(session.user);
-    if (!ok) {
-      setCurrentUser(null);
-      showLogin();
-      return;
-    }
-    wireOnboardSubmit(session.user);
-    await maybeWorkspaceOnboardingThenShowApp(session.user);
+    await runAuthSessionFlow(session.user);
   });
 
   async function bootstrapSession() {
     showLoading();
     try {
-      await supabase.auth.getSession();
+      var result = await supabase.auth.getSession();
+      var session = result && result.data ? result.data.session : null;
+      if (result && result.error) {
+        console.error('getSession error', result.error);
+        setCurrentUser(null);
+        clearOrgContext();
+        showLogin();
+        return;
+      }
+      if (!session || !session.user) {
+        showLogin();
+        return;
+      }
+      try {
+        if (typeof window.setBizdashScreenshotNoCloud === 'function') {
+          window.setBizdashScreenshotNoCloud(false);
+        }
+      } catch (_) {}
+      await runAuthSessionFlow(session.user);
     } catch (err) {
       console.error('Error checking session', err);
       setCurrentUser(null);

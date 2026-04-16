@@ -868,14 +868,19 @@
   body.internal-mode .ui-internal-facing { display: block !important; }
   body.internal-mode .nav-public-facing { display: none !important; }
 
-  /* Auth gate: app hidden until authenticated */
+  /* Auth gate: app hidden until authenticated (fill viewport so flex centering is visible) */
   #auth-loading {
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding:40px 0;
-    font-size:14px;
-    color:var(--text2);
+    display: flex;
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    min-height: 100vh;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    font-size: 14px;
+    color: var(--text2);
   }
   #auth-login-shell {
     display:none;
