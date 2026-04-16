@@ -59,6 +59,10 @@
     ]);
   }
 
+  async function getSessionNow() {
+    return supabase.auth.getSession();
+  }
+
   function clearOrgContext() {
     window.currentOrganizationId = null;
     window.currentOrganizationSlug = null;
@@ -202,7 +206,7 @@
     try {
       var sess = authSession && authSession.access_token ? authSession : null;
       if (!sess) {
-        var sessRes = await getSessionWithTimeout();
+        var sessRes = await getSessionNow();
         sess = sessRes && sessRes.data ? sessRes.data.session : null;
       }
       if (!sess || !sess.access_token) {
@@ -278,7 +282,13 @@
     var slug = parseTenantSlug();
     if (slug) {
       var pubRes = await supabase.rpc('organization_public_by_slug', { sl: slug });
-      if (pubRes.error || !pubRes.data || !pubRes.data.length) {
+      if (pubRes.error) {
+        console.error('organization_public_by_slug failed', pubRes.error);
+        gateErr('Could not load workspace URL. ' + String(pubRes.error.message || pubRes.error));
+        clearOrgContext();
+        return { ok: false };
+      }
+      if (!pubRes.data || !pubRes.data.length) {
         gateErr('Unknown workspace URL.');
         clearOrgContext();
         return { ok: false };
@@ -305,7 +315,13 @@
     }
 
     var listRes = await supabase.rpc('my_organizations');
-    if (listRes.error || !listRes.data || !listRes.data.length) {
+    if (listRes.error) {
+      console.error('my_organizations failed', listRes.error);
+      gateErr('Could not load your workspaces. ' + String(listRes.error.message || listRes.error));
+      clearOrgContext();
+      return { ok: false };
+    }
+    if (!listRes.data || !listRes.data.length) {
       gateErr('No workspace found for your account. Contact support.');
       clearOrgContext();
       return { ok: false };
@@ -507,7 +523,7 @@
   async function refreshWorkspaceModalList() {
     var sessRes;
     try {
-      sessRes = await getSessionWithTimeout();
+      sessRes = await getSessionNow();
     } catch (_) {
       renderWorkspaceList([]);
       return;
