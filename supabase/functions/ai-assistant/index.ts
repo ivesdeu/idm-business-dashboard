@@ -214,6 +214,11 @@ function taskInstruction(task: AdvisorTask) {
   }
 }
 
+function ga4Configured() {
+  const raw = Deno.env.get("GA4");
+  return !!String(raw || "").trim();
+}
+
 async function callAnthropic(
   anthropicApiKey: string,
   task: AdvisorTask,
@@ -357,6 +362,7 @@ serve(async (req) => {
   const user = userData.user;
 
   const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  const isGa4Configured = ga4Configured();
   if (body.healthCheck === true) {
     if (!anthropicApiKey) {
       return jsonResponse(req, 200, {
@@ -367,6 +373,7 @@ serve(async (req) => {
           providerReachable: false,
           provider: "anthropic",
           reason: "ANTHROPIC_API_KEY is not set.",
+          ga4Configured: isGa4Configured,
         },
       });
     }
@@ -379,6 +386,7 @@ serve(async (req) => {
           apiConnected: true,
           providerReachable: true,
           provider: "anthropic",
+          ga4Configured: isGa4Configured,
         },
       });
     } catch (err) {
@@ -391,6 +399,7 @@ serve(async (req) => {
           providerReachable: false,
           provider: "anthropic",
           details,
+          ga4Configured: isGa4Configured,
         },
       });
     }

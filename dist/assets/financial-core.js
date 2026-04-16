@@ -6309,6 +6309,159 @@ var incomePowerState = {
     }
   }
 
+  var marketingGa4State = {
+    orgId: '',
+    loading: false,
+    loaded: false,
+    error: '',
+    data: null,
+    inFlight: null,
+  };
+
+  function setGa4Value(id, value) {
+    var el = $(id);
+    if (!el) return;
+    el.textContent = value;
+  }
+
+  function fmtInt(n) {
+    var v = Number(n || 0) || 0;
+    return v.toLocaleString();
+  }
+
+  function renderMarketingGa4Panel() {
+    var status = $('marketing-ga4-status');
+    var channelsEl = $('marketing-ga4-channels');
+    if (!status || !channelsEl) return;
+
+    if (marketingGa4State.loading) {
+      status.textContent = 'Loading analytics…';
+      status.style.color = 'var(--text3)';
+      channelsEl.textContent = '';
+      setGa4Value('ga4-users', '—');
+      setGa4Value('ga4-sessions', '—');
+      setGa4Value('ga4-new-users', '—');
+      setGa4Value('ga4-page-views', '—');
+      setGa4Value('ga4-conversions', '—');
+      return;
+    }
+
+    if (marketingGa4State.error) {
+      status.textContent = marketingGa4State.error;
+      status.style.color = 'var(--red)';
+      channelsEl.textContent = '';
+      return;
+    }
+
+    var payload = marketingGa4State.data || null;
+    if (!payload) {
+      status.textContent = 'Analytics unavailable.';
+      status.style.color = 'var(--text3)';
+      channelsEl.textContent = '';
+      return;
+    }
+
+    if (payload.configured === false) {
+      status.textContent = payload.reason || 'GA4 is not configured yet.';
+      status.style.color = 'var(--amber)';
+      channelsEl.textContent = '';
+      return;
+    }
+
+    if (payload.error) {
+      status.textContent = payload.details ? String(payload.error) + ' ' + String(payload.details) : String(payload.error);
+      status.style.color = 'var(--red)';
+      channelsEl.textContent = '';
+      return;
+    }
+
+    var summary = payload.summary || {};
+    setGa4Value('ga4-users', fmtInt(summary.users));
+    setGa4Value('ga4-sessions', fmtInt(summary.sessions));
+    setGa4Value('ga4-new-users', fmtInt(summary.newUsers));
+    setGa4Value('ga4-page-views', fmtInt(summary.pageViews));
+    setGa4Value('ga4-conversions', fmtInt(summary.conversions));
+
+    status.textContent = 'Connected to GA4';
+    status.style.color = 'var(--green)';
+
+    var channels = Array.isArray(payload.channels) ? payload.channels : [];
+    if (!channels.length) {
+      channelsEl.textContent = 'No channel breakdown available.';
+      return;
+    }
+    channelsEl.innerHTML = channels
+      .map(function (c) {
+        return (
+          '<span style="display:inline-block;margin-right:10px;margin-bottom:6px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;background:var(--bg3);">' +
+          esc(c.source || 'Unknown') + ': ' + fmtInt(c.sessions || 0) +
+          '</span>'
+        );
+      })
+      .join('');
+  }
+
+  async function loadMarketingGa4() {
+    var supabase = window.supabaseClient;
+    var orgId = typeof getCurrentOrgId === 'function' ? getCurrentOrgId() : null;
+    if (!supabase || !orgId) {
+      marketingGa4State = {
+        orgId: orgId || '',
+        loading: false,
+        loaded: true,
+        error: 'Select a workspace to load analytics.',
+        data: null,
+        inFlight: null,
+      };
+      renderMarketingGa4Panel();
+      return;
+    }
+    if (marketingGa4State.orgId === orgId && marketingGa4State.loaded) {
+      renderMarketingGa4Panel();
+      return;
+    }
+    if (marketingGa4State.inFlight) {
+      renderMarketingGa4Panel();
+      return marketingGa4State.inFlight;
+    }
+
+    marketingGa4State.orgId = orgId;
+    marketingGa4State.loading = true;
+    marketingGa4State.loaded = false;
+    marketingGa4State.error = '';
+    marketingGa4State.data = null;
+    renderMarketingGa4Panel();
+
+    marketingGa4State.inFlight = (async function () {
+      try {
+        var sessRes = await supabase.auth.getSession();
+        var sess = sessRes && sessRes.data ? sessRes.data.session : null;
+        if (!sess || !sess.access_token) {
+          marketingGa4State.error = 'Sign in to load analytics.';
+          return;
+        }
+        var res = await supabase.functions.invoke('marketing-ga4', {
+          body: { organizationId: orgId },
+          headers: { Authorization: 'Bearer ' + sess.access_token },
+        });
+        if (res.error) {
+          marketingGa4State.error = res.error.message || 'Failed to load GA4 analytics.';
+          return;
+        }
+        marketingGa4State.data = res.data || null;
+      } catch (err) {
+        marketingGa4State.error = String(err && err.message ? err.message : err || 'Failed to load GA4 analytics.');
+      } finally {
+        marketingGa4State.loading = false;
+        marketingGa4State.loaded = true;
+        marketingGa4State.inFlight = null;
+        renderMarketingGa4Panel();
+      }
+    })();
+
+    return marketingGa4State.inFlight;
+  }
+
   function renderMarketing() {
     var empty = $('campaigns-empty');
     var pipe = $('marketing-pipeline');
@@ -6373,6 +6526,8 @@ var incomePowerState = {
     setText('mkt-kpi-3', fmtCurrency(pipeSum));
 
     renderLeadSourcesChart(activePipeline);
+    renderMarketingGa4Panel();
+    loadMarketingGa4();
   }
 
   function openCampaignModal(editId) {
@@ -11498,6 +11653,14 @@ var incomePowerState = {
     projects = [];
     invoices = [];
     campaigns = [];
+    marketingGa4State = {
+      orgId: '',
+      loading: false,
+      loaded: false,
+      error: '',
+      data: null,
+      inFlight: null,
+    };
     timesheetEntries = [];
     crmEvents = [];
     weeklySummaries = [];
