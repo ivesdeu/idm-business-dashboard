@@ -11715,6 +11715,35 @@ var incomePowerState = {
         return null;
       }
     }
+    /** Avoid supabase.functions.invoke: bundled fetch wrapper can omit Authorization (gateway UNAUTHORIZED_NO_AUTH_HEADER). */
+    async function invokeOrganizationTeamRaw(supabase, orgId, body, accessToken) {
+      var base = (
+        (supabase && supabase.supabaseUrl ? String(supabase.supabaseUrl) : '') ||
+        (typeof window.__bizdashSupabaseUrl === 'string' ? window.__bizdashSupabaseUrl : '')
+      ).replace(/\/$/, '');
+      var anon =
+        (supabase && supabase.supabaseKey ? String(supabase.supabaseKey) : '') ||
+        (typeof window.__bizdashSupabaseAnonKey === 'string' ? window.__bizdashSupabaseAnonKey : '');
+      if (!base || !anon) return { ok: false, status: 0, data: null, errText: 'Missing Supabase URL or key on client.' };
+      var url = base + '/functions/v1/organization-team';
+      var res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + accessToken,
+          apikey: anon,
+        },
+        body: JSON.stringify(Object.assign({ organizationId: orgId }, body)),
+      });
+      var text = await res.text();
+      var data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (_) {
+        data = { error: text || 'Invalid JSON from server.' };
+      }
+      return { ok: res.ok, status: res.status, data: data, errText: text };
+    }
     async function invokeTeam(body) {
       var supabase = window.supabaseClient;
       if (!supabase) return { error: 'Sign in to manage the team.' };
@@ -11723,26 +11752,24 @@ var incomePowerState = {
       try {
         var token = await bearerForTeamEdge(supabase);
         if (!token) return { error: 'Session expired. Sign in again.' };
-        var res = await supabase.functions.invoke('organization-team', {
-          body: Object.assign({ organizationId: orgId }, body),
-          headers: { Authorization: 'Bearer ' + token },
-        });
-        if (
-          res.error &&
-          res.error.name === 'FunctionsHttpError' &&
-          res.error.context &&
-          res.error.context.status === 401
-        ) {
+        var raw = await invokeOrganizationTeamRaw(supabase, orgId, body, token);
+        if (!raw.ok && raw.status === 401) {
           token = await bearerForTeamEdge(supabase);
-          if (token) {
-            res = await supabase.functions.invoke('organization-team', {
-              body: Object.assign({ organizationId: orgId }, body),
-              headers: { Authorization: 'Bearer ' + token },
-            });
-          }
+          if (token) raw = await invokeOrganizationTeamRaw(supabase, orgId, body, token);
         }
-        if (res.error) return { error: formatTeamInvokeError(res.error) };
-        return res.data && typeof res.data === 'object' ? res.data : {};
+        if (!raw.ok) {
+          var apiErr =
+            raw.data && typeof raw.data === 'object'
+              ? raw.data.error || raw.data.message || raw.data.msg
+              : null;
+          var pseudo = {
+            name: 'FunctionsHttpError',
+            message: apiErr ? String(apiErr) : 'Request failed',
+            context: { status: raw.status || 0 },
+          };
+          return { error: formatTeamInvokeError(pseudo) };
+        }
+        return raw.data && typeof raw.data === 'object' ? raw.data : {};
       } catch (e) {
         return { error: formatTeamInvokeError(e) };
       }

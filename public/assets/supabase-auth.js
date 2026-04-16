@@ -36,6 +36,9 @@
 
   var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   window.supabaseClient = supabase;
+  /** Used by team Edge `fetch` (CDN bundles may not expose `supabaseUrl` / `supabaseKey`). */
+  window.__bizdashSupabaseUrl = SUPABASE_URL;
+  window.__bizdashSupabaseAnonKey = SUPABASE_ANON_KEY;
 
   function $(id) {
     return document.getElementById(id);
