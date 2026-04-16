@@ -167,6 +167,19 @@
     return /^[a-z0-9][a-z0-9-]{1,62}$/.test(String(sl || '').trim().toLowerCase());
   }
 
+  /**
+   * Slug is taken if any org uses it, except the org given by currentOrgId (same slug = allowed for that org).
+   * Uses organization_public_by_slug (SECURITY DEFINER); aligns with DB unique on organizations.slug.
+   */
+  async function workspaceSlugTakenByAnotherOrg(sl, currentOrgId) {
+    var r = await supabase.rpc('organization_public_by_slug', { sl: sl });
+    if (r.error) return { taken: false, rpcError: r.error };
+    if (!r.data || !r.data.length) return { taken: false };
+    var row = r.data[0];
+    if (currentOrgId && String(row.id) === String(currentOrgId)) return { taken: false };
+    return { taken: true };
+  }
+
   function replaceBrowserPathForSlug(newSlug) {
     var search = window.location.search || '';
     window.history.replaceState(null, '', '/' + String(newSlug).toLowerCase() + '/' + search);
@@ -398,6 +411,15 @@
         if (err) err.textContent = 'No workspace context.';
         return;
       }
+      var takenOb = await workspaceSlugTakenByAnotherOrg(slug, orgId);
+      if (takenOb.rpcError) {
+        if (err) err.textContent = 'Could not verify that URL. Try again.';
+        return;
+      }
+      if (takenOb.taken) {
+        if (err) err.textContent = 'That workspace URL is already taken. Choose a different slug.';
+        return;
+      }
       var prevSlug = window.currentOrganizationSlug;
       try {
         var rpcRes = await supabase.rpc('update_workspace_profile', {
@@ -540,6 +562,15 @@
           if (err)
             err.textContent =
               'URL slug: 2–63 characters, lowercase letters, numbers, or hyphens; must start with a letter or number.';
+          return;
+        }
+        var takenWs = await workspaceSlugTakenByAnotherOrg(sl, null);
+        if (takenWs.rpcError) {
+          if (err) err.textContent = 'Could not verify that URL. Try again.';
+          return;
+        }
+        if (takenWs.taken) {
+          if (err) err.textContent = 'That workspace URL is already taken. Choose a different slug.';
           return;
         }
         var rpcRes = await supabase.rpc('create_workspace_for_user', { p_name: nm, p_slug: sl });

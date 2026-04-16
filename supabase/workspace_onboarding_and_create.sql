@@ -85,9 +85,14 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.organizations o WHERE o.slug = sl AND o.id IS DISTINCT FROM p_org_id) THEN
     RETURN json_build_object('ok', false, 'error', 'That URL slug is already taken');
   END IF;
-  UPDATE public.organizations
-  SET name = nm, slug = sl, updated_at = now(), onboarding_completed = true
-  WHERE id = p_org_id;
+  BEGIN
+    UPDATE public.organizations
+    SET name = nm, slug = sl, updated_at = now(), onboarding_completed = true
+    WHERE id = p_org_id;
+  EXCEPTION
+    WHEN unique_violation THEN
+      RETURN json_build_object('ok', false, 'error', 'That URL slug is already taken');
+  END;
   RETURN json_build_object('ok', true, 'slug', sl);
 END;
 $$;
@@ -122,8 +127,13 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.organizations o WHERE o.slug = sl) THEN
     RETURN json_build_object('ok', false, 'error', 'That URL slug is already taken');
   END IF;
-  INSERT INTO public.organizations (id, slug, name, created_at, updated_at, onboarding_completed)
-  VALUES (new_org, sl, nm, now(), now(), true);
+  BEGIN
+    INSERT INTO public.organizations (id, slug, name, created_at, updated_at, onboarding_completed)
+    VALUES (new_org, sl, nm, now(), now(), true);
+  EXCEPTION
+    WHEN unique_violation THEN
+      RETURN json_build_object('ok', false, 'error', 'That URL slug is already taken');
+  END;
   INSERT INTO public.organization_members (organization_id, user_id, role, created_at)
   VALUES (new_org, uid, 'owner', now());
   RETURN json_build_object('ok', true, 'id', new_org, 'slug', sl);
