@@ -41,8 +41,10 @@
     return document.getElementById(id);
   }
 
-  /** Shared budget for getSession and related reads (ms). */
-  var SESSION_READ_MS = 45000;
+  /** Target: session + org gate should finish in a few seconds on a healthy network. */
+  var SESSION_READ_MS = 5000;
+  var ORG_RESOLVE_MS = 8000;
+  var ONBOARDING_GATE_MS = 6000;
 
   function withTimeout(promise, ms, errMsg) {
     return Promise.race([
@@ -180,7 +182,7 @@
    * Consume ?invite= or pending sessionStorage token; on soft failure keep session and continue.
    * @returns {Promise<boolean>} false only when session token missing (should not happen post sign-in)
    */
-  async function tryConsumeOrgInvite(user, gateErr) {
+  async function tryConsumeOrgInvite(user, gateErr, authSession) {
     var params = new URLSearchParams(window.location.search || '');
     var tok = (params.get('invite') || '').trim();
     if (!tok) {
@@ -191,8 +193,11 @@
     if (!tok) return true;
 
     try {
-      var sessRes = await getSessionWithTimeout();
-      var sess = sessRes && sessRes.data ? sessRes.data.session : null;
+      var sess = authSession && authSession.access_token ? authSession : null;
+      if (!sess) {
+        var sessRes = await getSessionWithTimeout();
+        sess = sessRes && sessRes.data ? sessRes.data.session : null;
+      }
       if (!sess || !sess.access_token) {
         if (gateErr) gateErr('Sign in to accept this invitation.');
         return false;
@@ -238,11 +243,17 @@
     }
   }
 
+  /** When RPC returns onboarding_completed, avoid a second round-trip. */
+  function onboardingModalNeededFromRow(row) {
+    if (!row || typeof row.onboarding_completed !== 'boolean') return null;
+    return row.onboarding_completed === false;
+  }
+
   /**
    * Resolve URL slug to org + membership, or redirect signed-in user to their first org.
-   * @returns {Promise<boolean>}
+   * @returns {Promise<{ ok: boolean, needsOnboarding?: boolean }>}
    */
-  async function ensureOrganizationContext(user) {
+  async function ensureOrganizationContext(user, authSession) {
     var errEl = $('gate-auth-error');
     function gateErr(msg) {
       if (errEl) errEl.textContent = msg || '';
@@ -250,11 +261,11 @@
     gateErr('');
     if (!user || !user.id) {
       clearOrgContext();
-      return false;
+      return { ok: false };
     }
 
-    if (!(await tryConsumeOrgInvite(user, gateErr))) {
-      return false;
+    if (!(await tryConsumeOrgInvite(user, gateErr, authSession))) {
+      return { ok: false };
     }
 
     var slug = parseTenantSlug();
@@ -263,7 +274,7 @@
       if (pubRes.error || !pubRes.data || !pubRes.data.length) {
         gateErr('Unknown workspace URL.');
         clearOrgContext();
-        return false;
+        return { ok: false };
       }
       var org = pubRes.data[0];
       var memRes = await supabase
@@ -278,17 +289,19 @@
         try {
           await supabase.auth.signOut();
         } catch (_) {}
-        return false;
+        return { ok: false };
       }
       setOrgContext(org.id, org.slug || slug, memRes.data.role);
-      return true;
+      var slugFlag = onboardingModalNeededFromRow(org);
+      var needsOnSlug = slugFlag !== null ? slugFlag : await fetchOrgNeedsOnboarding(org.id);
+      return { ok: true, needsOnboarding: needsOnSlug };
     }
 
     var listRes = await supabase.rpc('my_organizations');
     if (listRes.error || !listRes.data || !listRes.data.length) {
       gateErr('No workspace found for your account. Contact support.');
       clearOrgContext();
-      return false;
+      return { ok: false };
     }
     var first = listRes.data[0];
     var targetPath = '/' + first.slug + '/';
@@ -297,7 +310,9 @@
       window.history.replaceState(null, '', targetPath + (window.location.search || ''));
     }
     setOrgContext(first.id, first.slug, first.role);
-    return true;
+    var listFlag = onboardingModalNeededFromRow(first);
+    var needsOnList = listFlag !== null ? listFlag : await fetchOrgNeedsOnboarding(first.id);
+    return { ok: true, needsOnboarding: needsOnList };
   }
 
   async function fetchOrgNeedsOnboarding(orgId) {
@@ -339,8 +354,13 @@
       });
   }
 
-  async function maybeWorkspaceOnboardingThenShowApp(user) {
-    var needs = await fetchOrgNeedsOnboarding(window.currentOrganizationId);
+  async function maybeWorkspaceOnboardingThenShowApp(user, needsOnboardingKnown) {
+    var needs;
+    if (typeof needsOnboardingKnown === 'boolean') {
+      needs = needsOnboardingKnown;
+    } else {
+      needs = await fetchOrgNeedsOnboarding(window.currentOrganizationId);
+    }
     if (!needs) {
       showApp(user);
       return;
@@ -595,7 +615,7 @@
    * Resolve org context, optional onboarding modal, then show the app (or login on failure).
    * Used from bootstrap and from auth events (including INITIAL_SESSION; deduped with bootstrap).
    */
-  async function runAuthSessionFlow(user) {
+  async function runAuthSessionFlow(user, authSession) {
     if (!user || !user.id) {
       clearOrgContext();
       setCurrentUser(null);
@@ -609,20 +629,20 @@
       showLoading();
       try {
         setCurrentUser(user);
-        var ok = await withTimeout(
-          ensureOrganizationContext(user),
-          SESSION_READ_MS,
+        var ctx = await withTimeout(
+          ensureOrganizationContext(user, authSession),
+          ORG_RESOLVE_MS,
           'Loading workspace timed out. Check your connection and try again.'
         );
-        if (!ok) {
+        if (!ctx || !ctx.ok) {
           setCurrentUser(null);
           showLogin();
           return;
         }
         wireOnboardSubmit(user);
         await withTimeout(
-          maybeWorkspaceOnboardingThenShowApp(user),
-          SESSION_READ_MS,
+          maybeWorkspaceOnboardingThenShowApp(user, ctx.needsOnboarding),
+          ONBOARDING_GATE_MS,
           'Could not finish workspace setup. Try signing in again.'
         );
       } catch (err) {
@@ -714,7 +734,7 @@
     } catch (_) {}
 
     if (event === 'INITIAL_SESSION') {
-      await runAuthSessionFlow(session.user);
+      await runAuthSessionFlow(session.user, session);
       return;
     }
 
@@ -724,7 +744,7 @@
       return;
     }
 
-    await runAuthSessionFlow(session.user);
+    await runAuthSessionFlow(session.user, session);
   });
 
   async function bootstrapSession() {
@@ -750,7 +770,7 @@
           window.setBizdashScreenshotNoCloud(false);
         }
       } catch (_) {}
-      await runAuthSessionFlow(session.user);
+      await runAuthSessionFlow(session.user, session);
     } catch (err) {
       console.error('Error checking session', err);
       setCurrentUser(null);

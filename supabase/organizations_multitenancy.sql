@@ -78,14 +78,18 @@ GRANT EXECUTE ON FUNCTION public.user_can_write_org(uuid) TO anon, authenticated
 GRANT EXECUTE ON FUNCTION public.user_can_admin_org(uuid) TO anon, authenticated, service_role;
 
 -- Public slug resolve (no secrets)
-CREATE OR REPLACE FUNCTION public.organization_public_by_slug(sl text)
-RETURNS TABLE (id uuid, slug text, name text)
+-- OUT shape change: drop first (CREATE OR REPLACE cannot widen RETURNS TABLE on existing PG functions).
+DROP FUNCTION IF EXISTS public.my_organizations();
+DROP FUNCTION IF EXISTS public.organization_public_by_slug(text);
+
+CREATE FUNCTION public.organization_public_by_slug(sl text)
+RETURNS TABLE (id uuid, slug text, name text, onboarding_completed boolean)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT o.id, o.slug, o.name
+  SELECT o.id, o.slug, o.name, o.onboarding_completed
   FROM public.organizations o
   WHERE o.slug = lower(trim(sl))
   LIMIT 1;
@@ -94,14 +98,14 @@ REVOKE ALL ON FUNCTION public.organization_public_by_slug(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.organization_public_by_slug(text) TO anon, authenticated, service_role;
 
 -- Signed-in user's org memberships (for redirect / picker)
-CREATE OR REPLACE FUNCTION public.my_organizations()
-RETURNS TABLE (id uuid, slug text, name text, role text)
+CREATE FUNCTION public.my_organizations()
+RETURNS TABLE (id uuid, slug text, name text, role text, onboarding_completed boolean)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT o.id, o.slug, o.name, m.role
+  SELECT o.id, o.slug, o.name, m.role, o.onboarding_completed
   FROM public.organization_members m
   JOIN public.organizations o ON o.id = m.organization_id
   WHERE m.user_id = auth.uid()
