@@ -41,10 +41,13 @@
     return document.getElementById(id);
   }
 
-  /** Target: session + org gate should finish in a few seconds on a healthy network. */
-  var SESSION_READ_MS = 5000;
-  var ORG_RESOLVE_MS = 8000;
-  var ONBOARDING_GATE_MS = 6000;
+  /**
+   * Session / org resolution can exceed a few seconds on slow networks, cold tabs, or Safari.
+   * These are ceilings for UX feedback, not security timeouts.
+   */
+  var SESSION_READ_MS = 25000;
+  var ORG_RESOLVE_MS = 45000;
+  var ONBOARDING_GATE_MS = 25000;
 
   function withTimeout(promise, ms, errMsg) {
     return Promise.race([

@@ -11655,6 +11655,12 @@ var incomePowerState = {
     function formatTeamInvokeError(err) {
       if (!err) return 'Request failed';
       var msg = err.message || 'Request failed';
+      if (err.name === 'FunctionsHttpError' && err.context && typeof err.context.status === 'number') {
+        if (err.context.status === 401) {
+          return 'Session expired or not accepted by the server. Sign in again, then reopen My team.';
+        }
+        return msg + ' (HTTP ' + String(err.context.status) + ')';
+      }
       if (err.name === 'FunctionsFetchError') {
         var inner =
           err.context && typeof err.context === 'object' && err.context.message != null
@@ -11668,19 +11674,46 @@ var incomePowerState = {
       }
       return msg;
     }
+    /** Access token for Edge invokes; refreshes when near expiry to avoid gateway 401. */
+    async function accessTokenForEdgeFunctions(supabase) {
+      var sessRes = await supabase.auth.getSession();
+      var sess = sessRes && sessRes.data ? sessRes.data.session : null;
+      if (!sess || !sess.access_token) return null;
+      var exp = sess.expires_at;
+      var skewMs = 120000;
+      if (typeof exp === 'number' && exp * 1000 < Date.now() + skewMs) {
+        var ref = await supabase.auth.refreshSession();
+        sess = ref && ref.data ? ref.data.session : sess;
+      }
+      return sess && sess.access_token ? sess.access_token : null;
+    }
     async function invokeTeam(body) {
       var supabase = window.supabaseClient;
       if (!supabase) return { error: 'Sign in to manage the team.' };
       var orgId = typeof getCurrentOrgId === 'function' ? getCurrentOrgId() : null;
       if (!orgId) return { error: 'No workspace selected.' };
-      var sessRes = await supabase.auth.getSession();
-      var sess = sessRes && sessRes.data ? sessRes.data.session : null;
-      if (!sess || !sess.access_token) return { error: 'Session expired. Sign in again.' };
       try {
+        var token = await accessTokenForEdgeFunctions(supabase);
+        if (!token) return { error: 'Session expired. Sign in again.' };
         var res = await supabase.functions.invoke('organization-team', {
           body: Object.assign({ organizationId: orgId }, body),
-          headers: { Authorization: 'Bearer ' + sess.access_token },
+          headers: { Authorization: 'Bearer ' + token },
         });
+        if (
+          res.error &&
+          res.error.name === 'FunctionsHttpError' &&
+          res.error.context &&
+          res.error.context.status === 401
+        ) {
+          var ref2 = await supabase.auth.refreshSession();
+          var s2 = ref2 && ref2.data ? ref2.data.session : null;
+          if (s2 && s2.access_token) {
+            res = await supabase.functions.invoke('organization-team', {
+              body: Object.assign({ organizationId: orgId }, body),
+              headers: { Authorization: 'Bearer ' + s2.access_token },
+            });
+          }
+        }
         if (res.error) return { error: formatTeamInvokeError(res.error) };
         return res.data && typeof res.data === 'object' ? res.data : {};
       } catch (e) {
