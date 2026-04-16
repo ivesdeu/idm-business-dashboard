@@ -1292,6 +1292,7 @@
       <div class="fgp" id="gate-confirm-wrap" style="display:none;"><label class="fl">Confirm password</label><input class="fi" id="gate-confirm-password" type="password" autocomplete="new-password" placeholder="••••••••" /></div>
     </div>
     <div id="gate-auth-error" style="font-size:13px;color:var(--red);margin-bottom:12px;min-height:1.2em;"></div>
+    <div id="gate-invite-hint" style="display:none;font-size:13px;color:var(--text2);line-height:1.45;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);"></div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
       <button type="button" class="btn btn-p" id="gate-signin">Sign in</button>
       <button type="button" class="btn" id="gate-signup">Sign up</button>
@@ -1302,6 +1303,7 @@
 </div>
 
 <div id="app-shell">
+<div id="app-invite-flash" style="display:none;margin:0;padding:10px 14px;font-size:13px;line-height:1.45;color:var(--text);background:var(--bg3);border-bottom:1px solid var(--border);"></div>
 <div class="mobile-topbar">
   <button type="button" id="btn-mobile-menu" class="mobile-menu-btn" aria-label="Open navigation" onclick="document.body.classList.toggle('mobile-nav-open')"><span></span></button>
   <div class="mobile-topbar-title" id="mobile-title">Business Performance</div>
@@ -1347,15 +1349,19 @@
     </div>
     <div class="sb-spacer"></div>
     <div class="sb-div"></div>
+    <div class="ni" data-nav="team" onclick="nav('team',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Your team
+    </div>
     <div class="ni" data-nav="settings" onclick="nav('settings',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>Settings
     </div>
   </nav>
   <div class="sb-user" id="sb-user-menu" title="Account" data-public-title="Account">
     <div class="avatar" id="user-avatar">?</div>
-    <div>
+    <div style="min-width:0;flex:1;">
       <div id="user-name" class="sb-user-name">—</div>
       <div id="user-role" class="sb-user-role">—</div>
+      <button type="button" class="btn" id="btn-open-workspaces" style="margin-top:8px;width:100%;font-size:11px;padding:6px 8px;">Workspaces</button>
     </div>
   </div>
 </div>
@@ -1365,7 +1371,7 @@
   <!-- DASHBOARD -->
   <div class="pg on" id="page-dashboard">
     <div class="ph">
-      <div><div class="pt">Business Performance</div><div class="ps" id="dash-subtitle">—</div></div>
+      <div><div class="pt">Business Performance</div><div class="ps" id="dash-subtitle">—</div><div class="ps" id="dash-brand-tagline" style="display:none;font-size:12px;color:var(--text3);margin-top:4px;max-width:42rem;line-height:1.4;"></div></div>
       <div class="hr">
         <select class="fi" id="dash-period-select" style="width:160px;" title="Reporting period">
           <option value="all">All-Time</option>
@@ -1504,7 +1510,7 @@
 
   <!-- INCOME (revenue records) -->
   <div class="pg" id="page-revenue">
-    <div class="ph"><div><div class="pt">Income</div><div class="ps">Recorded income drives dashboard totals when present</div></div><button type="button" class="btn btn-p" id="btn-add-income">+ Add income</button></div>
+    <div class="ph"><div><div class="pt">Income</div><div class="ps">Recorded income syncs to this workspace and drives dashboard totals</div></div><button type="button" class="btn btn-p" id="btn-add-income">+ Add income</button></div>
     <div class="kg">
       <div class="kc hi"><div class="kl">Collected This Month</div><div class="kv" id="rev-kpi-1">$0</div><div class="kb bn" id="rev-kpi-1b">—</div></div>
       <div class="kc"><div class="kl">Outstanding</div><div class="kv" id="rev-kpi-2">$0</div><div class="kb bn" id="rev-kpi-2b">—</div></div>
@@ -1991,6 +1997,52 @@
     </div>
   </div>
 
+  <!-- YOUR TEAM -->
+  <div class="pg" id="page-team">
+    <div class="ph"><div><div class="pt">Your team</div><div class="ps">People and roles for this workspace only.</div></div></div>
+    <div class="g2">
+      <div class="card">
+        <div class="fst">Members</div>
+        <p id="team-page-hint" style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:12px;"></p>
+        <div style="overflow:auto;">
+          <table class="dt" id="team-members-table" style="width:100%;">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th id="team-th-actions" style="display:none;width:200px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="team-members-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" id="team-invite-card" style="display:none;">
+        <div class="fst">Invite by email</div>
+        <p style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:12px;">Creates a 7-day link you can send from your own email. They must sign in with the same address. Existing users can be added instantly with &quot;Add existing user&quot;.</p>
+        <div class="fg" style="margin-bottom:10px;">
+          <div class="fgp"><label class="fl">Email</label><input class="fi" id="team-invite-email" type="email" placeholder="name@company.com" /></div>
+          <div class="fgp"><label class="fl">Role</label>
+            <select class="fi" id="team-invite-role">
+              <option value="member">Employee</option>
+              <option value="admin">Admin</option>
+              <option value="viewer">Viewer (read-only)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+          <button type="button" class="btn btn-p" id="team-btn-create-invite">Create invite link</button>
+          <button type="button" class="btn" id="team-btn-add-existing">Add existing user</button>
+        </div>
+        <div id="team-invite-result" style="font-size:12px;color:var(--text2);word-break:break-all;display:none;"></div>
+      </div>
+      <div class="card" id="team-pending-invites-card" style="display:none;">
+        <div class="fst">Pending invitations</div>
+        <div id="team-pending-invites-body" style="font-size:13px;"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- SETTINGS -->
   <div class="pg" id="page-settings">
     <div class="ph"><div><div class="pt">Settings</div><div class="ps">Business profile and preferences</div></div><button type="button" class="btn btn-p" id="btn-save-settings">Save Changes</button></div>
@@ -2000,6 +2052,8 @@
         <div class="fg">
           <div class="fgp"><label class="fl">Business Name</label><input class="fi" id="setting-name" /></div>
           <div class="fgp"><label class="fl">Owner Name</label><input class="fi" id="setting-owner" /></div>
+          <div class="fgp"><label class="fl">Your role (optional)</label><input class="fi" id="setting-owner-role" placeholder="e.g. Founder" /></div>
+          <div class="fgp" style="grid-column:1/-1;"><label class="fl">Tagline (optional)</label><textarea class="fi" id="setting-tagline" rows="2" placeholder="Short line under your business name on the dashboard" style="min-height:56px;resize:vertical;"></textarea></div>
           <div class="fgp"><label class="fl">Email</label><input class="fi" id="setting-email" type="email" /></div>
           <div class="fgp"><label class="fl">Phone</label><input class="fi" id="setting-phone" /></div>
           <div class="fgp" style="grid-column:1/-1;"><label class="fl">Address</label><input class="fi" id="setting-address" /></div>
@@ -2037,7 +2091,7 @@
             <button type="button" class="btn" id="settings-btn-cloud-sync" style="flex:1;font-size:11px;padding:7px 10px;" disabled>Sync</button>
           </div>
           <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-top:10px;">
-            Clients and transactions sync per signed-in account. Use the <strong>same email</strong> on each browser, then tap <strong>Sync</strong> to pull uploads from your other device.
+            Data syncs to your workspace in the cloud (per organization). Open your workspace URL on each device and sign in with the <strong>same email</strong>. Use <strong>Sync</strong> on the dashboard to refresh from the server.
           </div>
         </div>
       </div>
@@ -2059,8 +2113,8 @@
 <div class="mo" id="transactionModal">
   <div class="md">
     <div class="mt">Add transaction</div>
-    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Record one line of revenue or expense. It is added to your running totals for this workspace.</p>
-    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Internal: add a line to this workspace’s local totals (browser storage).</p>
+    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Record one line of revenue or expense. It is saved to this cloud workspace and included in your totals.</p>
+    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Internal: add a line to this workspace’s totals (local cache + Supabase when signed in).</p>
     <div class="fg" style="margin-bottom:16px;">
       <div class="fgp"><label class="fl">Date</label><input class="fi" id="tx-date" type="date" /></div>
       <div class="fgp"><label class="fl">Amount</label><input class="fi" id="tx-amount" type="number" min="0" step="0.01" placeholder="0.00" /></div>
@@ -2273,20 +2327,6 @@
     <div class="mf">
       <button type="button" class="btn" id="btn-close-input">Cancel</button>
       <button type="button" class="btn btn-p" id="btn-apply-input">Update Dashboard</button>
-    </div>
-  </div>
-</div>
-
-<!-- Workspaces -->
-<div class="mo" id="workspaceModal">
-  <div class="md">
-    <div class="mt" id="workspace-modal-heading">Workspaces</div>
-    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:16px;">Each company has its own saved data in this browser. Open a link with <code style="font-size:12px;color:var(--text);">?w=your-workspace-id</code> to jump directly.</p>
-    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:16px;">Internal: switch between workspace records stored in this browser. Deep link with <code style="font-size:12px;color:var(--text);">?w=slug</code> when sharing a view with teammates.</p>
-    <div id="workspace-list"></div>
-    <div class="mf" style="border-top:none;padding-top:0;margin-top:8px;">
-      <button type="button" class="btn btn-p" id="btn-workspace-add-another" onclick="addAnotherWorkspace()">+ Add workspace</button>
-      <button type="button" class="btn" onclick="document.getElementById('workspaceModal').classList.remove('on')">Close</button>
     </div>
   </div>
 </div>
@@ -2561,26 +2601,56 @@
   </div>
 </div>
 
-<!-- First-time workspace -->
-<div class="mo" id="onboardModal">
-  <div class="md">
-    <div class="mt" id="onboard-heading">Create your workspace</div>
-    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">This dashboard is for your agency or business. Your data stays in this browser unless you add a backend later.</p>
-    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Internal tool: add a labeled workspace for this browser. This is not a public signup or customer onboarding flow.</p>
-    <div class="fg" style="margin-bottom:20px;">
-      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Company name *</label><input class="fi" id="ob-name" placeholder="e.g. Acme Agency" /></div>
-      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Tagline (optional, two lines)</label><textarea class="fi" id="ob-tagline" rows="2" placeholder="Line one&#10;Line two" style="min-height:64px;resize:vertical;"></textarea></div>
-      <div class="fgp"><label class="fl">Your name</label><input class="fi" id="ob-owner" placeholder="Jane Doe" /></div>
-      <div class="fgp"><label class="fl">Your role</label><input class="fi" id="ob-role" value="" placeholder="Role" /></div>
-      <div class="fgp"><label class="fl">Accent color</label><input class="fi" id="ob-accent" type="color" value="#e8501a" style="min-height:40px;padding:4px 8px;" /></div>
+</div><!-- #app-shell -->
+
+<!-- Workspaces (outside #app-shell so switcher works before shell is visible) -->
+<div class="mo" id="workspaceModal">
+  <div class="md" style="max-width:480px;">
+    <div class="mt" id="workspace-modal-heading">Workspaces</div>
+    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:16px;">Your data lives in this cloud workspace. Each workspace has its own URL path, for example <code style="font-size:12px;color:var(--text);">yoursite.com/your-slug/</code>—bookmark it for quick access.</p>
+    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:16px;">Internal: org switcher uses <code style="font-size:12px;color:var(--text);">my_organizations</code> and navigates to <code style="font-size:12px;color:var(--text);">/{slug}/</code>.</p>
+    <div id="workspace-list"></div>
+    <div id="workspace-add-panel" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+      <div class="fst" style="margin-bottom:8px;">New workspace</div>
+      <p class="ui-public-facing" style="font-size:12px;color:var(--text3);line-height:1.45;margin:0 0 10px;">Creates another organization you own. Changing a workspace URL later will break old bookmarks.</p>
+      <div class="fg" style="margin-bottom:10px;">
+        <div class="fgp" style="grid-column:1/-1;"><label class="fl">Workspace name *</label><input class="fi" id="ws-new-name" placeholder="e.g. Side project" /></div>
+        <div class="fgp" style="grid-column:1/-1;"><label class="fl">URL slug *</label><input class="fi" id="ws-new-slug" placeholder="e.g. side-project" autocomplete="off" /></div>
+      </div>
+      <div id="workspace-add-error" style="font-size:12px;color:var(--red);margin-bottom:8px;min-height:1em;"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <button type="button" class="btn btn-p" id="btn-workspace-create-submit">Create and open</button>
+        <button type="button" class="btn" id="btn-workspace-add-cancel">Cancel</button>
+      </div>
     </div>
-    <div class="mf" style="border-top:none;padding-top:0;">
-      <button type="button" class="btn btn-p" id="onboard-submit-btn">Create workspace</button>
+    <div class="mf" style="border-top:none;padding-top:0;margin-top:8px;">
+      <button type="button" class="btn btn-p" id="btn-workspace-add-another">+ Add workspace</button>
+      <button type="button" class="btn" id="btn-workspace-modal-close">Close</button>
     </div>
   </div>
 </div>
 
-</div><!-- #app-shell -->
+<!-- First-time workspace (outside #app-shell so it can show during onboarding) -->
+<div class="mo" id="onboardModal">
+  <div class="md" style="max-width:480px;">
+    <div class="mt" id="onboard-heading">Name your workspace</div>
+    <p class="ui-public-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:12px;">Choose how your organization appears and the URL you will use to open this dashboard. Data is stored in your Supabase workspace (not only in this browser).</p>
+    <p class="ui-public-facing" style="font-size:12px;color:var(--text3);line-height:1.45;margin-bottom:18px;">If you change the URL slug later, old links will stop working—pick something you can share with your team.</p>
+    <p class="ui-internal-facing" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px;">Internal: first-run org profile; updates <code style="font-size:12px;">organizations</code> + dashboard settings.</p>
+    <div class="fg" style="margin-bottom:12px;">
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Company / workspace name *</label><input class="fi" id="ob-name" placeholder="e.g. Acme Agency" /></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">URL slug *</label><input class="fi" id="ob-slug" placeholder="e.g. acme-agency" autocomplete="off" /></div>
+      <div class="fgp" style="grid-column:1/-1;"><label class="fl">Tagline (optional)</label><textarea class="fi" id="ob-tagline" rows="2" placeholder="Shown under your business name on the dashboard" style="min-height:64px;resize:vertical;"></textarea></div>
+      <div class="fgp"><label class="fl">Your name</label><input class="fi" id="ob-owner" placeholder="Jane Doe" /></div>
+      <div class="fgp"><label class="fl">Your role</label><input class="fi" id="ob-role" value="" placeholder="e.g. Founder" /></div>
+      <div class="fgp"><label class="fl">Accent color</label><input class="fi" id="ob-accent" type="color" value="#e8501a" style="min-height:40px;padding:4px 8px;" /></div>
+    </div>
+    <div id="onboard-error" style="font-size:13px;color:var(--red);margin-bottom:12px;min-height:1.2em;"></div>
+    <div class="mf" style="border-top:none;padding-top:0;">
+      <button type="button" class="btn btn-p" id="onboard-submit-btn">Save and continue</button>
+    </div>
+  </div>
+</div>
 
 <div class="mobile-actions">
   <button type="button" class="btn" onclick="document.getElementById('btn-add-client')?.click()">+ Client</button>

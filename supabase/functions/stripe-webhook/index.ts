@@ -44,7 +44,36 @@ serve(async (req) => {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
       const invoiceId = session.metadata?.invoice_id || session.client_reference_id;
-      if (!invoiceId) return json(200, { ok: true, ignored: "No invoice_id metadata." });
+      if (!invoiceId) return json(200, { ok: true, event: event.type, ignored: "No invoice_id metadata." });
+
+      const orgId = String(session.metadata?.organization_id || "").trim();
+      if (!orgId) {
+        return json(200, {
+          ok: true,
+          event: event.type,
+          ignored: "Missing organization_id metadata; invoice not updated.",
+        });
+      }
+
+      const { data: invRow, error: invFetchErr } = await admin
+        .from("invoices")
+        .select("id, organization_id")
+        .eq("id", invoiceId)
+        .maybeSingle();
+
+      if (invFetchErr) {
+        return json(500, { error: "Failed to load invoice.", details: invFetchErr.message });
+      }
+      if (!invRow) {
+        return json(200, { ok: true, event: event.type, ignored: "Invoice not found." });
+      }
+      if (String((invRow as { organization_id?: string }).organization_id || "") !== orgId) {
+        return json(200, {
+          ok: true,
+          event: event.type,
+          ignored: "organization_id metadata does not match invoice.",
+        });
+      }
 
       const paidAtIso = new Date().toISOString();
       const paymentIntent =
@@ -64,7 +93,8 @@ serve(async (req) => {
           stripe_customer_id: customerId,
           stripe_status: session.payment_status || "paid",
         })
-        .eq("id", invoiceId);
+        .eq("id", invoiceId)
+        .eq("organization_id", orgId);
 
       if (error) {
         return json(500, { error: "Failed to update invoice.", details: error.message });
@@ -75,13 +105,36 @@ serve(async (req) => {
       const session = event.data.object as Stripe.Checkout.Session;
       const invoiceId = session.metadata?.invoice_id || session.client_reference_id;
       if (invoiceId) {
+        const orgId = String(session.metadata?.organization_id || "").trim();
+        if (!orgId) {
+          return json(200, {
+            ok: true,
+            event: event.type,
+            ignored: "Missing organization_id metadata; invoice not updated.",
+          });
+        }
+
+        const { data: invRow } = await admin
+          .from("invoices")
+          .select("id, organization_id")
+          .eq("id", invoiceId)
+          .maybeSingle();
+        if (!invRow || String((invRow as { organization_id?: string }).organization_id || "") !== orgId) {
+          return json(200, {
+            ok: true,
+            event: event.type,
+            ignored: "organization_id mismatch or invoice not found.",
+          });
+        }
+
         await admin
           .from("invoices")
           .update({
             stripe_checkout_session_id: session.id,
             stripe_status: "expired",
           })
-          .eq("id", invoiceId);
+          .eq("id", invoiceId)
+          .eq("organization_id", orgId);
       }
     }
 

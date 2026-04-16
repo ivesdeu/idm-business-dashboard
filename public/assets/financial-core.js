@@ -14,8 +14,10 @@
 
   function storageKey(suffix) {
     var activeUser = window.currentUser || currentUser;
-    var scope = activeUser && activeUser.id ? String(activeUser.id) : 'guest';
-    return 'bizdash:' + scope + ':' + suffix;
+    var scopeUser = activeUser && activeUser.id ? String(activeUser.id) : 'guest';
+    var oid = window.currentOrganizationId;
+    var scopeOrg = oid && String(oid).trim() ? String(oid).trim() : 'noorg';
+    return 'bizdash:' + scopeUser + ':' + scopeOrg + ':' + suffix;
   }
 
   function loadDeletedTxIdMap() {
@@ -168,6 +170,7 @@
     var row = {
       id: client.id,
       user_id: userId,
+      organization_id: getCurrentOrgId(),
       company_name: client.companyName,
       contact_name: client.contactName,
       status: client.status,
@@ -211,6 +214,13 @@
     return !!(u && u.id === DEMO_DASHBOARD_USER_ID);
   }
   window.DEMO_DASHBOARD_USER_ID = DEMO_DASHBOARD_USER_ID;
+
+  /** Active workspace (set by supabase-auth.js from URL slug + membership). */
+  function getCurrentOrgId() {
+    var id = window.currentOrganizationId;
+    return id && String(id).trim() ? String(id).trim() : null;
+  }
+  window.bizDashGetCurrentOrgId = getCurrentOrgId;
 
   /** When set, initDataFromSupabase skips backfill uploads (used with screenshot/mock flows). */
   var SCREENSHOT_NO_CLOUD_KEY = 'bizdash_screenshot_no_cloud';
@@ -467,6 +477,7 @@
     return {
       id: entry.id,
       user_id: userId,
+      organization_id: getCurrentOrgId(),
       date: entry.date || null,
       account: entry.account || '',
       project: entry.project || '',
@@ -484,7 +495,7 @@
   async function persistTimesheetEntryToSupabase(entry) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !entry || !entry.id) return;
+    if (!supabase || !currentUser || !getCurrentOrgId() || !entry || !entry.id) return;
     try {
       var result = await supabase.from('timesheet_entries').upsert(timesheetRowForDb(entry, currentUser.id), { onConflict: 'id' });
       if (result.error) console.error('upsert timesheet entry error', result.error);
@@ -496,9 +507,9 @@
   async function deleteTimesheetEntryRemote(id) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !id) return;
+    if (!supabase || !currentUser || !getCurrentOrgId() || !id) return;
     try {
-      await supabase.from('timesheet_entries').delete().eq('id', id).eq('user_id', currentUser.id);
+      await supabase.from('timesheet_entries').delete().eq('id', id).eq('organization_id', getCurrentOrgId());
     } catch (err) {
       console.error('deleteTimesheetEntryRemote error', err);
     }
@@ -507,9 +518,9 @@
   async function fetchTimesheetEntriesFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return loadTimesheetEntries();
+    if (!supabase || !currentUser || !getCurrentOrgId()) return loadTimesheetEntries();
     try {
-      var result = await supabase.from('timesheet_entries').select('*').eq('user_id', currentUser.id).order('date', { ascending: false });
+      var result = await supabase.from('timesheet_entries').select('*').eq('organization_id', getCurrentOrgId()).order('date', { ascending: false });
       if (result.error) {
         console.error('load timesheet_entries error', result.error);
         return loadTimesheetEntries();
@@ -525,7 +536,7 @@
   async function uploadTimesheetEntriesToSupabase(list) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !Array.isArray(list) || !list.length) return false;
+    if (!supabase || !currentUser || !getCurrentOrgId() || !Array.isArray(list) || !list.length) return false;
     try {
       var payload = list.map(function (e) { return timesheetRowForDb(e, currentUser.id); });
       var result = await supabase.from('timesheet_entries').upsert(payload, { onConflict: 'id' });
@@ -679,6 +690,7 @@
     var row = {
       id: tx.id,
       user_id: userId,
+      organization_id: getCurrentOrgId(),
       date: tx.date,
       category: tx.category,
       amount: tx.amount,
@@ -698,6 +710,10 @@
     currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser) {
       // Still keep local cache in sync.
+      saveTransactions(state.transactions);
+      return;
+    }
+    if (!getCurrentOrgId()) {
       saveTransactions(state.transactions);
       return;
     }
@@ -723,12 +739,16 @@
       saveTransactions(state.transactions);
       return;
     }
+    if (!getCurrentOrgId()) {
+      saveTransactions(state.transactions);
+      return;
+    }
     try {
       var result = await supabase
         .from('transactions')
         .delete()
         .eq('id', id)
-        .eq('user_id', currentUser.id);
+        .eq('organization_id', getCurrentOrgId());
       if (result.error) {
         console.error('delete transaction error', result.error);
       }
@@ -777,6 +797,11 @@
     currentUser = session.user;
     window.currentUser = session.user;
 
+    if (!getCurrentOrgId()) {
+      persistClientLastError = 'No workspace in this URL. Use your organization link (path starts with your org slug).';
+      return 'skipped';
+    }
+
     if (!client || !isUuidForDb(client.id)) {
       persistClientLastError = 'Invalid client id.';
       return 'skipped';
@@ -795,7 +820,7 @@
         .from('clients')
         .update(bodyNoId)
         .eq('id', client.id)
-        .eq('user_id', currentUser.id)
+        .eq('organization_id', getCurrentOrgId())
         .select('id');
     }
 
@@ -973,7 +998,7 @@
         .from('clients')
         .delete()
         .eq('id', id)
-        .eq('user_id', currentUser.id);
+        .eq('organization_id', getCurrentOrgId());
       if (result.error) {
         console.error('delete client error', result.error);
       }
@@ -1067,7 +1092,7 @@
   }
 
   async function uploadTransactionsToSupabase(list) {
-    if (!supabase || !currentUser || !Array.isArray(list) || !list.length) return false;
+    if (!supabase || !currentUser || !getCurrentOrgId() || !Array.isArray(list) || !list.length) return false;
     var payload = list.map(function (tx) {
       return transactionRowForDb(tx, currentUser.id);
     });
@@ -1087,7 +1112,7 @@
   async function uploadClientsToSupabase(list) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !Array.isArray(list) || !list.length) return false;
+    if (!supabase || !currentUser || !getCurrentOrgId() || !Array.isArray(list) || !list.length) return false;
     var validClients = list.filter(function (c) {
       return c && isUuidForDb(c.id);
     });
@@ -1312,6 +1337,7 @@
     return {
       id: p.id,
       user_id: userId,
+      organization_id: getCurrentOrgId(),
       client_id: p.clientId || null,
       name: p.name || '',
       status: p.status || '',
@@ -1349,7 +1375,7 @@
     currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser || !id) return;
     try {
-      await supabase.from('projects').delete().eq('id', id).eq('user_id', currentUser.id);
+      await supabase.from('projects').delete().eq('id', id).eq('organization_id', getCurrentOrgId());
     } catch (err) {
       console.error('deleteProjectRemote error', err);
     }
@@ -1358,9 +1384,9 @@
   async function fetchProjectsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return loadProjects();
+    if (!supabase || !currentUser || !getCurrentOrgId()) return loadProjects();
     try {
-      var result = await supabase.from('projects').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: true });
+      var result = await supabase.from('projects').select('*').eq('organization_id', getCurrentOrgId()).order('created_at', { ascending: true });
       if (result.error) {
         console.error('load projects error', result.error);
         return loadProjects();
@@ -1376,7 +1402,7 @@
   async function uploadProjectsToSupabase(list) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !Array.isArray(list) || !list.length) return false;
+    if (!supabase || !currentUser || !getCurrentOrgId() || !Array.isArray(list) || !list.length) return false;
     try {
       var payload = list.map(function (p) { return projectRowForDb(p, currentUser.id); });
       var result = await supabase.from('projects').upsert(payload, { onConflict: 'id' });
@@ -1413,6 +1439,7 @@
     return {
       id: inv.id,
       user_id: userId,
+      organization_id: getCurrentOrgId(),
       income_tx_id: inv.incomeTxId,
       number: inv.number,
       date_issued: inv.dateIssued,
@@ -1438,6 +1465,7 @@
       var res = await supabase.functions.invoke('create-stripe-checkout-session', {
         body: {
           invoiceId: inv.id,
+          organizationId: getCurrentOrgId(),
           successUrl: window.location.origin + window.location.pathname + '?payment=success',
           cancelUrl: window.location.origin + window.location.pathname + '?payment=cancel',
         },
@@ -1475,7 +1503,7 @@
     currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser || !id) return;
     try {
-      await supabase.from('invoices').delete().eq('id', id).eq('user_id', currentUser.id);
+      await supabase.from('invoices').delete().eq('id', id).eq('organization_id', getCurrentOrgId());
     } catch (err) {
       console.error('deleteInvoiceRemote error', err);
     }
@@ -1484,9 +1512,9 @@
   async function fetchInvoicesFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return loadInvoices();
+    if (!supabase || !currentUser || !getCurrentOrgId()) return loadInvoices();
     try {
-      var result = await supabase.from('invoices').select('*').eq('user_id', currentUser.id).order('date_issued', { ascending: false });
+      var result = await supabase.from('invoices').select('*').eq('organization_id', getCurrentOrgId()).order('date_issued', { ascending: false });
       if (result.error) {
         console.error('load invoices error', result.error);
         return loadInvoices();
@@ -1502,7 +1530,7 @@
   async function uploadInvoicesToSupabase(list) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !Array.isArray(list) || !list.length) return false;
+    if (!supabase || !currentUser || !getCurrentOrgId() || !Array.isArray(list) || !list.length) return false;
     try {
       var payload = list.map(function (inv) { return invoiceRowForDb(inv, currentUser.id); });
       var result = await supabase.from('invoices').upsert(payload, { onConflict: 'id' });
@@ -1539,6 +1567,7 @@
     return {
       id: n.id,
       user_id: userId,
+      organization_id: getCurrentOrgId(),
       name: n.name || '',
       channel: n.channel || '',
       start_date: n.startDate || null,
@@ -1568,7 +1597,7 @@
     currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser || !id) return;
     try {
-      await supabase.from('campaigns').delete().eq('id', id).eq('user_id', currentUser.id);
+      await supabase.from('campaigns').delete().eq('id', id).eq('organization_id', getCurrentOrgId());
     } catch (err) {
       console.error('deleteCampaignRemote error', err);
     }
@@ -1577,9 +1606,9 @@
   async function fetchCampaignsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return loadCampaigns();
+    if (!supabase || !currentUser || !getCurrentOrgId()) return loadCampaigns();
     try {
-      var result = await supabase.from('campaigns').select('*').eq('user_id', currentUser.id).order('start_date', { ascending: false });
+      var result = await supabase.from('campaigns').select('*').eq('organization_id', getCurrentOrgId()).order('start_date', { ascending: false });
       if (result.error) {
         console.error('load campaigns error', result.error);
         return loadCampaigns();
@@ -1595,7 +1624,7 @@
   async function uploadCampaignsToSupabase(list) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !Array.isArray(list) || !list.length) return false;
+    if (!supabase || !currentUser || !getCurrentOrgId() || !Array.isArray(list) || !list.length) return false;
     try {
       var payload = [];
       list.forEach(function (c) {
@@ -1619,9 +1648,9 @@
   async function fetchAppSettingsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return null;
+    if (!supabase || !currentUser || !getCurrentOrgId()) return null;
     try {
-      var result = await supabase.from('app_settings').select('*').eq('user_id', currentUser.id).maybeSingle();
+      var result = await supabase.from('app_settings').select('*').eq('organization_id', getCurrentOrgId()).maybeSingle();
       if (result.error) {
         console.error('load app_settings error', result.error);
         return null;
@@ -1664,6 +1693,8 @@
         fiscal: fiscalEl && fiscalEl.value ? fiscalEl.value : 'January',
         logo_light_url: brandImg && brandImg.getAttribute('data-logo-light') ? String(brandImg.getAttribute('data-logo-light')) : '',
         logo_dark_url: brandImg && brandImg.getAttribute('data-logo-dark') ? String(brandImg.getAttribute('data-logo-dark')) : '',
+        tagline: val('setting-tagline'),
+        ownerRole: val('setting-owner-role'),
       },
       budgets: {
         lab: Math.max(0, Number(budgets.lab) || 0),
@@ -1687,7 +1718,7 @@
     var pb = prevDash.business && typeof prevDash.business === 'object' ? prevDash.business : {};
     var nb = nextDash.business && typeof nextDash.business === 'object' ? nextDash.business : {};
     var mergedBusiness = Object.assign({}, pb);
-    ['name', 'owner', 'email', 'phone', 'address', 'period', 'accent', 'currency', 'fiscal', 'logo_light_url', 'logo_dark_url'].forEach(function (k) {
+    ['name', 'owner', 'ownerRole', 'email', 'phone', 'address', 'period', 'accent', 'currency', 'fiscal', 'logo_light_url', 'logo_dark_url', 'tagline'].forEach(function (k) {
       var nv = nb[k];
       if (nv != null && String(nv).trim()) mergedBusiness[k] = nv;
     });
@@ -1700,7 +1731,7 @@
     };
   }
 
-  function applyDashboardSettingsFromCloud(raw) {
+  async function applyDashboardSettingsFromCloud(raw) {
     if (raw == null || typeof raw !== 'object') return;
     if (!raw.business && !raw.budgets && !raw.budgetMonths) return;
     var biz = raw.business;
@@ -1731,7 +1762,22 @@
       var fis = gid('setting-fiscal');
       if (fis && biz.fiscal) fis.value = biz.fiscal;
       if (biz.accent) applyAccentBranding(normalizeHexColor(biz.accent, '#e8501a'));
-      applyBrandLogo(biz.logo_light_url || '', biz.logo_dark_url || '');
+      var lightSigned = await resolveBrandLogoStorageUrl(biz.logo_light_url || '');
+      var darkSigned = await resolveBrandLogoStorageUrl(biz.logo_dark_url || '');
+      applyBrandLogo(lightSigned, darkSigned);
+      if (biz.ownerRole != null) setv('setting-owner-role', String(biz.ownerRole));
+      if (biz.tagline != null) setv('setting-tagline', String(biz.tagline));
+      var tagEl = gid('dash-brand-tagline');
+      if (tagEl) {
+        var tgs = biz.tagline != null ? String(biz.tagline).trim() : '';
+        if (tgs) {
+          tagEl.textContent = tgs;
+          tagEl.style.display = 'block';
+        } else {
+          tagEl.textContent = '';
+          tagEl.style.display = 'none';
+        }
+      }
     }
     if (raw.budgets && typeof raw.budgets === 'object') {
       ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
@@ -1805,6 +1851,44 @@
     if (nextSrc) img.src = nextSrc;
     if (light) img.setAttribute('data-logo-light', light);
     if (dark) img.setAttribute('data-logo-dark', dark);
+  }
+
+  /** Signed URL lifetime for private brand-assets bucket (see supabase/brand_assets_org_rls.sql). */
+  var BRAND_LOGO_SIGNED_URL_TTL_SEC = 60 * 60 * 24 * 7;
+
+  function brandAssetPathFromStoredUrl(url) {
+    var s = String(url || '').trim();
+    if (!s) return null;
+    var markers = ['/storage/v1/object/public/brand-assets/', '/storage/v1/object/sign/brand-assets/'];
+    for (var mi = 0; mi < markers.length; mi++) {
+      var idx = s.indexOf(markers[mi]);
+      if (idx === -1) continue;
+      var rest = s.slice(idx + markers[mi].length);
+      var qIdx = rest.indexOf('?');
+      if (qIdx !== -1) rest = rest.slice(0, qIdx);
+      try {
+        return decodeURIComponent(rest);
+      } catch (e) {
+        return rest;
+      }
+    }
+    return null;
+  }
+
+  async function resolveBrandLogoStorageUrl(url) {
+    var raw = String(url || '').trim();
+    if (!raw) return '';
+    supabase = window.supabaseClient || supabase;
+    if (!supabase) return raw;
+    var path = brandAssetPathFromStoredUrl(raw);
+    if (!path) return raw;
+    try {
+      var signed = await supabase.storage.from('brand-assets').createSignedUrl(path, BRAND_LOGO_SIGNED_URL_TTL_SEC);
+      if (signed.error || !signed.data || !signed.data.signedUrl) return raw;
+      return signed.data.signedUrl;
+    } catch (err) {
+      return raw;
+    }
   }
 
   /** Re-skin live charts when branding changes (without waiting for a full rerender). */
@@ -1890,7 +1974,7 @@
     var includeDashboard = opts.includeDashboard !== false;
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return;
+    if (!supabase || !currentUser || !getCurrentOrgId()) return;
     if (isDemoDashboardUser()) return;
     try {
       var dash = includeDashboard ? collectDashboardSettingsForCloud() : null;
@@ -1906,12 +1990,12 @@
       }
       var result = await supabase.from('app_settings').upsert(
         {
-          user_id: currentUser.id,
+          organization_id: getCurrentOrgId(),
           project_statuses: projectStatuses,
           dashboard_settings: dash,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'user_id' }
+        { onConflict: 'organization_id' }
       );
       if (result.error) {
         console.error('upsert app_settings error', result.error);
@@ -1954,7 +2038,7 @@
     // If Supabase or user is not ready, fall back to local cache.
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) {
+    if (!supabase || !currentUser || !getCurrentOrgId()) {
       return loadTransactions();
     }
 
@@ -1962,7 +2046,7 @@
       var result = await supabase
         .from('transactions')
         .select('*')
-        .eq('user_id', currentUser.id)
+        .eq('organization_id', getCurrentOrgId())
         .order('date', { ascending: false });
 
       if (result.error) {
@@ -2032,9 +2116,9 @@
   async function fetchCrmEventsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || crmEventsTableUnavailable) return [];
+    if (!supabase || !currentUser || !getCurrentOrgId() || crmEventsTableUnavailable) return [];
     try {
-      var res = await supabase.from('crm_events').select('*').eq('user_id', currentUser.id).order('event_at', { ascending: false }).limit(50);
+      var res = await supabase.from('crm_events').select('*').eq('organization_id', getCurrentOrgId()).order('event_at', { ascending: false }).limit(50);
       if (res.error) {
         if (res.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(res.error.message || ''))) {
           crmEventsTableUnavailable = true;
@@ -2050,9 +2134,9 @@
   async function fetchWeeklySummariesFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || weeklySummariesTableUnavailable) return [];
+    if (!supabase || !currentUser || !getCurrentOrgId() || weeklySummariesTableUnavailable) return [];
     try {
-      var res = await supabase.from('weekly_summaries').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(12);
+      var res = await supabase.from('weekly_summaries').select('*').eq('organization_id', getCurrentOrgId()).order('created_at', { ascending: false }).limit(12);
       if (res.error) {
         if (res.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(res.error.message || ''))) {
           weeklySummariesTableUnavailable = true;
@@ -2068,7 +2152,7 @@
   async function addCrmEvent(kind, title, details, clientId, idempotencyKey) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) return;
+    if (!supabase || !currentUser || !getCurrentOrgId()) return;
     var payloadDetails = details && typeof details === 'object' ? Object.assign({}, details) : {};
     if (idempotencyKey) {
       var exists = crmEvents.some(function (ev) { return ev && ev.details && ev.details.idempotencyKey === idempotencyKey; });
@@ -2078,6 +2162,7 @@
     var payload = {
       id: uuid(),
       user_id: currentUser.id,
+      organization_id: getCurrentOrgId(),
       client_id: clientId || null,
       kind: kind || 'note',
       title: title || 'Activity',
@@ -2169,9 +2254,9 @@
     wfTasks = [];
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || isDemoDashboardUser() || wfSchemaUnavailable) return;
+    if (!supabase || !currentUser || !getCurrentOrgId() || isDemoDashboardUser() || wfSchemaUnavailable) return;
     try {
-      var pr = await supabase.from('pipelines').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: true });
+      var pr = await supabase.from('pipelines').select('*').eq('organization_id', getCurrentOrgId()).order('created_at', { ascending: true });
       if (pr && pr.error && (pr.error.status === 404 || /could not find the table|relation .* does not exist/i.test(String(pr.error.message || '')))) {
         wfSchemaUnavailable = true;
         return;
@@ -2179,11 +2264,11 @@
       wfPipelines = pr.error ? [] : (pr.data || []).map(function (r) {
         return { id: r.id, name: r.name, entity: r.entity, isDefault: !!r.is_default };
       });
-      var sr = await supabase.from('pipeline_stages').select('*').eq('user_id', currentUser.id).order('sort_order', { ascending: true });
+      var sr = await supabase.from('pipeline_stages').select('*').eq('organization_id', getCurrentOrgId()).order('sort_order', { ascending: true });
       wfStages = sr.error ? [] : (sr.data || []).map(function (r) {
         return { id: r.id, pipelineId: r.pipeline_id, label: r.label, slug: r.slug, sortOrder: r.sort_order || 0, color: r.color || '' };
       });
-      var rr = await supabase.from('workflow_rules').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: true });
+      var rr = await supabase.from('workflow_rules').select('*').eq('organization_id', getCurrentOrgId()).order('created_at', { ascending: true });
       wfRules = rr.error ? [] : (rr.data || []).map(function (r) {
         return {
           id: r.id,
@@ -2194,7 +2279,7 @@
           actions: Array.isArray(r.actions) ? r.actions : [],
         };
       });
-      var tr = await supabase.from('workspace_tasks').select('*').eq('user_id', currentUser.id).order('due_at', { ascending: true }).limit(200);
+      var tr = await supabase.from('workspace_tasks').select('*').eq('organization_id', getCurrentOrgId()).order('due_at', { ascending: true }).limit(200);
       wfTasks = tr.error ? [] : (tr.data || []).map(mapWorkspaceTaskRow);
     } catch (e) {
       console.warn('wfRefreshFromSupabase', e);
@@ -2307,6 +2392,7 @@
     var row = {
       id: rid,
       user_id: currentUser.id,
+      organization_id: getCurrentOrgId(),
       rule_id: ruleId,
       idempotency_key: idempotencyKey,
       trigger_payload: triggerPayload,
@@ -2330,7 +2416,7 @@
   async function wfUpdateWorkflowRun(runId, status, errMsg) {
     if (!runId) return;
     try {
-      await supabase.from('workflow_runs').update({ status: status, error: errMsg || null }).eq('id', runId).eq('user_id', currentUser.id);
+      await supabase.from('workflow_runs').update({ status: status, error: errMsg || null }).eq('id', runId).eq('organization_id', getCurrentOrgId());
     } catch (_) {}
   }
 
@@ -2339,6 +2425,7 @@
       await supabase.from('workflow_outbox').insert({
         id: uuid(),
         user_id: currentUser.id,
+        organization_id: getCurrentOrgId(),
         channel: channel || 'stub',
         payload: payload || {},
       });
@@ -2402,6 +2489,7 @@
           var taskRow = {
             id: uuid(),
             user_id: currentUser.id,
+            organization_id: getCurrentOrgId(),
             title: title,
             body: String(a.body || ''),
             status: 'open',
@@ -2434,7 +2522,7 @@
     if (wfDispatchDepth > 0) return;
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || isDemoDashboardUser()) return;
+    if (!supabase || !currentUser || !getCurrentOrgId() || isDemoDashboardUser()) return;
     await wfRefreshFromSupabase();
     if (!wfRules.length) return;
     wfDispatchDepth++;
@@ -2467,6 +2555,7 @@
     var insP = await supabase.from('pipelines').insert({
       id: pid,
       user_id: currentUser.id,
+      organization_id: getCurrentOrgId(),
       name: 'Sales',
       entity: 'client',
       is_default: true,
@@ -2483,6 +2572,7 @@
         id: uuid(),
         pipeline_id: pid,
         user_id: currentUser.id,
+        organization_id: getCurrentOrgId(),
         label: st.label,
         slug: st.slug,
         sort_order: st.sort,
@@ -2495,10 +2585,11 @@
   async function wfInsertActivity(clientId, activityType, notes, occurredAt) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser || !clientId) return null;
+    if (!supabase || !currentUser || !clientId || !getCurrentOrgId()) return null;
     var row = {
       id: uuid(),
       user_id: currentUser.id,
+      organization_id: getCurrentOrgId(),
       client_id: clientId,
       activity_type: activityType || 'meeting',
       notes: notes || '',
@@ -2526,6 +2617,7 @@
     var row = {
       id: rule.id || uuid(),
       user_id: currentUser.id,
+      organization_id: getCurrentOrgId(),
       name: rule.name || 'Rule',
       enabled: rule.enabled !== false,
       pipeline_id: rule.pipelineId || null,
@@ -2548,7 +2640,7 @@
     currentUser = window.currentUser || currentUser;
     if (!supabase || !currentUser || !ruleId) return;
     try {
-      await supabase.from('workflow_rules').delete().eq('id', ruleId).eq('user_id', currentUser.id);
+      await supabase.from('workflow_rules').delete().eq('id', ruleId).eq('organization_id', getCurrentOrgId());
       await wfRefreshFromSupabase();
     } catch (_) {}
   }
@@ -2669,7 +2761,7 @@
         supabase = window.supabaseClient || supabase;
         currentUser = window.currentUser || currentUser;
         if (!supabase || !currentUser || !tid) return;
-        await supabase.from('workspace_tasks').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', tid).eq('user_id', currentUser.id);
+        await supabase.from('workspace_tasks').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', tid).eq('organization_id', getCurrentOrgId());
         await wfRefreshFromSupabase();
         renderTasksPage();
       });
@@ -2751,7 +2843,7 @@
   async function fetchClientsFromSupabase() {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
-    if (!supabase || !currentUser) {
+    if (!supabase || !currentUser || !getCurrentOrgId()) {
       return loadClients();
     }
 
@@ -2759,7 +2851,7 @@
       var result = await supabase
         .from('clients')
         .select('*')
-        .eq('user_id', currentUser.id)
+        .eq('organization_id', getCurrentOrgId())
         .order('created_at', { ascending: true });
 
       if (result.error) {
@@ -4619,11 +4711,12 @@ var incomePowerState = {
       if (!supabase || !currentUser) return '';
       var file = input.files[0];
       var ext = (String(file.name || '').split('.').pop() || 'png').toLowerCase();
-      var path = currentUser.id + '/' + variant + '-' + Date.now() + '.' + ext;
+      var path = (getCurrentOrgId() || currentUser.id) + '/' + variant + '-' + Date.now() + '.' + ext;
       var upload = await supabase.storage.from('brand-assets').upload(path, file, { upsert: true, cacheControl: '3600' });
       if (upload.error) throw upload.error;
-      var pub = supabase.storage.from('brand-assets').getPublicUrl(path);
-      return pub && pub.data && pub.data.publicUrl ? pub.data.publicUrl : '';
+      var signed = await supabase.storage.from('brand-assets').createSignedUrl(path, BRAND_LOGO_SIGNED_URL_TTL_SEC);
+      if (signed.error) throw signed.error;
+      return signed.data && signed.data.signedUrl ? signed.data.signedUrl : '';
     }
 
     function wireLogoPreviewInput(inputId, variant) {
@@ -4818,16 +4911,17 @@ var incomePowerState = {
       var today = dateYMD(new Date());
       supabase = window.supabaseClient || supabase;
       currentUser = window.currentUser || currentUser;
-      if (supabase && currentUser) {
+      if (supabase && currentUser && getCurrentOrgId()) {
         try {
           await supabase.from('weekly_summaries').upsert({
             id: uuid(),
             user_id: currentUser.id,
+            organization_id: getCurrentOrgId(),
             summary_type: kind,
             summary_date: today,
             payload: { text: txt },
             created_at: new Date().toISOString(),
-          }, { onConflict: 'user_id,summary_type,summary_date' });
+          }, { onConflict: 'organization_id,summary_type,summary_date' });
         } catch (_) {}
       }
       weeklySummaries.unshift({ summary_type: kind, summary_date: today, payload: { text: txt } });
@@ -4947,6 +5041,19 @@ var incomePowerState = {
     var owner = ($('setting-owner') && $('setting-owner').value ? $('setting-owner').value.trim() : '') || 'there';
     setText('crm-welcome', sal + ', ' + owner.split(' ')[0]);
     setText('crm-local-date', now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }));
+
+    var tgIn = $('setting-tagline');
+    var tagOut = $('dash-brand-tagline');
+    if (tagOut && tgIn) {
+      var tgx = String(tgIn.value || '').trim();
+      if (tgx) {
+        tagOut.textContent = tgx;
+        tagOut.style.display = 'block';
+      } else {
+        tagOut.textContent = '';
+        tagOut.style.display = 'none';
+      }
+    }
 
     var reminders = [];
     clients.forEach(function (c) {
@@ -10317,7 +10424,7 @@ var incomePowerState = {
         supabase = window.supabaseClient || supabase;
         if (!supabase) return;
         try {
-          var redirectTo = window.location.origin + window.location.pathname;
+          var redirectTo = window.location.origin + (window.location.pathname || '/') + (window.location.search || '');
           var res = await supabase.auth.signInWithOAuth({
             provider: 'github',
             options: { redirectTo: redirectTo },
@@ -10969,7 +11076,7 @@ var incomePowerState = {
       projectStatuses = loadStatuses();
       normalizeLocalIdsForSupabase();
 
-      if (supabase && currentUser && !isDemoDashboardUser()) {
+      if (supabase && currentUser && getCurrentOrgId() && !isDemoDashboardUser()) {
         var remoteTxs = await fetchTransactionsFromSupabase();
         var remoteClients = await fetchClientsFromSupabase();
 
@@ -11044,7 +11151,7 @@ var incomePowerState = {
 
         var settingsRow = await fetchAppSettingsFromSupabase();
         if (settingsRow && settingsRow.dashboard_settings) {
-          applyDashboardSettingsFromCloud(settingsRow.dashboard_settings);
+          await applyDashboardSettingsFromCloud(settingsRow.dashboard_settings);
         }
         if (settingsRow && Array.isArray(settingsRow.project_statuses) && settingsRow.project_statuses.length) {
           projectStatuses = settingsRow.project_statuses.map(function (s) { return String(s); }).filter(Boolean);
@@ -11349,6 +11456,11 @@ var incomePowerState = {
   function clearRuntimeDataForAuthChange(nextUser) {
     currentUser = nextUser || null;
     window.currentUser = currentUser;
+    if (!nextUser) {
+      window.currentOrganizationId = null;
+      window.currentOrganizationSlug = null;
+      window.currentOrganizationRole = null;
+    }
     if (!nextUser || nextUser.id !== DEMO_DASHBOARD_USER_ID) {
       setScreenshotNoCloudUpload(false);
     }
@@ -11434,6 +11546,45 @@ var incomePowerState = {
     return { ok: true, client: client };
   };
 
+  /**
+   * Called after first-time workspace setup (org name + slug) to sync Settings fields,
+   * accent, optional tagline / role, and persist dashboard_settings to Supabase.
+   */
+  window.bizdashApplyWorkspaceBrandingFromOnboarding = async function (payload) {
+    payload = payload || {};
+    function gid(id) {
+      return document.getElementById(id);
+    }
+    var nm = gid('setting-name');
+    var ow = gid('setting-owner');
+    var orr = gid('setting-owner-role');
+    var tg = gid('setting-tagline');
+    var ac = gid('setting-accent');
+    var ach = gid('setting-accent-hex');
+    if (nm && payload.businessName != null) nm.value = String(payload.businessName);
+    if (ow && payload.owner != null) ow.value = String(payload.owner);
+    if (orr && payload.ownerRole != null) orr.value = String(payload.ownerRole);
+    if (tg && payload.tagline != null) tg.value = String(payload.tagline);
+    if (payload.accent) {
+      var hex = normalizeHexColor(payload.accent, '#e8501a');
+      if (ac) ac.value = hex;
+      if (ach) ach.value = hex;
+      applyAccentBranding(hex);
+    }
+    var tagOut = gid('dash-brand-tagline');
+    if (tagOut) {
+      var tgs = payload.tagline != null ? String(payload.tagline).trim() : '';
+      if (tgs) {
+        tagOut.textContent = tgs;
+        tagOut.style.display = 'block';
+      } else {
+        tagOut.textContent = '';
+        tagOut.style.display = 'none';
+      }
+    }
+    await persistAppSettingsToSupabase({ includeDashboard: true });
+  };
+
   // Expose so supabase-auth.js can reset state on auth transitions and trigger reload.
   window.clearRuntimeDataForAuthChange = clearRuntimeDataForAuthChange;
   window.initDataFromSupabase = initDataFromSupabase;
@@ -11492,6 +11643,215 @@ var incomePowerState = {
     };
   };
 
+  function wireTeamPage() {
+    var teamWired = false;
+    function roleLabel(r) {
+      if (r === 'member') return 'Employee';
+      if (r === 'viewer') return 'Viewer';
+      if (!r) return '—';
+      return String(r).charAt(0).toUpperCase() + String(r).slice(1);
+    }
+    async function invokeTeam(body) {
+      var supabase = window.supabaseClient;
+      if (!supabase) return { error: 'Sign in to manage the team.' };
+      var orgId = typeof getCurrentOrgId === 'function' ? getCurrentOrgId() : null;
+      if (!orgId) return { error: 'No workspace selected.' };
+      var sessRes = await supabase.auth.getSession();
+      var sess = sessRes && sessRes.data ? sessRes.data.session : null;
+      if (!sess || !sess.access_token) return { error: 'Session expired. Sign in again.' };
+      var res = await supabase.functions.invoke('organization-team', {
+        body: Object.assign({ organizationId: orgId }, body),
+        headers: { Authorization: 'Bearer ' + sess.access_token },
+      });
+      if (res.error) return { error: res.error.message || 'Request failed' };
+      return res.data && typeof res.data === 'object' ? res.data : {};
+    }
+    async function refreshTeamPage() {
+      var orgId = typeof getCurrentOrgId === 'function' ? getCurrentOrgId() : null;
+      var hint = document.getElementById('team-page-hint');
+      var tbody = document.getElementById('team-members-body');
+      var thActions = document.getElementById('team-th-actions');
+      var inviteCard = document.getElementById('team-invite-card');
+      var pendingCard = document.getElementById('team-pending-invites-card');
+      if (!tbody || !hint) return;
+      if (!orgId) {
+        hint.textContent = 'Open a workspace URL (path starts with your org slug) to view the team.';
+        tbody.innerHTML = '';
+        if (inviteCard) inviteCard.style.display = 'none';
+        if (pendingCard) pendingCard.style.display = 'none';
+        return;
+      }
+      var out = await invokeTeam({ action: 'list' });
+      if (out.error) {
+        hint.textContent = String(out.error);
+        tbody.innerHTML = '';
+        if (inviteCard) inviteCard.style.display = 'none';
+        if (pendingCard) pendingCard.style.display = 'none';
+        return;
+      }
+      var canManage = !!out.canManage;
+      var myRole = out.yourRole || '';
+      hint.textContent = canManage
+        ? 'Change roles or remove people from this workspace. Only owners can assign the Owner role.'
+        : 'Only workspace admins (Owner or Admin) can change roles or send invites.';
+      if (thActions) thActions.style.display = canManage ? '' : 'none';
+      if (inviteCard) inviteCard.style.display = canManage ? 'block' : 'none';
+      var members = out.members || [];
+      tbody.innerHTML = members
+        .map(function (m) {
+          var email = m.email || m.user_id || '—';
+          var uid = m.user_id;
+          var isSelf = window.currentUser && window.currentUser.id === uid;
+          var row =
+            '<tr><td>' + esc(email) + '</td><td>' + esc(roleLabel(m.role)) + '</td>';
+          if (canManage) {
+            var roleOpts = myRole === 'owner' ? ['owner', 'admin', 'member', 'viewer'] : ['admin', 'member', 'viewer'];
+            var sel = roleOpts
+              .map(function (r) {
+                return '<option value="' + esc(r) + '"' + (m.role === r ? ' selected' : '') + '>' + esc(roleLabel(r)) + '</option>';
+              })
+              .join('');
+            row +=
+              '<td><select class="fi team-role-select" data-user-id="' +
+              esc(uid) +
+              '" style="min-width:130px;font-size:12px;">' +
+              sel +
+              '</select> ';
+            row += isSelf
+              ? '<span style="color:var(--text3);font-size:11px;">You</span></td>'
+              : '<button type="button" class="btn team-remove-btn" data-user-id="' +
+                esc(uid) +
+                '" style="font-size:11px;padding:4px 8px;">Remove</button></td>';
+          }
+          row += '</tr>';
+          return row;
+        })
+        .join('');
+
+      if (canManage && pendingCard) {
+        var pi = await invokeTeam({ action: 'pending_invites' });
+        var pb = document.getElementById('team-pending-invites-body');
+        if (!pi.error && pi.invitations && pi.invitations.length && pb) {
+          pendingCard.style.display = 'block';
+          pb.innerHTML = pi.invitations
+            .map(function (inv) {
+              return (
+                '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">' +
+                '<span>' +
+                esc(inv.email) +
+                ' · ' +
+                esc(roleLabel(inv.role)) +
+                ' · expires ' +
+                esc(String(inv.expires_at || '').slice(0, 10)) +
+                '</span>' +
+                '<button type="button" class="btn team-revoke-invite" data-invite-id="' +
+                esc(inv.id) +
+                '" style="font-size:11px;">Revoke</button></div>'
+              );
+            })
+            .join('');
+        } else {
+          pendingCard.style.display = 'none';
+          if (pb) pb.innerHTML = '';
+        }
+      } else if (pendingCard) {
+        pendingCard.style.display = 'none';
+      }
+
+      if (!teamWired) {
+        teamWired = true;
+        var btnInv = document.getElementById('team-btn-create-invite');
+        var btnAdd = document.getElementById('team-btn-add-existing');
+        if (btnInv) {
+          btnInv.addEventListener('click', async function () {
+            var emEl = document.getElementById('team-invite-email');
+            var roleEl = document.getElementById('team-invite-role');
+            var resEl = document.getElementById('team-invite-result');
+            var email = emEl && emEl.value ? String(emEl.value).trim() : '';
+            var role = roleEl && roleEl.value ? roleEl.value : 'member';
+            if (!email) {
+              alert('Enter an email address.');
+              return;
+            }
+            var r = await invokeTeam({ action: 'invite', email: email, role: role });
+            if (r.error) {
+              alert(r.error);
+              return;
+            }
+            if (resEl) {
+              resEl.style.display = 'block';
+              resEl.textContent = r.inviteUrl ? 'Share this link: ' + r.inviteUrl : 'Invite created.';
+            }
+            if (emEl) emEl.value = '';
+            await refreshTeamPage();
+          });
+        }
+        if (btnAdd) {
+          btnAdd.addEventListener('click', async function () {
+            var emEl = document.getElementById('team-invite-email');
+            var roleEl = document.getElementById('team-invite-role');
+            var email = emEl && emEl.value ? String(emEl.value).trim() : '';
+            var role = roleEl && roleEl.value ? roleEl.value : 'member';
+            if (!email) {
+              alert('Enter an email address.');
+              return;
+            }
+            var r = await invokeTeam({ action: 'add', email: email, role: role });
+            if (r.error) {
+              alert(r.error);
+              return;
+            }
+            alert('User added to this workspace.');
+            if (emEl) emEl.value = '';
+            await refreshTeamPage();
+          });
+        }
+        tbody.addEventListener('change', async function (ev) {
+          var t = ev.target;
+          if (!t || !t.classList || !t.classList.contains('team-role-select')) return;
+          var uid = t.getAttribute('data-user-id');
+          var role = t.value;
+          var r = await invokeTeam({ action: 'update_role', userId: uid, role: role });
+          if (r.error) {
+            alert(r.error);
+            await refreshTeamPage();
+            return;
+          }
+        });
+        tbody.addEventListener('click', async function (ev) {
+          var t = ev.target;
+          if (!t || !t.classList) return;
+          if (t.classList.contains('team-remove-btn')) {
+            var uid = t.getAttribute('data-user-id');
+            if (!uid || !confirm('Remove this person from the workspace?')) return;
+            var r = await invokeTeam({ action: 'remove', userId: uid });
+            if (r.error) {
+              alert(r.error);
+              return;
+            }
+            await refreshTeamPage();
+          }
+        });
+        var pendingHost = document.getElementById('team-pending-invites-body');
+        if (pendingHost) {
+          pendingHost.addEventListener('click', async function (ev) {
+            var t = ev.target;
+            if (!t || !t.classList || !t.classList.contains('team-revoke-invite')) return;
+            var id = t.getAttribute('data-invite-id');
+            if (!id || !confirm('Revoke this invitation?')) return;
+            var r = await invokeTeam({ action: 'revoke_invite', inviteId: id });
+            if (r.error) {
+              alert(r.error);
+              return;
+            }
+            await refreshTeamPage();
+          });
+        }
+      }
+    }
+    window.refreshTeamPage = refreshTeamPage;
+  }
+
   function init() {
     state.filter = { mode: 'all', start: null, end: null };
     wireTransactionForm();
@@ -11515,6 +11875,7 @@ var incomePowerState = {
     if (typeof window.wireDashboardAssistant === 'function') {
       window.wireDashboardAssistant();
     }
+    wireTeamPage();
 
     // Simple page navigation wiring to replace the original bundle's nav().
     // Exposed globally so existing onclick="nav('dashboard', this)" continues to work.
@@ -11561,9 +11922,13 @@ var incomePowerState = {
           insights: 'Insights',
           marketing: 'Marketing',
           chat: 'Advisor',
+          team: 'Your team',
           settings: 'Settings',
         };
         mobileTitle.textContent = titles[pageId] || 'Dashboard';
+      }
+      if (pageId === 'team' && typeof window.refreshTeamPage === 'function') {
+        window.refreshTeamPage();
       }
       if (pageId === 'tasks') {
         wfRefreshFromSupabase().then(function () {

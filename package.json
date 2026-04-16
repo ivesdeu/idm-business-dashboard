@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "lucide": "^1.7.0",
+    "supabase": "^2.91.3",
     "vite": "^6.2.0"
   },
   "dependencies": {

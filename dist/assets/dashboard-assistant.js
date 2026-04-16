@@ -5,7 +5,7 @@
   'use strict';
 
   /** Minimum time to show the “thinking” state before revealing the reply (ms). */
-  var THINKING_MIN_MS = 2500;
+  var THINKING_MIN_MS = 2000;
 
   var WELCOME =
     'Hi — I am your business copilot for this dashboard.\n\n' +
@@ -273,14 +273,23 @@
     return div;
   }
 
-  async function countRows(supabase, userId, table) {
-    var res = await supabase.from(table).select('*', { count: 'exact', head: true }).eq('user_id', userId);
+  async function countRows(supabase, userId, table, organizationId) {
+    if (!organizationId) {
+      return { ok: false, err: 'Open your workspace link (path starts with your org slug) to count rows for that workspace.' };
+    }
+    var res = await supabase
+      .from(table)
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId);
     if (res.error) return { ok: false, err: res.error.message };
     return { ok: true, count: typeof res.count === 'number' ? res.count : 0 };
   }
 
   async function tryLiveCount(q, supabase, user) {
     if (!user || !supabase) return null;
+    var orgId = typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null;
+    if (!orgId) return null;
     var ql = norm(q);
     if (!/\b(how many|how\s+much|count|number of|total)\b/.test(ql)) return null;
 
@@ -295,12 +304,12 @@
 
     for (var i = 0; i < specs.length; i++) {
       if (specs[i].re.test(ql)) {
-        var r = await countRows(supabase, user.id, specs[i].table);
+        var r = await countRows(supabase, user.id, specs[i].table, orgId);
         if (!r.ok) {
           return 'Could not count ' + specs[i].table + ': ' + r.err;
         }
         var noun = r.count === 1 ? specs[i].label : specs[i].label + 's';
-        return 'You have ' + r.count + ' ' + noun + ' in Supabase (rows with your user_id).';
+        return 'You have ' + r.count + ' ' + noun + ' in this workspace (Supabase).';
       }
     }
     return null;
@@ -319,12 +328,12 @@
         '• How RLS scopes data to your account\n' +
         '• Where SQL migrations and Edge Functions live\n' +
         '• How static builds and deploy work\n' +
-        '• Live counts (clients, transactions, projects, invoices, campaigns, timesheet rows) when you’re signed in'
+        '• Live counts for the current workspace (clients, transactions, projects, invoices, campaigns, timesheet rows) when you’re signed in with an org URL'
       );
     }
 
     if (/\b(hello|hi\b|hey)\b/.test(ql)) {
-      return 'Hello! Ask about Supabase tables, RLS, Stripe fields, or say “how many projects do I have?” if you’re signed in.';
+      return 'Hello! Ask about Supabase tables, RLS, Stripe fields, or say “how many projects do I have?” when you’re signed in on a workspace URL.';
     }
 
     if (/\b(table|tables|schema|database|supabase)\b/.test(ql)) {
@@ -487,27 +496,10 @@
     } catch (_) {}
   }
 
-  function emitDebugLog(runId, hypothesisId, location, message, data) {
-    fetch('http://127.0.0.1:7914/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ade47e'},body:JSON.stringify({sessionId:'ade47e',runId:runId,hypothesisId:hypothesisId,location:location,message:message,data:data||{},timestamp:Date.now()})}).catch(function(){});
-  }
-
   async function invokeAdvisorTask(req) {
     var supabase = window.supabaseClient;
     var user = window.currentUser;
-    // #region agent log
-    emitDebugLog('initial', 'H1', 'dashboard-assistant.js:invokeAdvisorTask:entry', 'invokeAdvisorTask called', {
-      hasSupabase: !!supabase,
-      hasWindowUser: !!user,
-      hasMessage: !!(req && req.message),
-      task: req && req.task ? String(req.task) : null,
-    });
-    // #endregion
     if (!supabase || !user) {
-      // #region agent log
-      emitDebugLog('initial', 'H1', 'dashboard-assistant.js:invokeAdvisorTask:precheck', 'precheck failed before invoke', {
-        reason: !supabase ? 'missing_supabase_client' : 'missing_window_current_user',
-      });
-      // #endregion
       return {
         ok: false,
         error: 'Sign in to use Advisor task stubs.',
@@ -519,37 +511,14 @@
       try {
         var sessRes = await supabase.auth.getSession();
         session = sessRes && sessRes.data ? sessRes.data.session : null;
-        // #region agent log
-        emitDebugLog('initial', 'H2', 'dashboard-assistant.js:invokeAdvisorTask:session', 'session check before invoke', {
-          hasAccessToken: !!(session && session.access_token),
-          userMatchesWindow: !!(session && session.user && user && session.user.id === user.id),
-        });
-        // #endregion
-      } catch (sessErr) {
-        // #region agent log
-        emitDebugLog('initial', 'H2', 'dashboard-assistant.js:invokeAdvisorTask:session-error', 'session read failed', {
-          message: String(sessErr && sessErr.message ? sessErr.message : sessErr),
-        });
-        // #endregion
-      }
+      } catch (_) {}
       if (!session || !session.access_token) {
-        // #region agent log
-        emitDebugLog('post-fix', 'H2', 'dashboard-assistant.js:invokeAdvisorTask:session-guard', 'blocked invoke due to missing access token', {
-          hasSession: !!session,
-          hasAccessToken: !!(session && session.access_token),
-        });
-        // #endregion
         return {
           ok: false,
           error: 'No active auth session. Sign in again to use Advisor.',
           response: { title: 'Sign in required', bullets: ['Your session expired or demo mode is active. Sign in to use Advisor.'] },
         };
       }
-      // #region agent log
-      emitDebugLog('post-fix', 'H7', 'dashboard-assistant.js:invokeAdvisorTask:invoke-headers', 'invoking with explicit bearer token header', {
-        hasAccessToken: !!(session && session.access_token),
-      });
-      // #endregion
       var res = await supabase.functions.invoke('ai-assistant', {
         body: req,
         headers: {
@@ -557,29 +526,10 @@
         },
       });
       if (res.error) {
-        // #region agent log
-        emitDebugLog('initial', 'H3', 'dashboard-assistant.js:invokeAdvisorTask:invoke-error', 'invoke returned error object', {
-          errorName: res.error && res.error.name ? String(res.error.name) : null,
-          errorMessage: res.error && res.error.message ? String(res.error.message) : null,
-          errorContext: res.error && res.error.context ? String(res.error.context) : null,
-          status: res.error && res.error.status ? String(res.error.status) : null,
-        });
-        // #endregion
         return { ok: false, error: res.error.message || 'Invoke failed', response: { title: 'Stub call failed', bullets: [res.error.message || 'Unknown function error'] } };
       }
-      // #region agent log
-      emitDebugLog('initial', 'H4', 'dashboard-assistant.js:invokeAdvisorTask:invoke-ok', 'invoke succeeded', {
-        hasData: !!(res && res.data),
-        provider: res && res.data && res.data.meta && res.data.meta.provider ? String(res.data.meta.provider) : null,
-      });
-      // #endregion
       return { ok: true, response: res.data || { title: 'No data', bullets: [] } };
     } catch (err) {
-      // #region agent log
-      emitDebugLog('initial', 'H3', 'dashboard-assistant.js:invokeAdvisorTask:catch', 'invoke threw exception', {
-        message: String(err && err.message ? err.message : err),
-      });
-      // #endregion
       return { ok: false, error: String(err && err.message ? err.message : err), response: { title: 'Stub call failed', bullets: ['Advisor function could not be reached.'] } };
     }
   }
@@ -813,6 +763,7 @@
         logAdvisorFeedback({
           id: mkUuid(),
           user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+          organization_id: typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null,
           usage_event_id: usageMeta.usageEventId,
           task: usageMeta.task,
           sentiment: 'up',
@@ -825,6 +776,7 @@
         logAdvisorFeedback({
           id: mkUuid(),
           user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+          organization_id: typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null,
           usage_event_id: usageMeta.usageEventId,
           task: usageMeta.task,
           sentiment: 'down',
@@ -854,6 +806,7 @@
           logAdvisorActionOutcome({
             id: mkUuid(),
             user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+            organization_id: typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null,
             usage_event_id: usageMeta.usageEventId,
             task: usageMeta.task,
             action_id: action.id || btn.textContent,
@@ -897,6 +850,7 @@
           await logAdvisorActionOutcome({
             id: mkUuid(),
             user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+            organization_id: typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null,
             usage_event_id: usageMeta.usageEventId,
             task: usageMeta.task,
             action_id: 'crm-review-modal',
@@ -919,6 +873,7 @@
         await logAdvisorActionOutcome({
           id: mkUuid(),
           user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+          organization_id: typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null,
           usage_event_id: usageMeta.usageEventId,
           task: usageMeta.task,
           action_id: 'crm-add-client',
@@ -971,7 +926,9 @@
           typeof window.bizDashGetAdvisorContactContext === 'function' ? window.bizDashGetAdvisorContactContext() : null;
         var clientsDigest =
           typeof window.bizDashGetClientsDigestForAdvisor === 'function' ? window.bizDashGetClientsDigestForAdvisor() : [];
+        var orgId = typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : window.currentOrganizationId;
         var request = {
+          organizationId: orgId || undefined,
           task: task,
           message: t,
           context: {
@@ -989,6 +946,7 @@
         await logAdvisorUsage({
           id: usageMeta.usageEventId,
           user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+          organization_id: typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null,
           task: task,
           request_payload: request,
           response_payload: out && out.response ? out.response : {},
