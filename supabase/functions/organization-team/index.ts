@@ -199,12 +199,18 @@ serve(async (req) => {
     if (targetUserId === user.id) {
       return json(req, 400, { error: "Use another admin to remove your membership" });
     }
-    const { error: delErr } = await userClient
+    const { data: deletedRows, error: delErr } = await userClient
       .from("organization_members")
       .delete()
       .eq("organization_id", organizationId)
-      .eq("user_id", targetUserId);
+      .eq("user_id", targetUserId)
+      .select("user_id");
     if (delErr) return json(req, 400, { error: delErr.message });
+    if (!deletedRows?.length) {
+      return json(req, 404, {
+        error: "No membership was removed. They may have already left, or your role cannot remove this member.",
+      });
+    }
     return json(req, 200, { ok: true });
   }
 
@@ -220,7 +226,7 @@ serve(async (req) => {
     }
     const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { error: invErr } = await userClient.from("organization_invitations").insert({
+    const { error: invErr } = await admin.from("organization_invitations").insert({
       organization_id: organizationId,
       email,
       role,
@@ -240,7 +246,7 @@ serve(async (req) => {
   }
 
   if (action === "pending_invites") {
-    const { data: invs, error } = await userClient
+    const { data: invs, error } = await admin
       .from("organization_invitations")
       .select("id, email, role, expires_at, created_at")
       .eq("organization_id", organizationId)
@@ -253,7 +259,7 @@ serve(async (req) => {
   if (action === "revoke_invite") {
     const inviteId = String(payload.inviteId || "").trim();
     if (!inviteId) return json(req, 400, { error: "inviteId required" });
-    const { error } = await userClient
+    const { error } = await admin
       .from("organization_invitations")
       .delete()
       .eq("id", inviteId)

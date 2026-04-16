@@ -11661,6 +11661,13 @@ var incomePowerState = {
 
   function wireTeamPage() {
     var teamWired = false;
+    function buildInviteShareUrl(result) {
+      var token = result && result.token ? String(result.token) : '';
+      if (token) {
+        return (window.location.origin || '') + '/?invite=' + encodeURIComponent(token);
+      }
+      return result && result.inviteUrl ? String(result.inviteUrl) : '';
+    }
     function roleLabel(r) {
       if (r === 'member') return 'Employee';
       if (r === 'viewer') return 'Viewer';
@@ -11849,8 +11856,9 @@ var incomePowerState = {
               return;
             }
             if (resEl) {
+              var shareUrl = buildInviteShareUrl(r);
               resEl.style.display = 'block';
-              resEl.textContent = r.inviteUrl ? 'Share this link: ' + r.inviteUrl : 'Invite created.';
+              resEl.textContent = shareUrl ? 'Share this link: ' + shareUrl : 'Invite created.';
             }
             if (emEl) emEl.value = '';
             await refreshTeamPage();
@@ -11890,17 +11898,30 @@ var incomePowerState = {
         });
         tbody.addEventListener('click', async function (ev) {
           var t = ev.target;
-          if (!t || !t.classList) return;
-          if (t.classList.contains('team-remove-btn')) {
-            var uid = t.getAttribute('data-user-id');
-            if (!uid || !confirm('Remove this person from the workspace?')) return;
-            var r = await invokeTeam({ action: 'remove', userId: uid });
-            if (r.error) {
-              alert(r.error);
-              return;
-            }
-            await refreshTeamPage();
+          if (!t || !t.closest) return;
+          var removeBtn = t.closest('.team-remove-btn');
+          if (!removeBtn) return;
+          var uid = removeBtn.getAttribute('data-user-id');
+          if (!uid) return;
+          if (
+            !confirm(
+              'Are you sure you want to remove this person from the workspace? They will lose access immediately.'
+            )
+          ) {
+            return;
           }
+          var r = await invokeTeam({ action: 'remove', userId: uid });
+          if (r.error) {
+            alert(r.error);
+            await refreshTeamPage();
+            return;
+          }
+          if (r.ok === false) {
+            alert(r.message || 'Could not remove this member.');
+            await refreshTeamPage();
+            return;
+          }
+          await refreshTeamPage();
         });
         var pendingHost = document.getElementById('team-pending-invites-body');
         if (pendingHost) {

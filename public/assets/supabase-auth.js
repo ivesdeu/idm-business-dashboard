@@ -45,7 +45,7 @@
    * Ceilings for org / onboarding resolution (not session read — that is driven by INITIAL_SESSION).
    * These are UX timeouts only; the auth session itself has no artificial cap.
    */
-  var ORG_RESOLVE_MS = 4000;
+  var ORG_RESOLVE_MS = 8000;
   var ONBOARDING_GATE_MS = 5000;
 
   function withTimeout(promise, ms, errMsg) {
@@ -336,12 +336,15 @@
           .eq('user_id', user.id)
           .maybeSingle();
       });
-      if (memRes.error || !memRes.data) {
+      if (memRes.error) {
+        console.error('organization_members membership check failed', memRes.error);
+        gateErr('Could not verify workspace membership. ' + String(memRes.error.message || memRes.error));
+        clearOrgContext();
+        return { ok: false };
+      }
+      if (!memRes.data) {
         gateErr('You do not have access to this workspace.');
         clearOrgContext();
-        try {
-          await supabase.auth.signOut();
-        } catch (_) {}
         return { ok: false };
       }
       setOrgContext(org.id, org.slug || slug, memRes.data.role);
@@ -700,6 +703,7 @@
   }
 
   function showLogin() {
+    clearStableAppUserMarker();
     var loading = $('auth-loading');
     var shell = $('auth-login-shell');
     var app = $('app-shell');
@@ -710,6 +714,72 @@
   }
 
   window.__dashboardShowLogin = showLogin;
+
+  var authRecoveryMode = false;
+  function setAuthRecoveryMode(on) {
+    authRecoveryMode = !!on;
+    var heading = document.querySelector('#auth-login-shell .pt');
+    var subtitle = document.querySelector('#auth-login-shell p');
+    var signin = $('gate-signin');
+    var signup = $('gate-signup');
+    var github = $('gate-github');
+    var forgot = $('gate-forgot-password');
+    var confirmWrap = $('gate-confirm-wrap');
+    var errorBox = $('gate-auth-error');
+    if (heading) heading.textContent = authRecoveryMode ? 'Reset password' : 'Sign in';
+    if (subtitle) {
+      subtitle.textContent = authRecoveryMode
+        ? 'Set a new password for your account.'
+        : 'Sign in to use the dashboard.';
+    }
+    if (signin) signin.textContent = authRecoveryMode ? 'Update password' : 'Sign in';
+    if (signup) signup.style.display = authRecoveryMode ? 'none' : '';
+    if (github) github.style.display = authRecoveryMode ? 'none' : '';
+    if (forgot) forgot.style.display = authRecoveryMode ? 'none' : '';
+    if (confirmWrap) confirmWrap.style.display = authRecoveryMode ? '' : 'none';
+    if (errorBox && authRecoveryMode && !errorBox.textContent) {
+      errorBox.textContent = 'Enter and confirm your new password.';
+    }
+  }
+
+  /**
+   * GoTrue often emits SIGNED_IN again on tab focus (visibility) even when nothing changed.
+   * `window.currentUser` can be missing or stale vs `session.user`, so we also remember the
+   * last user id we successfully showed in #app-shell and skip the loading gate when it matches.
+   */
+  var lastStableAppUserId = null;
+
+  function clearStableAppUserMarker() {
+    lastStableAppUserId = null;
+  }
+
+  function markStableAppUser(user) {
+    if (user && user.id != null && String(user.id) !== '') {
+      lastStableAppUserId = String(user.id);
+    } else {
+      lastStableAppUserId = null;
+    }
+  }
+
+  function shouldSkipSessionReflow(session) {
+    if (!session || !session.user || session.user.id == null) return false;
+    var sid = String(session.user.id);
+    var app = $('app-shell');
+    if (!app || !app.classList.contains('on')) return false;
+    if (lastStableAppUserId && lastStableAppUserId === sid) return true;
+    var cu = window.currentUser && window.currentUser.id != null ? String(window.currentUser.id) : '';
+    return !!cu && cu === sid;
+  }
+
+  function shouldSkipSessionReflowForUser(user) {
+    if (!user || user.id == null) return false;
+    return shouldSkipSessionReflow({ user: user });
+  }
+
+  function isAppVisible() {
+    var app = $('app-shell');
+    return !!(app && app.classList && app.classList.contains('on'));
+  }
 
   /** In-flight session resolution so bootstrap + INITIAL_SESSION do not run two flows in parallel. */
   var sessionFlowPromise = null;
@@ -725,6 +795,10 @@
       showLogin();
       return;
     }
+    if (shouldSkipSessionReflowForUser(user)) {
+      setCurrentUser(user);
+      return;
+    }
     if (sessionFlowPromise) {
       return sessionFlowPromise;
     }
@@ -734,6 +808,10 @@
         setCurrentUser(user);
         var ctx = await resolveOrgContextWithRetry(user, authSession);
         if (!ctx || !ctx.ok) {
+          if (isAppVisible()) {
+            setCurrentUser(user);
+            return;
+          }
           setCurrentUser(null);
           showLogin();
           return;
@@ -746,6 +824,10 @@
         );
       } catch (err) {
         console.error('runAuthSessionFlow', err);
+        if (isAppVisible()) {
+          setCurrentUser(user);
+          return;
+        }
         setCurrentUser(null);
         clearOrgContext();
         var ge = $('gate-auth-error');
@@ -769,6 +851,7 @@
     if (loading) loading.style.display = 'none';
     if (shell) shell.style.display = 'none';
     if (app) app.classList.add('on');
+    markStableAppUser(demoUser);
     var nameEl = $('user-name');
     var roleEl = $('user-role');
     var avatarEl = $('user-avatar');
@@ -790,6 +873,7 @@
     if (loading) loading.style.display = 'none';
     if (shell) shell.style.display = 'none';
     if (app) app.classList.add('on');
+    markStableAppUser(user);
 
     if (user) {
       var nameEl = document.getElementById('user-name');
@@ -821,15 +905,27 @@
 
   supabase.auth.onAuthStateChange(async function (event, session) {
     if (event === 'SIGNED_OUT') {
+      setAuthRecoveryMode(false);
       clearOrgContext();
       setCurrentUser(null);
       showLogin();
       return;
     }
 
+    if (event === 'PASSWORD_RECOVERY') {
+      showLogin();
+      setAuthRecoveryMode(true);
+      return;
+    }
+
     if (event === 'INITIAL_SESSION') {
       if (!session || !session.user) {
+        setAuthRecoveryMode(false);
         showLogin();
+        return;
+      }
+      if (shouldSkipSessionReflow(session)) {
+        setCurrentUser(session.user);
         return;
       }
       try {
@@ -842,6 +938,7 @@
     }
 
     if (!session || !session.user) {
+      setAuthRecoveryMode(false);
       clearOrgContext();
       setCurrentUser(null);
       showLogin();
@@ -857,6 +954,12 @@
     if (event === 'TOKEN_REFRESHED') {
       setCurrentUser(session.user);
       showApp(session.user);
+      return;
+    }
+
+    /* Tab focus: GoTrue may emit SIGNED_IN / INITIAL_SESSION again without a real auth change. */
+    if (shouldSkipSessionReflow(session)) {
+      setCurrentUser(session.user);
       return;
     }
 
@@ -880,24 +983,59 @@
 
     function setSignupMode(on) {
       signupMode = !!on;
-      if (confirmWrap) confirmWrap.style.display = signupMode ? '' : 'none';
+      if (confirmWrap) confirmWrap.style.display = signupMode || authRecoveryMode ? '' : 'none';
       if (!signupMode && confirmInput) confirmInput.value = '';
     }
 
     var btnSignin = $('gate-signin');
     var btnSignup = $('gate-signup');
     var btnGithub = $('gate-github');
+    var btnForgot = $('gate-forgot-password');
 
     if (btnSignin) {
       btnSignin.addEventListener('click', async function () {
-        setSignupMode(false);
+        if (!authRecoveryMode) setSignupMode(false);
         var email = emailInput && emailInput.value.trim();
         var password = passwordInput && passwordInput.value;
+        setError('');
+        if (authRecoveryMode) {
+          var confirmPasswordRecovery = confirmInput && confirmInput.value;
+          if (!password) {
+            setError('New password is required.');
+            return;
+          }
+          if (!confirmPasswordRecovery) {
+            setError('Please confirm your new password.');
+            return;
+          }
+          if (password !== confirmPasswordRecovery) {
+            setError('Passwords do not match.');
+            return;
+          }
+          try {
+            var upd = await supabase.auth.updateUser({ password: password });
+            if (upd.error) {
+              setError(upd.error.message || 'Could not update password.');
+              return;
+            }
+            setAuthRecoveryMode(false);
+            if (confirmInput) confirmInput.value = '';
+            if (passwordInput) passwordInput.value = '';
+            setError('Password updated. You can sign in with your new password.');
+            try {
+              await supabase.auth.signOut();
+            } catch (_) {}
+            showLogin();
+          } catch (errRecovery) {
+            console.error('password update error', errRecovery);
+            setError('Unexpected error updating password.');
+          }
+          return;
+        }
         if (!email || !password) {
           setError('Email and password are required.');
           return;
         }
-        setError('');
         try {
           var res = await supabase.auth.signInWithPassword({ email: email, password: password });
           if (res.error) {
@@ -952,6 +1090,30 @@
         } catch (err) {
           console.error('signUp error', err);
           setError('Unexpected error signing up.');
+        }
+      });
+    }
+
+    if (btnForgot) {
+      btnForgot.addEventListener('click', async function () {
+        setSignupMode(false);
+        var email = emailInput && emailInput.value ? emailInput.value.trim() : '';
+        if (!email) {
+          setError('Enter your email, then click Forgot password again.');
+          return;
+        }
+        setError('');
+        try {
+          var redirectTo = window.location.origin + (window.location.pathname || '/');
+          var reset = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectTo });
+          if (reset.error) {
+            setError(reset.error.message || 'Could not send reset email.');
+            return;
+          }
+          setError('Password reset email sent. Open the link in your email to set a new password.');
+        } catch (errForgot) {
+          console.error('reset password error', errForgot);
+          setError('Unexpected error sending reset email.');
         }
       });
     }
