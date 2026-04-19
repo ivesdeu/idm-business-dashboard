@@ -536,6 +536,35 @@
     }
   }
 
+  /**
+   * Must exist before financial-core consumeOAuthReturnFromUrl (DOMContentLoaded can run
+   * before runAuthSessionFlow wires the onboarding modal).
+   */
+  window.bizdashOnboardingOAuthDone = function (ok /*, provider */) {
+    var bar = $('app-invite-flash');
+    if (bar) {
+      bar.textContent = ok
+        ? 'Account connected. Continue when you are ready.'
+        : 'Connection was not completed. You can try again or skip.';
+      bar.style.display = 'block';
+      window.setTimeout(function () {
+        bar.style.display = 'none';
+      }, 10000);
+    }
+    var oid = window.currentOrganizationId;
+    if (oid) {
+      void rpcSaveOnboardingProgress(oid, { currentStep: 4, oauthConnected: !!ok });
+    }
+    try {
+      var m = $('onboardModal');
+      var shell = $('app-shell');
+      if (m && !m.classList.contains('on') && shell && !shell.classList.contains('on')) {
+        showOnboardModal();
+      }
+    } catch (_) {}
+    showOnboardStep(4);
+  };
+
   function setOnboardAvatarPreviewLetter(letter) {
     var el = $('ob-avatar-preview');
     if (!el) return;
@@ -705,6 +734,14 @@
     var r = await retryOnAuthLock(function () {
       return supabase.from('organizations').select('name,slug,onboarding').eq('id', orgId).maybeSingle();
     });
+    if (r.error) {
+      var msg = String((r.error && (r.error.message || r.error.details)) || r.error || '');
+      if (/onboarding|column|schema cache/i.test(msg)) {
+        r = await retryOnAuthLock(function () {
+          return supabase.from('organizations').select('name,slug').eq('id', orgId).maybeSingle();
+        });
+      }
+    }
     var ob = {};
     if (r.data && r.data.onboarding != null) {
       if (typeof r.data.onboarding === 'string') {
@@ -1010,29 +1047,6 @@
       }
       window.location.href = String(j.url);
     }
-
-    window.bizdashOnboardingOAuthDone = function (ok /*, provider */) {
-      var bar = $('app-invite-flash');
-      if (bar) {
-        bar.textContent = ok ? 'Account connected. Continue when you are ready.' : 'Connection was not completed. You can try again or skip.';
-        bar.style.display = 'block';
-        window.setTimeout(function () {
-          bar.style.display = 'none';
-        }, 10000);
-      }
-      var oid = window.currentOrganizationId;
-      if (oid) {
-        rpcSaveOnboardingProgress(oid, { currentStep: 4, oauthConnected: !!ok }).catch(function () {});
-      }
-      try {
-        var m = $('onboardModal');
-        var shell = $('app-shell');
-        if (m && !m.classList.contains('on') && shell && !shell.classList.contains('on')) {
-          showOnboardModal();
-        }
-      } catch (_) {}
-      showOnboardStep(4);
-    };
 
     var back2 = $('onboard-step2-back');
     var back2t = $('onboard-step2-back-top');

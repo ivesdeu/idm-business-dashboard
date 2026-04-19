@@ -5410,10 +5410,9 @@ var incomePowerState = {
         try {
           sessionStorage.setItem('bizdash_post_oauth_onboard_resume', '1');
         } catch (_) {}
-      }
-
-      if (fromOnboarding && typeof window.bizdashOnboardingOAuthDone === 'function') {
-        window.bizdashOnboardingOAuthDone(oauth === 'ok', provider);
+        if (typeof window.bizdashOnboardingOAuthDone === 'function') {
+          window.bizdashOnboardingOAuthDone(oauth === 'ok', provider);
+        }
         return;
       }
 
