@@ -17,6 +17,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS organizations_slug_key ON public.organizations
 ALTER TABLE public.organizations
   ADD COLUMN IF NOT EXISTS onboarding jsonb NOT NULL DEFAULT '{}'::jsonb;
 
+ALTER TABLE public.organizations
+  ADD COLUMN IF NOT EXISTS onboarding_completed boolean NOT NULL DEFAULT true;
+
 CREATE TABLE IF NOT EXISTS public.organization_members (
   organization_id uuid NOT NULL REFERENCES public.organizations (id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
@@ -445,8 +448,8 @@ BEGIN
   WHILE EXISTS (SELECT 1 FROM public.organizations o WHERE o.slug = s) LOOP
     s := 'org-' || substr(md5(random()::text || NEW.id::text), 1, 12);
   END LOOP;
-  INSERT INTO public.organizations (id, slug, name, created_at, updated_at)
-  VALUES (new_org, s, split_part(COALESCE(NEW.email, 'user'), '@', 1), now(), now());
+  INSERT INTO public.organizations (id, slug, name, created_at, updated_at, onboarding_completed)
+  VALUES (new_org, s, split_part(COALESCE(NEW.email, 'user'), '@', 1), now(), now(), false);
   INSERT INTO public.organization_members (organization_id, user_id, role, created_at)
   VALUES (new_org, NEW.id, 'owner', now());
   RETURN NEW;

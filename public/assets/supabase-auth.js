@@ -294,8 +294,11 @@
 
   /** When RPC returns onboarding_completed, avoid a second round-trip. */
   function onboardingModalNeededFromRow(row) {
-    if (!row || typeof row.onboarding_completed !== 'boolean') return null;
-    return row.onboarding_completed === false;
+    if (!row || row.onboarding_completed === undefined || row.onboarding_completed === null) return null;
+    var v = row.onboarding_completed;
+    if (v === false || v === 'false' || v === 0) return true;
+    if (v === true || v === 'true' || v === 1) return false;
+    return null;
   }
 
   /**
