@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Logs / OS
+*.log
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Vite
+.vite/
+*.local
+
+# Local nested git / tooling artifacts
+runway.git/
