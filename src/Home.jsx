@@ -1008,6 +1008,14 @@ export default function Home() {
                   <li className="flex gap-3">
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                     <span>
+                      Anyone who participates as an approved beta tester receives one year of
+                      Enterprise access free after official launch—a $1,500 value—as thanks for
+                      helping us refine the product before general availability.
+                    </span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                    <span>
                       No credit card required. When we introduce paid plans, we&apos;ll give you clear
                       notice and time to decide before anything changes on your bill.
                     </span>
@@ -1031,6 +1039,10 @@ export default function Home() {
                     Active
                   </span>
                 </div>
+                <p className="mt-6 rounded-xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm leading-relaxed text-ink">
+                  <span className="font-semibold">After launch:</span> Beta testers get one year of
+                  Enterprise access free ($1,500 value).
+                </p>
                 <ul className="mt-8 space-y-3 border-t border-black/[0.06] pt-8 text-sm font-light leading-relaxed text-muted">
                   <li className="flex gap-3">
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
