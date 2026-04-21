@@ -1,0 +1,25 @@
+/* Scheduling React island — Tailwind layers only; tokens from app shell (#page-scheduling). */
+@tailwind components;
+@tailwind utilities;
+
+#page-scheduling #scheduling-react-root {
+  --sched-surface: var(--bg2, #f8fafc);
+  --sched-text: var(--text, #0f172a);
+  --sched-muted: var(--text3, #64748b);
+  --sched-border: var(--border, #e2e8f0);
+  --sched-accent: var(--coral, #e8501a);
+}
+
+@keyframes scheduling-connect-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--coral, #e8501a) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--coral, #e8501a) 12%, transparent);
+  }
+}
+
+.scheduling-connect-pulse {
+  animation: scheduling-connect-pulse 2.4s ease-in-out infinite;
+}

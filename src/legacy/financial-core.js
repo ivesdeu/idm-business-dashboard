@@ -18663,6 +18663,7 @@ var incomePowerState = {
           dashboard: 'Business Performance',
           customers: 'Customers',
           tasks: 'Tasks',
+          scheduling: 'Scheduling',
           emails: 'Emails',
           revenue: 'Income',
           expenses: 'Expenses',
