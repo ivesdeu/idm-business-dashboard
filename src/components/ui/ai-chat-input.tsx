@@ -22,8 +22,7 @@ type Props = {
 };
 
 /**
- * New Advisor composer. Styled with Tailwind, scoped to #advisor-react-composer-root
- * in tailwind.config.cjs (important) so the rest of the app is untouched.
+ * New Advisor composer. Tailwind is limited to `advisor-island.css` (preflight off).
  * Wired to window.bizDashAdvisorGetComposerApi() from legacy dashboard-assistant.
  */
 function AIChatInput({ composerApi }: Props) {
@@ -106,13 +105,13 @@ function AIChatInput({ composerApi }: Props) {
 
   const containerVariants = {
     collapsed: {
-      height: 68,
-      boxShadow: '0 2px 8px 0 rgba(0,0,0,0.08)',
+      minHeight: 68,
+      boxShadow: '0 2px 12px 0 rgba(15, 23, 42, 0.08)',
       transition: { type: 'spring' as const, stiffness: 120, damping: 18 },
     },
     expanded: {
-      height: 128,
-      boxShadow: '0 8px 32px 0 rgba(0,0,0,0.12)',
+      minHeight: 130,
+      boxShadow: '0 10px 36px 0 rgba(15, 23, 42, 0.12)',
       transition: { type: 'spring' as const, stiffness: 120, damping: 18 },
     },
   };
@@ -146,21 +145,24 @@ function AIChatInput({ composerApi }: Props) {
   };
 
   return (
-    <div className="w-full text-[var(--advisor-text)]" data-advisor-composer>
+    <div className="w-full max-w-3xl mx-auto text-[var(--advisor-text)]" data-advisor-composer style={{ minHeight: 72 }}>
       <motion.div
         ref={wrapperRef}
-        className="w-full max-w-3xl mx-auto"
+        className="w-full"
         variants={containerVariants}
         animate={isActive || inputValue ? 'expanded' : 'collapsed'}
-        initial="collapsed"
+        initial={false}
         onClick={handleActivate}
-        style={{ overflow: 'hidden', borderRadius: 32, background: 'var(--advisor-surface)' }}
+        style={{
+          overflow: 'hidden',
+          borderRadius: 28,
+          background: 'var(--advisor-surface)',
+          border: '1px solid var(--advisor-border)',
+          boxSizing: 'border-box',
+          minHeight: 68,
+        }}
       >
-        <form
-          className="flex flex-col h-full w-full"
-          onSubmit={onSubmit}
-          style={{ border: '1px solid var(--advisor-border)' }}
-        >
+        <form className="flex flex-col h-full w-full" onSubmit={onSubmit}>
           <div className="flex items-center gap-1 sm:gap-2 p-2 sm:p-3 w-full min-w-0 bg-[var(--advisor-surface)]">
             <button
               className="p-2.5 sm:p-3 rounded-full transition shrink-0 hover:opacity-90"

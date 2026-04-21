@@ -242,6 +242,9 @@
     if (typeof window.refreshSidebarWorkspaceChrome === 'function') {
       window.refreshSidebarWorkspaceChrome();
     }
+    if (typeof window.bizdashUpdateWorkspaceIconAdminUi === 'function') {
+      window.bizdashUpdateWorkspaceIconAdminUi();
+    }
     // Column prefs (and similar) key localStorage by user+org. Auth flow sets the user before
     // org resolution, so prefs were loaded under :noorg:; reload once the workspace id exists.
     if (orgId && typeof window.bizDashApplyUserUiPrefsForOrg === 'function') {

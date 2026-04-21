@@ -8,6 +8,10 @@
   var supabase = window.supabaseClient || null;
   var currentUser = window.currentUser || null;
 
+  var __bizdashTzListCache = null;
+  var __bizdashTzSearchRecords = null;
+  var __bizdashTzDN = undefined;
+
   var STORAGE_KEY = 'transactions:v1';
   // Ids the user deleted locally; applied after remote merge so a row does not reappear in the ledger (expenses + transaction log) if the server delete lags or fails once.
   var TX_DELETED_IDS_KEY = 'tx-deleted-ids:v1';
@@ -219,6 +223,8 @@
     return !!(u && u.id === DEMO_DASHBOARD_USER_ID);
   }
   window.DEMO_DASHBOARD_USER_ID = DEMO_DASHBOARD_USER_ID;
+  /** Used by React islands (e.g. Scheduling): mock/sample data must never key off anything else. */
+  window.bizDashIsDemoUser = isDemoDashboardUser;
 
   /** Active workspace (set by supabase-auth.js from URL slug + membership). */
   function getCurrentOrgId() {
@@ -2550,15 +2556,18 @@
     if (auto) auto.checked = !!prefs.timezoneAuto;
     var tz = gid('pref-timezone');
     if (tz) {
-      if (prefs.timezone && !Array.prototype.some.call(tz.options || [], function (o) { return o.value === prefs.timezone; })) {
-        var op = document.createElement('option');
-        op.value = prefs.timezone;
-        op.textContent = prefs.timezone;
-        tz.appendChild(op);
-      }
-      tz.value = prefs.timezone;
-      tz.disabled = !!prefs.timezoneAuto;
+      setTimezoneComboboxFromHiddenId('pref-timezone', prefs.timezone);
+      setPrefTimezoneComboboxInteractive(!prefs.timezoneAuto);
     }
+    syncProfileWeekSelectFromMainCheckbox();
+  }
+
+  /** Keep Profile "Start week on" aligned with General → Calendar toggle (same settings modal). */
+  function syncProfileWeekSelectFromMainCheckbox() {
+    var chk = document.getElementById('pref-week-starts-mon');
+    var sel = document.getElementById('profile-pref-week-start');
+    if (!chk || !sel) return;
+    sel.value = chk.checked ? 'monday' : 'sunday';
   }
 
   function applyPreferencesRuntime(prefs) {
@@ -2604,8 +2613,7 @@
     if (prefs.language) {
       root.lang = prefs.language;
     }
-    var tzEl = document.getElementById('pref-timezone');
-    if (tzEl) tzEl.disabled = !!prefs.timezoneAuto;
+    setPrefTimezoneComboboxInteractive(!prefs.timezoneAuto);
   }
 
   function getFallbackTimeZones() {
@@ -2634,10 +2642,40 @@
     ];
   }
 
-  function ensurePreferenceTimezoneOptionsBuilt() {
-    var sel = document.getElementById('pref-timezone');
-    if (!sel || sel.getAttribute('data-tz-built') === '1') return;
-    sel.setAttribute('data-tz-built', '1');
+  function getTzDisplayNamesCached() {
+    if (__bizdashTzDN !== undefined) return __bizdashTzDN === false ? null : __bizdashTzDN;
+    __bizdashTzDN = false;
+    try {
+      if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function') {
+        __bizdashTzDN = new Intl.DisplayNames(navigator.language || 'en-US', { type: 'timeZone' });
+      }
+    } catch (_) {}
+    return __bizdashTzDN === false ? null : __bizdashTzDN;
+  }
+
+  function tzHaystackForId(id, dn) {
+    var disp = '';
+    if (dn && typeof dn.of === 'function') {
+      try {
+        disp = String(dn.of(id) || '');
+      } catch (_) {}
+    }
+    return (id + ' ' + disp).toLowerCase().replace(/\//g, ' ').replace(/_/g, ' ');
+  }
+
+  function tzSubtitleFor(id) {
+    var dn = getTzDisplayNamesCached();
+    if (!dn || typeof dn.of !== 'function') return '';
+    try {
+      var s = String(dn.of(id) || '').trim();
+      return s && s !== id ? s : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function getPreferenceTimeZoneList() {
+    if (__bizdashTzListCache && __bizdashTzListCache.length) return __bizdashTzListCache;
     var list = [];
     try {
       if (typeof Intl !== 'undefined' && typeof Intl.supportedValuesOf === 'function') {
@@ -2645,15 +2683,235 @@
       }
     } catch (_) {}
     if (!list || !list.length) list = getFallbackTimeZones();
-    var frag = document.createDocumentFragment();
-    list.forEach(function (z) {
-      if (!z) return;
-      var op = document.createElement('option');
-      op.value = z;
-      op.textContent = z;
-      frag.appendChild(op);
+    __bizdashTzListCache = list;
+    var dn = getTzDisplayNamesCached();
+    __bizdashTzSearchRecords = list.map(function (id) {
+      return { id: id, haystack: tzHaystackForId(id, dn) };
     });
-    sel.appendChild(frag);
+    return __bizdashTzListCache;
+  }
+
+  function ensureTimeZoneInList(iana) {
+    if (!iana || typeof iana !== 'string') return;
+    var z = String(iana).trim();
+    if (!z) return;
+    getPreferenceTimeZoneList();
+    for (var i = 0; i < __bizdashTzListCache.length; i++) {
+      if (__bizdashTzListCache[i] === z) return;
+    }
+    __bizdashTzListCache.push(z);
+    __bizdashTzSearchRecords.push({ id: z, haystack: tzHaystackForId(z, getTzDisplayNamesCached()) });
+  }
+
+  function setTimezoneComboboxFromHiddenId(hiddenId, iana) {
+    ensureTimeZoneInList(iana);
+    var hid = document.getElementById(hiddenId);
+    if (!hid) return;
+    hid.value = String(iana || '').trim();
+    var wrap = hid.closest ? hid.closest('.tz-combobox') : null;
+    var inp = wrap ? wrap.querySelector('.tz-combobox-input') : null;
+    if (inp) inp.value = hid.value;
+  }
+
+  function setPrefTimezoneComboboxInteractive(enabled) {
+    var hid = document.getElementById('pref-timezone');
+    var inp = document.getElementById('pref-timezone-input');
+    if (hid) hid.disabled = !enabled;
+    if (inp) inp.disabled = !enabled;
+  }
+
+  function recordsMatchingTzQuery(rawQuery, maxResults) {
+    getPreferenceTimeZoneList();
+    var MAX = typeof maxResults === 'number' ? maxResults : 80;
+    var query = String(rawQuery || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!query) return __bizdashTzSearchRecords.slice(0, MAX);
+    var out = [];
+    for (var i = 0; i < __bizdashTzSearchRecords.length && out.length < MAX; i++) {
+      var r = __bizdashTzSearchRecords[i];
+      if (r.haystack.indexOf(query) !== -1) out.push(r);
+    }
+    return out;
+  }
+
+  function initTimezoneComboboxIfNeeded(wrap) {
+    if (!wrap || wrap.getAttribute('data-tz-combo-wired') === '1') return;
+    wrap.setAttribute('data-tz-combo-wired', '1');
+    var hidden = wrap.querySelector('input[type="hidden"]');
+    var input = wrap.querySelector('.tz-combobox-input');
+    var list = wrap.querySelector('.tz-combobox-list');
+    if (!hidden || !input || !list) return;
+
+    var filtered = [];
+    var activeIdx = -1;
+
+    function renderOptions() {
+      list.innerHTML = '';
+      filtered.forEach(function (rec, idx) {
+        var li = document.createElement('li');
+        li.className = 'tz-combobox-option' + (idx === activeIdx ? ' is-active' : '');
+        li.setAttribute('role', 'option');
+        li.id = list.id + '-opt-' + idx;
+        li.setAttribute('aria-selected', idx === activeIdx ? 'true' : 'false');
+        li.setAttribute('data-iana', rec.id);
+        li.appendChild(document.createTextNode(rec.id));
+        var sub = tzSubtitleFor(rec.id);
+        if (sub) {
+          var span = document.createElement('span');
+          span.className = 'tz-combobox-meta';
+          span.textContent = sub;
+          li.appendChild(span);
+        }
+        li.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          commit(rec.id);
+        });
+        list.appendChild(li);
+      });
+      var optsAll = list.querySelectorAll('.tz-combobox-option');
+      if (activeIdx >= 0 && optsAll[activeIdx]) {
+        input.setAttribute('aria-activedescendant', optsAll[activeIdx].id);
+      } else {
+        input.removeAttribute('aria-activedescendant');
+      }
+    }
+
+    function openList() {
+      list.classList.add('on');
+      list.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeList() {
+      activeIdx = -1;
+      list.classList.remove('on');
+      list.hidden = true;
+      list.innerHTML = '';
+      filtered = [];
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
+
+    function commit(iana) {
+      if (!iana || !isValidTimeZone(iana)) return;
+      ensureTimeZoneInList(iana);
+      hidden.value = iana;
+      input.value = iana;
+      closeList();
+      try {
+        hidden.dispatchEvent(new Event('change', { bubbles: true }));
+      } catch (_) {}
+    }
+
+    function refreshFilterFromInput() {
+      filtered = recordsMatchingTzQuery(input.value);
+      activeIdx = filtered.length ? 0 : -1;
+      renderOptions();
+      openList();
+    }
+
+    function showInitialList() {
+      filtered = recordsMatchingTzQuery('');
+      activeIdx = filtered.length ? 0 : -1;
+      renderOptions();
+      openList();
+    }
+
+    input.addEventListener('focus', function () {
+      try {
+        input.select();
+      } catch (_) {}
+      showInitialList();
+    });
+
+    input.addEventListener('input', function () {
+      refreshFilterFromInput();
+    });
+
+    input.addEventListener('keydown', function (e) {
+      if (input.disabled) return;
+      var k = e.key;
+      if (k === 'Escape') {
+        if (!list.hidden && list.classList.contains('on')) {
+          e.preventDefault();
+          closeList();
+          input.value = hidden.value || '';
+        }
+        return;
+      }
+      if (k === 'ArrowDown') {
+        e.preventDefault();
+        if (list.hidden || !list.classList.contains('on')) {
+          refreshFilterFromInput();
+        } else if (filtered.length) {
+          activeIdx = Math.min(activeIdx + 1, filtered.length - 1);
+          renderOptions();
+          var el = list.querySelector('.tz-combobox-option.is-active');
+          if (el) el.scrollIntoView({ block: 'nearest' });
+        }
+        return;
+      }
+      if (k === 'ArrowUp') {
+        e.preventDefault();
+        if (list.hidden || !list.classList.contains('on')) {
+          refreshFilterFromInput();
+        } else if (filtered.length) {
+          activeIdx = Math.max(activeIdx - 1, 0);
+          renderOptions();
+          var elUp = list.querySelector('.tz-combobox-option.is-active');
+          if (elUp) elUp.scrollIntoView({ block: 'nearest' });
+        }
+        return;
+      }
+      if (k === 'Enter') {
+        if (!list.hidden && list.classList.contains('on')) {
+          if (activeIdx >= 0 && filtered[activeIdx]) {
+            e.preventDefault();
+            commit(filtered[activeIdx].id);
+          } else if (filtered.length === 1) {
+            e.preventDefault();
+            commit(filtered[0].id);
+          }
+        }
+        return;
+      }
+      if (k === 'Tab') {
+        closeList();
+      }
+    });
+
+    input.addEventListener('blur', function () {
+      window.setTimeout(function () {
+        if (wrap.contains(document.activeElement)) return;
+        closeList();
+        var v = String(input.value || '').trim();
+        if (v && isValidTimeZone(v)) {
+          if (v !== hidden.value) commit(v);
+          else input.value = hidden.value;
+        } else {
+          input.value = hidden.value || '';
+        }
+      }, 200);
+    });
+
+    document.addEventListener('mousedown', function onDoc(e) {
+      if (!wrap.contains(e.target)) closeList();
+    });
+
+    if (hidden.value) {
+      input.value = hidden.value;
+    }
+  }
+
+  function initAllTimezoneComboboxes() {
+    var a = document.getElementById('pref-timezone-wrap');
+    var b = document.getElementById('profile-pref-timezone-wrap');
+    if (a) initTimezoneComboboxIfNeeded(a);
+    if (b) initTimezoneComboboxIfNeeded(b);
+  }
+
+  function ensurePreferenceTimezoneOptionsBuilt() {
+    getPreferenceTimeZoneList();
+    initAllTimezoneComboboxes();
   }
 
   // ---------- App settings (custom project status labels) ----------
@@ -2768,6 +3026,15 @@
     };
   }
 
+  function syncWorkspacePrefsCacheFromDom() {
+    try {
+      window.bizdashWorkspacePrefs = mergeWorkspacePrefs(
+        window.bizdashWorkspacePrefs || defaultWorkspacePrefs(),
+        readWorkspacePrefsFromDom()
+      );
+    } catch (_) {}
+  }
+
   function applyWorkspacePrefsToDom(ws) {
     ws = mergeWorkspacePrefs({}, ws || {});
     window.bizdashWorkspacePrefs = ws;
@@ -2833,11 +3100,13 @@
       imgI.width = 22;
       imgI.height = 22;
       prev.appendChild(imgI);
-    } else if (emo) {
+    } else     if (emo) {
       prev.textContent = emo.slice(0, 10);
     } else {
       prev.textContent = '🏢';
     }
+    syncWorkspacePrefsCacheFromDom();
+    void refreshWorkspaceSidebarMonogramFromPrefs();
   }
 
   async function hydrateWorkspaceSettingsFields() {
@@ -2865,8 +3134,25 @@
         (nm || 'this workspace') +
         ' as JSON.';
     }
+    updateWorkspaceIconAdminUi();
     if (typeof window.refreshSidebarWorkspaceChrome === 'function') window.refreshSidebarWorkspaceChrome();
   }
+
+  function updateWorkspaceIconAdminUi() {
+    var role = window.currentOrganizationRole || '';
+    var can = role === 'owner' || role === 'admin';
+    ['setting-ws-icon-hit', 'setting-ws-icon-emoji-btn', 'setting-ws-icon-clear'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.disabled = !can;
+      el.setAttribute('aria-disabled', can ? 'false' : 'true');
+    });
+    var fi = document.getElementById('setting-ws-icon-file');
+    if (fi) fi.disabled = !can;
+    var hint = document.getElementById('setting-ws-icon-role-hint');
+    if (hint) hint.hidden = !!can;
+  }
+  window.bizdashUpdateWorkspaceIconAdminUi = updateWorkspaceIconAdminUi;
 
   async function persistWorkspaceOrganizationName() {
     var el = document.getElementById('setting-ws-name');
@@ -3217,6 +3503,26 @@
       if (dash && typeof dash === 'object' && Object.prototype.hasOwnProperty.call(dash, 'preferences')) {
         dash = Object.assign({}, dash);
         delete dash.preferences;
+      }
+      var orgRole = window.currentOrganizationRole || '';
+      var canSetWorkspaceIcon = orgRole === 'owner' || orgRole === 'admin';
+      if (
+        includeDashboard &&
+        dash &&
+        dash.workspace &&
+        !canSetWorkspaceIcon &&
+        existingSettings &&
+        existingSettings.dashboard_settings &&
+        existingSettings.dashboard_settings.workspace &&
+        typeof existingSettings.dashboard_settings.workspace === 'object'
+      ) {
+        var ew = existingSettings.dashboard_settings.workspace;
+        dash = Object.assign({}, dash);
+        dash.workspace = Object.assign({}, dash.workspace, {
+          workspaceIconUrl: ew.workspaceIconUrl != null ? String(ew.workspaceIconUrl) : '',
+          workspaceIconEmoji: ew.workspaceIconEmoji != null ? String(ew.workspaceIconEmoji) : '',
+          workspaceIconIconify: ew.workspaceIconIconify != null ? String(ew.workspaceIconIconify) : '',
+        });
       }
       var result = await supabase.from('app_settings').upsert(
         {
@@ -5961,6 +6267,112 @@ var incomePowerState = {
     }).join('');
   }
 
+  /** Client-side sort for #expenses-table (headers use data-exp-sort in index.html). */
+  var expensesTableSort = { key: 'date', dir: 'desc' };
+
+  function expenseCategorySortLabel(cat) {
+    return {
+      lab: 'Labor',
+      sw: 'Software',
+      ads: 'Advertising',
+      oth: 'Other',
+    }[cat] || cat || '';
+  }
+
+  /** Defaults when switching columns: date/amount/recurring → desc; text columns → asc (A–Z). */
+  function defaultExpensesSortDir(key) {
+    if (key === 'date' || key === 'amount' || key === 'recurring') return 'desc';
+    return 'asc';
+  }
+
+  function expenseDateSortMs(tx) {
+    var d = parseYMD(tx.date);
+    return isNaN(d.getTime()) ? null : d.getTime();
+  }
+
+  function recurringExpenseSortRank(tx) {
+    if (tx.expenseRecurringLead) return 2;
+    if (tx.expenseRecurrenceInstance) return 1;
+    return 0;
+  }
+
+  function compareExpenseTxStable(a, b) {
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  }
+
+  function sortExpenseTransactions(txs, sort) {
+    var key = sort.key;
+    var dir = sort.dir;
+    var dirSign = dir === 'asc' ? 1 : -1;
+    var out = txs.slice();
+    out.sort(function (a, b) {
+      var cmp = 0;
+      if (key === 'date') {
+        var ma = expenseDateSortMs(a);
+        var mb = expenseDateSortMs(b);
+        if (ma === null && mb === null) cmp = 0;
+        else if (ma === null) cmp = 1;
+        else if (mb === null) cmp = -1;
+        else cmp = ma - mb;
+        if (cmp !== 0) return dirSign * cmp > 0 ? 1 : -1;
+        return compareExpenseTxStable(a, b);
+      }
+      if (key === 'amount') {
+        var na = Math.abs(Number(a.amount != null ? a.amount : 0));
+        var nb = Math.abs(Number(b.amount != null ? b.amount : 0));
+        cmp = na - nb;
+        if (cmp !== 0) return dirSign * cmp > 0 ? 1 : -1;
+        return compareExpenseTxStable(a, b);
+      }
+      if (key === 'recurring') {
+        cmp = recurringExpenseSortRank(a) - recurringExpenseSortRank(b);
+        if (cmp !== 0) return dirSign * cmp > 0 ? 1 : -1;
+        return compareExpenseTxStable(a, b);
+      }
+      var sa;
+      var sb;
+      if (key === 'title') {
+        sa = ((a.title || a.description || '')).trim();
+        sb = ((b.title || b.description || '')).trim();
+      } else if (key === 'category') {
+        sa = expenseCategorySortLabel(a.category);
+        sb = expenseCategorySortLabel(b.category);
+      } else if (key === 'vendor') {
+        sa = String(a.vendor || '').trim();
+        sb = String(b.vendor || '').trim();
+      } else if (key === 'client') {
+        sa = (clientCompanyNameById(a.clientId) || '').trim();
+        sb = (clientCompanyNameById(b.clientId) || '').trim();
+      } else {
+        return compareExpenseTxStable(a, b);
+      }
+      cmp = sa.localeCompare(sb, undefined, { sensitivity: 'base' });
+      if (cmp !== 0) return dirSign * cmp > 0 ? 1 : -1;
+      return compareExpenseTxStable(a, b);
+    });
+    return out;
+  }
+
+  function updateExpensesTableSortHeaders() {
+    var table = $('expenses-table');
+    if (!table) return;
+    var thead = table.querySelector('thead');
+    if (!thead) return;
+    var headers = thead.querySelectorAll('th[data-exp-sort]');
+    for (var i = 0; i < headers.length; i++) {
+      var th = headers[i];
+      var k = th.getAttribute('data-exp-sort');
+      var ind = th.querySelector('.exp-th-sort-ind');
+      if (k === expensesTableSort.key) {
+        th.setAttribute('aria-sort', expensesTableSort.dir === 'asc' ? 'ascending' : 'descending');
+        if (ind) ind.textContent = expensesTableSort.dir === 'asc' ? '↑' : '↓';
+      } else {
+        th.removeAttribute('aria-sort');
+        if (ind) ind.textContent = '';
+      }
+    }
+  }
+
   function renderExpensesTable(c) {
     var tbody = $('expenses-tbody');
     var empty = $('expenses-empty');
@@ -5975,10 +6387,13 @@ var incomePowerState = {
       tbody.innerHTML = '';
       if (empty) empty.style.display = 'block';
       if (table) table.style.display = 'none';
+      updateExpensesTableSortHeaders();
       return;
     }
     if (empty) empty.style.display = 'none';
     if (table) table.style.display = 'table';
+
+    expenseTxs = sortExpenseTransactions(expenseTxs, expensesTableSort);
 
     tbody.innerHTML = expenseTxs.map(function (tx) {
       var label = {
@@ -6004,6 +6419,7 @@ var incomePowerState = {
         '</td>' +
         '</tr>';
     }).join('');
+    updateExpensesTableSortHeaders();
   }
 
   function renderBudgetVsActual() {
@@ -7001,29 +7417,50 @@ var incomePowerState = {
 
     var saveBtn = document.getElementById('btn-save-settings');
     if (saveBtn) {
+      var saveLabelDefault = 'Save changes';
       saveBtn.addEventListener('click', async function () {
+        if (saveBtn.disabled) return;
+        saveBtn.classList.remove('is-saved');
+        saveBtn.classList.add('is-saving');
+        saveBtn.disabled = true;
+        saveBtn.setAttribute('aria-busy', 'true');
+        saveBtn.textContent = 'Saving…';
         var brandImg = document.getElementById('sb-brand-img');
         var lightUrl = brandImg && brandImg.getAttribute('data-logo-light') ? String(brandImg.getAttribute('data-logo-light')) : '';
         var darkUrl = brandImg && brandImg.getAttribute('data-logo-dark') ? String(brandImg.getAttribute('data-logo-dark')) : '';
         try {
-          var nextLight = await uploadBrandLogoInput('setting-logo-light', 'light');
-          var nextDark = await uploadBrandLogoInput('setting-logo-dark', 'dark');
-          if (nextLight) lightUrl = nextLight;
-          if (nextDark) darkUrl = nextDark;
-        } catch (e) {
-          console.warn('brand logo upload failed', e);
-          alert('Logo upload failed. Check brand-assets storage bucket and policies, then try again.');
+          try {
+            var nextLight = await uploadBrandLogoInput('setting-logo-light', 'light');
+            var nextDark = await uploadBrandLogoInput('setting-logo-dark', 'dark');
+            if (nextLight) lightUrl = nextLight;
+            if (nextDark) darkUrl = nextDark;
+          } catch (e) {
+            console.warn('brand logo upload failed', e);
+            alert('Logo upload failed. Check brand-assets storage bucket and policies, then try again.');
+          }
+          applyBrandLogo(lightUrl, darkUrl);
+          syncProfilePanelToPrefs();
+          await persistProfileUserMetadata();
+          await persistWorkspaceOrganizationName();
+          await syncBudgetsNow();
+          await flushPersistUserUiPreferences();
+          saveBtn.classList.remove('is-saving');
+          saveBtn.classList.add('is-saved');
+          saveBtn.textContent = 'Saved!';
+          saveBtn.removeAttribute('aria-busy');
+          setTimeout(function () {
+            saveBtn.textContent = saveLabelDefault;
+            saveBtn.classList.remove('is-saved');
+            saveBtn.disabled = false;
+          }, 1600);
+        } catch (err) {
+          console.error('save settings failed', err);
+          saveBtn.classList.remove('is-saving');
+          saveBtn.textContent = saveLabelDefault;
+          saveBtn.disabled = false;
+          saveBtn.removeAttribute('aria-busy');
+          alert('Could not save settings. Please check your connection and try again.');
         }
-        applyBrandLogo(lightUrl, darkUrl);
-        syncProfilePanelToPrefs();
-        await persistProfileUserMetadata();
-        await persistWorkspaceOrganizationName();
-        await syncBudgetsNow();
-        await flushPersistUserUiPreferences();
-        // Brief visual confirmation
-        var orig = saveBtn.textContent;
-        saveBtn.textContent = 'Saved!';
-        setTimeout(function () { saveBtn.textContent = orig; }, 1400);
       });
     }
 
@@ -7041,8 +7478,11 @@ var incomePowerState = {
         if (!el) return;
         el.addEventListener('change', function () {
           if (id === 'pref-timezone-auto') {
-            var tz = document.getElementById('pref-timezone');
-            if (tz) tz.disabled = !!document.getElementById('pref-timezone-auto').checked;
+            var autoOn = !!(document.getElementById('pref-timezone-auto') && document.getElementById('pref-timezone-auto').checked);
+            setPrefTimezoneComboboxInteractive(!autoOn);
+          }
+          if (id === 'pref-week-starts-mon') {
+            syncProfileWeekSelectFromMainCheckbox();
           }
           bumpRuntime();
           ensureUserUiPrefsCache();
@@ -13341,6 +13781,41 @@ var incomePowerState = {
     }
   }
 
+  function wireExpensesTableSort() {
+    var expTable = $('expenses-table');
+    if (!expTable || expTable.getAttribute('data-exp-sort-wired') === '1') return;
+    var thead = expTable.querySelector('thead');
+    if (!thead) return;
+    expTable.setAttribute('data-exp-sort-wired', '1');
+
+    function onHeaderActivate(th) {
+      var k = th.getAttribute('data-exp-sort');
+      if (!k) return;
+      if (expensesTableSort.key === k) {
+        expensesTableSort.dir = expensesTableSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        expensesTableSort.key = k;
+        expensesTableSort.dir = defaultExpensesSortDir(k);
+      }
+      renderAll();
+    }
+
+    thead.addEventListener('click', function (ev) {
+      var th = ev.target.closest('th[data-exp-sort]');
+      if (!th || !thead.contains(th)) return;
+      ev.preventDefault();
+      onHeaderActivate(th);
+    });
+
+    thead.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      var th = ev.target.closest('th[data-exp-sort]');
+      if (!th || !thead.contains(th)) return;
+      ev.preventDefault();
+      onHeaderActivate(th);
+    });
+  }
+
   function userHasEmailPasswordIdentity(user) {
     if (!user) return false;
     function provIsEmail(p) {
@@ -13398,7 +13873,7 @@ var incomePowerState = {
     return getStoredProfileAvatarDataUrl();
   }
 
-  /** Profile panel, workspace chip images, sidebar account circle — one consistent URL. */
+  /** Profile panel + sidebar account circle (user avatar). Workspace chip uses org icon from prefs. */
   async function applyProfileAvatarFromUser(user) {
     var resolved =
       arguments.length && user === null ? null : user || window.currentUser || currentUser;
@@ -13419,24 +13894,6 @@ var incomePowerState = {
       if (fb) {
         fb.style.display = '';
         updateProfileAvatarFallbackLetter();
-      }
-    }
-    var pairs = [
-      ['sb-ws-avatar-img', 'sb-ws-mono-letter'],
-      ['sb-menu-ws-avatar-img', 'sb-menu-ws-mono-letter'],
-    ];
-    for (var i = 0; i < pairs.length; i += 1) {
-      var im = document.getElementById(pairs[i][0]);
-      var le = document.getElementById(pairs[i][1]);
-      if (!im || !le) continue;
-      if (displayUrl) {
-        im.src = displayUrl;
-        im.style.display = 'block';
-        le.style.display = 'none';
-      } else {
-        im.removeAttribute('src');
-        im.style.display = 'none';
-        le.style.display = '';
       }
     }
     var userAv = document.getElementById('user-avatar');
@@ -13464,7 +13921,9 @@ var incomePowerState = {
   }
 
   function applyWorkspaceChromeProfileAvatar() {
-    void applyProfileAvatarFromUser(window.currentUser || currentUser);
+    void applyProfileAvatarFromUser(window.currentUser || currentUser).then(function () {
+      return refreshWorkspaceSidebarMonogramFromPrefs();
+    });
   }
   window.bizdashRefreshSidebarProfileAvatars = applyWorkspaceChromeProfileAvatar;
   window.bizdashApplyProfileAvatarFromUser = applyProfileAvatarFromUser;
@@ -13473,9 +13932,10 @@ var incomePowerState = {
     ensurePreferenceTimezoneOptionsBuilt();
     var main = document.getElementById('pref-timezone');
     var prof = document.getElementById('profile-pref-timezone');
+    var profIn = document.getElementById('profile-pref-timezone-input');
     if (!main || !prof) return;
-    prof.innerHTML = main.innerHTML;
     prof.value = main.value;
+    if (profIn) profIn.value = prof.value || '';
   }
 
   function syncPrefsToProfilePanel() {
@@ -13486,8 +13946,7 @@ var incomePowerState = {
     var profTz = document.getElementById('profile-pref-timezone');
     var mainTz = document.getElementById('pref-timezone');
     if (profTz && mainTz) profTz.value = mainTz.value || prefs.timezone;
-    var wk = document.getElementById('profile-pref-week-start');
-    if (wk) wk.value = prefs.weekStartsMonday ? 'monday' : 'sunday';
+    /* Week start: applyPreferencesToForm + syncProfileWeekSelectFromMainCheckbox keep profile select aligned. */
     updateProfileAvatarFallbackLetter();
   }
 
@@ -16110,7 +16569,7 @@ var incomePowerState = {
       });
     }
     if (pasteEmoji) {
-      pasteEmoji.addEventListener('click', function () {
+      pasteEmoji.addEventListener('click', async function () {
         var raw = window.prompt('Paste an emoji for this workspace (one character recommended)', '🙂');
         if (raw == null) return;
         var t = String(raw || '').trim().slice(0, 10);
@@ -16121,12 +16580,16 @@ var incomePowerState = {
         if (ur) ur.value = '';
         if (ic) ic.value = '';
         if (em) em.value = t;
-        renderWorkspaceIconPreview();
+        await renderWorkspaceIconPreview();
         setOpen(false);
+        var rPe = window.currentOrganizationRole || '';
+        if (rPe === 'owner' || rPe === 'admin') {
+          await persistAppSettingsToSupabase({ includeDashboard: true });
+        }
       });
     }
     if (grid) {
-      grid.addEventListener('click', function (ev) {
+      grid.addEventListener('click', async function (ev) {
         var btn = ev.target && ev.target.closest ? ev.target.closest('[data-lucide-icon]') : null;
         if (!btn) return;
         var name = btn.getAttribute('data-lucide-icon');
@@ -16137,8 +16600,12 @@ var incomePowerState = {
         if (ur) ur.value = '';
         if (em) em.value = '';
         if (ic) ic.value = 'lucide:' + name;
-        renderWorkspaceIconPreview();
+        await renderWorkspaceIconPreview();
         setOpen(false);
+        var rGrid = window.currentOrganizationRole || '';
+        if (rGrid === 'owner' || rGrid === 'admin') {
+          await persistAppSettingsToSupabase({ includeDashboard: true });
+        }
       });
     }
     if (search) {
@@ -16164,6 +16631,8 @@ var incomePowerState = {
     });
 
     window.__bizdashOpenWorkspaceIconPicker = function () {
+      var r = window.currentOrganizationRole || '';
+      if (r !== 'owner' && r !== 'admin') return;
       setOpen(true);
     };
   }
@@ -16229,9 +16698,15 @@ var incomePowerState = {
     var iconFile = document.getElementById('setting-ws-icon-file');
     if (iconHit && iconFile) {
       iconHit.addEventListener('click', function () {
+        if (iconHit.disabled) return;
         iconFile.click();
       });
       iconFile.addEventListener('change', async function () {
+        var memRole = window.currentOrganizationRole || '';
+        if (memRole !== 'owner' && memRole !== 'admin') {
+          iconFile.value = '';
+          return;
+        }
         if (!iconFile.files || !iconFile.files.length) return;
         var file = iconFile.files[0];
         if (!file || String(file.type || '').indexOf('image/') !== 0) {
@@ -16254,6 +16729,10 @@ var incomePowerState = {
           if (ur) ur.value = url;
           await renderWorkspaceIconPreview();
           iconFile.value = '';
+          var rUp = window.currentOrganizationRole || '';
+          if (rUp === 'owner' || rUp === 'admin') {
+            await persistAppSettingsToSupabase({ includeDashboard: true });
+          }
         } catch (err) {
           console.warn(err);
           alert('Icon upload failed. Check brand-assets storage policies.');
@@ -16273,6 +16752,8 @@ var incomePowerState = {
     var clearBtn = document.getElementById('setting-ws-icon-clear');
     if (clearBtn) {
       clearBtn.addEventListener('click', async function () {
+        var cr = window.currentOrganizationRole || '';
+        if (cr !== 'owner' && cr !== 'admin') return;
         var ur = document.getElementById('setting-ws-icon-url-value');
         var em = document.getElementById('setting-ws-icon-emoji-value');
         var ic = document.getElementById('setting-ws-icon-iconify-value');
@@ -16280,6 +16761,10 @@ var incomePowerState = {
         if (em) em.value = '';
         if (ic) ic.value = '';
         await renderWorkspaceIconPreview();
+        var rClr = window.currentOrganizationRole || '';
+        if (rClr === 'owner' || rClr === 'admin') {
+          await persistAppSettingsToSupabase({ includeDashboard: true });
+        }
       });
     }
 
@@ -16383,6 +16868,8 @@ var incomePowerState = {
         }
       });
     }
+
+    updateWorkspaceIconAdminUi();
   }
 
   // ---------- Workspace lists (sidebar + templates modals; localStorage test) ----------
@@ -17152,6 +17639,56 @@ var incomePowerState = {
     if (block[head]) return null;
     return String(seg).toLowerCase();
   }
+
+  function workspaceSidebarFallbackLetter() {
+    var slug = window.currentOrganizationSlug || parseTenantSlugForChrome();
+    var dn = window.currentOrganizationDisplayName && String(window.currentOrganizationDisplayName).trim();
+    var letterSource = dn || slug || '';
+    return letterSource ? String(letterSource).trim().charAt(0).toUpperCase() : '?';
+  }
+
+  async function refreshWorkspaceSidebarMonogramFromPrefs() {
+    var ws = mergeWorkspacePrefs({}, window.bizdashWorkspacePrefs || defaultWorkspacePrefs());
+    var url = ws.workspaceIconUrl != null ? String(ws.workspaceIconUrl).trim() : '';
+    var iconify = parseWorkspaceIconIconify(ws.workspaceIconIconify != null ? String(ws.workspaceIconIconify) : '');
+    var emo = ws.workspaceIconEmoji != null ? String(ws.workspaceIconEmoji).trim() : '';
+    var pairs = [
+      ['sb-ws-avatar-img', 'sb-ws-mono-letter'],
+      ['sb-menu-ws-avatar-img', 'sb-menu-ws-mono-letter'],
+    ];
+    var fbLetter = workspaceSidebarFallbackLetter();
+    for (var i = 0; i < pairs.length; i += 1) {
+      var im = document.getElementById(pairs[i][0]);
+      var le = document.getElementById(pairs[i][1]);
+      if (!im || !le) continue;
+      le.classList.remove('sb-ws-mono-emoji');
+      if (url) {
+        var resolved = await resolveBrandLogoStorageUrl(url);
+        im.src = resolved || url;
+        im.alt = '';
+        im.style.display = 'block';
+        le.style.display = 'none';
+      } else if (iconify) {
+        var nm = iconify.slice('lucide:'.length);
+        im.src = lucideIconifySvgImgSrc(nm);
+        im.alt = '';
+        im.style.display = 'block';
+        le.style.display = 'none';
+      } else if (emo) {
+        im.removeAttribute('src');
+        im.style.display = 'none';
+        le.style.display = '';
+        le.textContent = emo.slice(0, 10);
+        le.classList.add('sb-ws-mono-emoji');
+      } else {
+        im.removeAttribute('src');
+        im.style.display = 'none';
+        le.style.display = '';
+        le.textContent = fbLetter;
+      }
+    }
+  }
+  window.bizdashRefreshWorkspaceSidebarMonogram = refreshWorkspaceSidebarMonogramFromPrefs;
 
   function refreshSidebarWorkspaceChrome() {
     var slug = window.currentOrganizationSlug || parseTenantSlugForChrome();
@@ -18024,6 +18561,7 @@ var incomePowerState = {
     wireIncomeExpenseForms();
     wireTimesheet();
     wireDeleteHandlers();
+    wireExpensesTableSort();
     wireClientForm();
     wireInvoiceModal();
     wireInvoiceFullEditor();

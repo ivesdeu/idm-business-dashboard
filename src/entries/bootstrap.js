@@ -8,6 +8,7 @@ import './chart-setup.js';
 import '../legacy/financial-core.js';
 import '../legacy/supabase-auth.js';
 import '../legacy/dashboard-assistant.js';
+import { mountAdvisorReactComposer } from './advisor-react-mount.tsx';
 
 /** Advisor React island — mount after legacy `wireDashboardAssistant` defines `bizDashAdvisorGetComposerApi`. */
 function mountAdvisorComposerWhenReady() {
@@ -19,13 +20,7 @@ function mountAdvisorComposerWhenReady() {
     }
     return;
   }
-  import('./advisor-react-mount.tsx')
-    .then(function (m) {
-      if (m && typeof m.mountAdvisorReactComposer === 'function') m.mountAdvisorReactComposer();
-    })
-    .catch(function (e) {
-      if (typeof console !== 'undefined' && console.warn) console.warn('Advisor React composer', e);
-    });
+  mountAdvisorReactComposer();
 }
 if (typeof requestAnimationFrame !== 'undefined') {
   requestAnimationFrame(mountAdvisorComposerWhenReady);

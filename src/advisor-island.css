@@ -1,10 +1,10 @@
-@tailwind base;
+/* Omit @tailwind base to avoid injecting global resets into the mixed vanilla + React app. */
 @tailwind components;
 @tailwind utilities;
 
 /* Advisor React island: tokens from the app shell (index.html) */
 #advisor-react-composer-root {
-  --advisor-surface: var(--bg, #fff);
+  --advisor-surface: var(--bg2, #f8fafc);
   --advisor-elevated: var(--bg2, #f8fafc);
   --advisor-text: var(--text, #0f172a);
   --advisor-muted: var(--text3, #94a3b8);

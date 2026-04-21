@@ -1,7 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  // Scope utilities so global index.html is unaffected; skip preflight to avoid resetting the app shell
-  important: '#advisor-react-composer-root',
+  // Advisor island only imports this CSS from the React entry — no `important` wrapper so Motion
+  // and library-generated DOM reliably match utility selectors.
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   corePlugins: {
     preflight: false,

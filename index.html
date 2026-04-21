@@ -142,6 +142,13 @@
     position: relative;
     z-index: 1;
   }
+  .sb-ws-mono-letter.sb-ws-mono-emoji,
+  .sb-chrome-menu-mono-letter.sb-ws-mono-emoji {
+    font-size: 15px;
+    font-weight: 500;
+    text-transform: none;
+    line-height: 1;
+  }
   .sb-ws-meta { flex: 1; min-width: 0; }
   .sb-ws-label { display: block; font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sb-ws-chev { flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--text3); }
@@ -1606,6 +1613,22 @@
     font-weight: 700;
     letter-spacing: -0.02em;
   }
+  .mc-promo-gmail-ic {
+    display: block;
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  .mc-promo-gmail-badge {
+    display: block;
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
   .mc-art-rows {
     display: flex;
     flex-direction: column;
@@ -1865,6 +1888,10 @@
     box-sizing: border-box;
   }
   #page-chat.chat-advisor-centered .chat-composer-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     width: 100%;
     max-width: 44rem;
     margin-left: auto;
@@ -2007,8 +2034,14 @@
   .advisor-react-composer-root {
     width: 100%;
     max-width: 48rem;
-    margin: 0 auto 16px;
-    min-height: 72px;
+    margin: 0 auto 20px;
+    min-height: 80px;
+    position: relative;
+    z-index: 2;
+    flex: 0 0 auto;
+    display: block;
+    box-sizing: border-box;
+    padding: 0 8px;
   }
   .chat-prompt-heading {
     display: none;
@@ -2323,6 +2356,49 @@
   .btn:active { transform: translateY(1px) scale(0.995); }
   .btn-p { background:var(--coral); border-color:var(--coral); color:#fff; font-weight:600; }
   .btn-p:hover { background:var(--coral2); border-color:var(--coral2); color:#fff; }
+  /* Settings save: loading spinner + success tick */
+  #btn-save-settings {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 9.5rem;
+  }
+  #btn-save-settings.btn-p:disabled {
+    background: var(--coral);
+    border-color: var(--coral);
+    color: #fff;
+    opacity: 1;
+  }
+  #btn-save-settings.is-saving {
+    padding-left: 36px;
+    cursor: wait;
+    opacity: 0.95;
+  }
+  #btn-save-settings.is-saving::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin-top: -7px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: btn-save-spin 0.7s linear infinite;
+  }
+  @keyframes btn-save-spin {
+    to { transform: rotate(360deg); }
+  }
+  #btn-save-settings.is-saved {
+    animation: btn-save-pop 0.45s var(--ease-premium, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+  @keyframes btn-save-pop {
+    0% { transform: scale(0.96); }
+    45% { transform: scale(1.03); }
+    100% { transform: scale(1); }
+  }
   .exp-rec-dow { width:34px; height:34px; border-radius:50%; padding:0; font-size:11px; font-weight:600; flex-shrink:0; border:1px solid var(--border2); background:var(--bg3); color:var(--text2); }
   .exp-rec-dow.on { background:var(--coral); border-color:var(--coral); color:#fff; }
 
@@ -2433,6 +2509,22 @@
   .dt tbody tr:last-child td { border-bottom:none; }
   .card .dt tbody tr:last-child td { border-bottom:none; }
   .dt tr:hover td { background:rgba(0,0,0,0.02); }
+  #expenses-table th.th-sort {
+    cursor: pointer;
+    user-select: none;
+  }
+  #expenses-table th.th-sort:focus-visible {
+    outline: 2px solid var(--border);
+    outline-offset: 2px;
+  }
+  #expenses-table .exp-th-sort-ind {
+    font-size: 0.65rem;
+    opacity: 0.85;
+    margin-left: 4px;
+    display: inline-block;
+    min-width: 0.65em;
+    vertical-align: middle;
+  }
   .tdp { color:var(--text) !important; font-weight:500; }
   .td-sub { display:block; font-size:0.75rem; font-weight:400; opacity:0.72; margin-top:2px; line-height:1.35; }
 
@@ -3165,6 +3257,61 @@
     background-position: right 12px center;
     background-size: 12px;
     padding-right: 34px;
+  }
+  /* Timezone searchable combobox */
+  .tz-combobox { position: relative; width: 100%; }
+  .tz-combobox-input {
+    cursor: text;
+    background-image: var(--select-chevron);
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 12px;
+    padding-right: 34px;
+  }
+  .tz-combobox-input:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+  }
+  .tz-combobox-list {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 40;
+    max-height: min(280px, 45vh);
+    overflow-y: auto;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  }
+  .tz-combobox-list.on { display: block; }
+  .tz-combobox-option {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    color: var(--text);
+    cursor: pointer;
+    line-height: 1.35;
+  }
+  .tz-combobox-option:hover,
+  .tz-combobox-option[aria-selected="true"] {
+    background: var(--bg3);
+  }
+  .tz-combobox-option.is-active {
+    outline: 2px solid var(--coral);
+    outline-offset: -2px;
+  }
+  .tz-combobox-meta {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text3);
+    margin-top: 2px;
   }
   .fst { font-size:0.875rem; font-weight:600; color:var(--text); margin-bottom:14px; margin-top:4px; }
 
@@ -5735,7 +5882,16 @@
     <div class="card">
       <div id="expenses-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No expenses yet.</div>
       <table class="dt" id="expenses-table" style="display:none;">
-        <thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Amount</th><th>Vendor</th><th>Client</th><th>Recurring</th><th style="width:140px;">Actions</th></tr></thead>
+        <thead><tr>
+          <th class="th-sort" data-exp-sort="date" role="columnheader" scope="col" tabindex="0">Date <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-exp-sort="title" role="columnheader" scope="col" tabindex="0">Title <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-exp-sort="category" role="columnheader" scope="col" tabindex="0">Category <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-exp-sort="amount" role="columnheader" scope="col" tabindex="0">Amount <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-exp-sort="vendor" role="columnheader" scope="col" tabindex="0">Vendor <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-exp-sort="client" role="columnheader" scope="col" tabindex="0">Client <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-exp-sort="recurring" role="columnheader" scope="col" tabindex="0">Recurring <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
+          <th style="width:140px;" role="columnheader" scope="col">Actions</th>
+        </tr></thead>
         <tbody id="expenses-tbody"></tbody>
       </table>
     </div>
@@ -6238,7 +6394,8 @@
                   </div>
                   <div class="fgp" style="grid-column:1/-1;">
                     <span class="fl">Icon</span>
-                    <p class="settings-ws-hint">Upload an image, choose a Lucide-style icon, or paste an emoji. This icon appears in the sidebar and workspace switcher.</p>
+                    <p class="settings-ws-hint">Upload an image, choose a Lucide-style icon, or paste an emoji. This icon appears in the sidebar and workspace switcher for everyone in this workspace.</p>
+                    <p id="setting-ws-icon-role-hint" class="settings-ws-hint" hidden style="margin-top:2px;">Only workspace owners and admins can change this icon.</p>
                     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
                       <input type="file" id="setting-ws-icon-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
                       <button type="button" class="setting-ws-icon-hit" id="setting-ws-icon-hit" aria-label="Choose workspace icon">
@@ -6512,7 +6669,11 @@
                       <p class="settings-pref-desc">IANA time zone for this workspace when automatic detection is off.</p>
                     </div>
                     <div class="settings-pref-control">
-                      <select class="fi" id="pref-timezone" aria-label="Time zone" disabled></select>
+                      <div class="tz-combobox" id="pref-timezone-wrap" data-tz-combo-wired="0">
+                        <input type="hidden" id="pref-timezone" value="" disabled />
+                        <input type="text" class="fi tz-combobox-input" id="pref-timezone-input" autocomplete="off" spellcheck="false" aria-label="Time zone" aria-autocomplete="list" aria-expanded="false" aria-controls="pref-timezone-list" role="combobox" disabled />
+                        <ul class="tz-combobox-list" id="pref-timezone-list" role="listbox" aria-label="Time zones" hidden></ul>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -6765,12 +6926,12 @@
                           <div class="mc-promo-art" aria-hidden="true">
                             <div class="mc-art">
                               <div class="mc-art-icons">
-                                <svg width="36" height="36" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M6 12h18v24H6z"/><path fill="#34A853" d="M24 12v9l9 4.5V12z"/><path fill="#FBBC05" d="M24 21v15l18-9V21z"/><path fill="#4285F4" d="M6 12l18 9 9-4.5L24 6z"/></svg>
+                                <img src="/connections/gmail.png" width="36" height="36" alt="" class="mc-promo-gmail-ic" decoding="async" />
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text);opacity:0.9"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>
                               </div>
                               <div class="mc-art-dots"></div>
                               <div class="mc-art-mock">
-                                <div class="mc-art-mock-head"><span class="mc-art-badge">IDM</span><span>Business Dashboard</span></div>
+                                <div class="mc-art-mock-head"><img src="/connections/gmail.png" width="22" height="22" alt="" class="mc-promo-gmail-badge" decoding="async" /><span>Business Dashboard</span></div>
                                 <div class="mc-art-rows">
                                   <div class="mc-art-row"></div>
                                   <div class="mc-art-row short"></div>
@@ -6877,8 +7038,12 @@
                 <p class="settings-profile-time-sub">Manage your time preferences</p>
                 <div class="fg">
                   <div class="fgp">
-                    <label class="fl" for="profile-pref-timezone">Preferred timezone</label>
-                    <select class="fi" id="profile-pref-timezone" aria-label="Preferred timezone"></select>
+                    <label class="fl" for="profile-pref-timezone-input">Preferred timezone</label>
+                    <div class="tz-combobox" id="profile-pref-timezone-wrap" data-tz-combo-wired="0">
+                      <input type="hidden" id="profile-pref-timezone" value="" />
+                      <input type="text" class="fi tz-combobox-input" id="profile-pref-timezone-input" autocomplete="off" spellcheck="false" aria-label="Preferred timezone" aria-autocomplete="list" aria-expanded="false" aria-controls="profile-pref-timezone-list" role="combobox" />
+                      <ul class="tz-combobox-list" id="profile-pref-timezone-list" role="listbox" aria-label="Time zones" hidden></ul>
+                    </div>
                   </div>
                   <div class="fgp">
                     <label class="fl" for="profile-pref-week-start">Start week on</label>
