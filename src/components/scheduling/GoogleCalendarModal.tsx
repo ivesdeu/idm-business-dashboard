@@ -22,7 +22,7 @@ export function GoogleCalendarModal ({ open, onClose }: Props) {
       }}
     >
       <div
-        className="relative w-full max-w-md rounded-xl border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] p-6 shadow-xl"
+        className="relative w-full max-w-md border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] p-6"
         role="dialog"
         aria-labelledby="gcal-modal-title"
         onMouseDown={(e) => e.stopPropagation ()}
@@ -45,7 +45,7 @@ export function GoogleCalendarModal ({ open, onClose }: Props) {
         <div className="mt-6 flex flex-wrap gap-3">
           <button
             type="button"
-            className="rounded-lg bg-[var(--sched-accent,#e8501a)] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
+            className="rounded-lg bg-[var(--sched-accent,#0a0a0a)] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
             onClick={stubAuthorize}
           >
             Authorize with Google

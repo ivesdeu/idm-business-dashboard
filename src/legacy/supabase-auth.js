@@ -86,11 +86,14 @@
   /**
    * Ceilings for org / onboarding resolution (not session read — that is driven by INITIAL_SESSION).
    * These are UX timeouts only; the auth session itself has no artificial cap.
-   * 8s was too tight on cold starts, slow networks, and first RPC after tab wake.
+   * Too long feels “stuck”; these stay in the few-second band for perceived snappiness.
    */
-  var ORG_RESOLVE_MS = 30000;
-  /** Prefetch org row + signed URLs; cold storage/RPC can exceed 5s on slow links. */
-  var ONBOARDING_GATE_MS = 20000;
+  /** UX ceiling for workspace RPC + invite handling (not data sync). */
+  var ORG_RESOLVE_MS = 4500;
+  /** Onboarding prefill (org row + optional storage); keep bounded so login never “hangs”. */
+  var ONBOARDING_GATE_MS = 8000;
+  /** Avatar signed URL during prefill — do not block first paint on slow storage. */
+  var ONBOARD_AVATAR_SIGN_MS = 1200;
 
   function withTimeout(promise, ms, errMsg) {
     return Promise.race([
@@ -230,6 +233,114 @@
     var block = { login: 1, assets: 1, api: 1, favicon: 1, health: 1 };
     if (block[head]) return null;
     return String(seg).toLowerCase();
+  }
+
+  var LOGIN_SHELL_ACCENT_PROPS = [
+    '--coral',
+    '--coral2',
+    '--coral-bg',
+    '--coral-border-soft',
+    '--coral-border-mid',
+    '--coral-border-strong',
+    '--coral-border-focus',
+  ];
+
+  function normalizeLoginAccentHex(hex) {
+    var s = String(hex || '').trim();
+    if (!s) return '';
+    if (s[0] !== '#') s = '#' + s;
+    var m6 = s.match(/^#([0-9a-fA-F]{6})$/);
+    if (m6) return '#' + m6[1].toLowerCase();
+    var m3 = s.match(/^#([0-9a-fA-F]{3})$/i);
+    if (m3) {
+      var h = m3[1];
+      return '#' + h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    }
+    return '';
+  }
+
+  function hexToRgbLoginShell(hex) {
+    var n = normalizeLoginAccentHex(hex);
+    if (!n || n.length !== 7) return null;
+    return {
+      r: parseInt(n.slice(1, 3), 16),
+      g: parseInt(n.slice(3, 5), 16),
+      b: parseInt(n.slice(5, 7), 16),
+    };
+  }
+
+  function darkenHexLoginShell(hex, factor) {
+    var rgb = hexToRgbLoginShell(hex);
+    if (!rgb) return hex;
+    var f = Math.max(0, Math.min(1, Number(factor) || 0));
+    var r = Math.max(0, Math.min(255, Math.round(rgb.r * (1 - f))));
+    var g = Math.max(0, Math.min(255, Math.round(rgb.g * (1 - f))));
+    var b = Math.max(0, Math.min(255, Math.round(rgb.b * (1 - f))));
+    return '#' + [r, g, b].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  function clearLoginShellAccentOverrides() {
+    var shell = $('auth-login-shell');
+    if (!shell || !shell.style) return;
+    LOGIN_SHELL_ACCENT_PROPS.forEach(function (p) {
+      shell.style.removeProperty(p);
+    });
+  }
+
+  function applyLoginShellAccentFromHex(hex) {
+    var shell = $('auth-login-shell');
+    if (!shell || !shell.style) return;
+    var accent = normalizeLoginAccentHex(hex);
+    if (!accent) {
+      clearLoginShellAccentOverrides();
+      return;
+    }
+    var rgb = hexToRgbLoginShell(accent);
+    if (!rgb) {
+      clearLoginShellAccentOverrides();
+      return;
+    }
+    shell.style.setProperty('--coral', accent);
+    shell.style.setProperty('--coral2', darkenHexLoginShell(accent, 0.1));
+    shell.style.setProperty('--coral-bg', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.08)');
+    shell.style.setProperty('--coral-border-soft', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.14)');
+    shell.style.setProperty('--coral-border-mid', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.18)');
+    shell.style.setProperty('--coral-border-strong', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.2)');
+    shell.style.setProperty('--coral-border-focus', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.35)');
+  }
+
+  /**
+   * Theme the auth gate (#auth-login-shell) from workspace branding when the URL contains /:slug/.
+   * Uses organization_public_by_slug.login_accent (SECURITY DEFINER; anon-safe).
+   */
+  async function refreshLoginShellBrandingFromUrl() {
+    if (!supabase) {
+      clearLoginShellAccentOverrides();
+      return;
+    }
+    var slug = parseTenantSlug();
+    if (!slug) {
+      clearLoginShellAccentOverrides();
+      return;
+    }
+    try {
+      var pubRes = await retryOnAuthLock(function () {
+        return supabase.rpc('organization_public_by_slug', { sl: slug });
+      });
+      if (pubRes.error || !pubRes.data || !pubRes.data.length) {
+        clearLoginShellAccentOverrides();
+        return;
+      }
+      var row = pubRes.data[0];
+      var accentRaw = row.login_accent != null ? String(row.login_accent).trim() : '';
+      if (!accentRaw) {
+        clearLoginShellAccentOverrides();
+        return;
+      }
+      applyLoginShellAccentFromHex(accentRaw);
+    } catch (_) {
+      clearLoginShellAccentOverrides();
+    }
   }
 
   function setOrgContext(orgId, slug, role) {
@@ -388,70 +499,36 @@
     }
 
     var slug = parseTenantSlug();
-    if (slug) {
-      var pubRes = await retryOnAuthLock(function () {
-        return supabase.rpc('organization_public_by_slug', { sl: slug });
-      });
-      if (pubRes.error) {
-        console.error('organization_public_by_slug failed', pubRes.error);
-        gateErr('Could not load workspace URL. ' + String(pubRes.error.message || pubRes.error));
-        clearOrgContext();
-        return { ok: false };
-      }
-      if (!pubRes.data || !pubRes.data.length) {
-        gateErr('Unknown workspace URL.');
-        clearOrgContext();
-        return { ok: false };
-      }
-      var org = pubRes.data[0];
-      var memRes = await retryOnAuthLock(function () {
-        return supabase
-          .from('organization_members')
-          .select('role')
-          .eq('organization_id', org.id)
-          .eq('user_id', user.id)
-          .maybeSingle();
-      });
-      if (memRes.error) {
-        console.error('organization_members membership check failed', memRes.error);
-        gateErr('Could not verify workspace membership. ' + String(memRes.error.message || memRes.error));
-        clearOrgContext();
-        return { ok: false };
-      }
-      if (!memRes.data) {
-        gateErr('You do not have access to this workspace.');
-        clearOrgContext();
-        return { ok: false };
-      }
-      setOrgContext(org.id, org.slug || slug, memRes.data.role);
-      var slugFlag = onboardingModalNeededFromRow(org);
-      var needsOnSlug = slugFlag !== null ? slugFlag : await fetchOrgNeedsOnboarding(org.id);
-      return { ok: true, needsOnboarding: needsOnSlug };
-    }
-
-    var listRes = await retryOnAuthLock(function () {
-      return supabase.rpc('my_organizations');
+    var wsRes = await retryOnAuthLock(function () {
+      return supabase.rpc('resolve_session_workspace', { p_slug: slug || null });
     });
-    if (listRes.error) {
-      console.error('my_organizations failed', listRes.error);
-      gateErr('Could not load your workspaces. ' + String(listRes.error.message || listRes.error));
+    if (wsRes.error) {
+      console.error('resolve_session_workspace failed', wsRes.error);
+      gateErr('Could not load your workspace. ' + String(wsRes.error.message || wsRes.error));
       clearOrgContext();
       return { ok: false };
     }
-    if (!listRes.data || !listRes.data.length) {
-      gateErr('No workspace found for your account. Contact support.');
+    if (!wsRes.data || !wsRes.data.length) {
+      if (slug) {
+        gateErr('Unknown workspace URL.');
+      } else {
+        gateErr('No workspace found for your account. Contact support.');
+      }
       clearOrgContext();
       return { ok: false };
     }
-    var first = listRes.data[0];
-    var targetPath = '/' + first.slug + '/';
+    var row = wsRes.data[0];
+    var targetPath = '/' + row.slug + '/';
     var cur = window.location.pathname || '/';
-    if (cur !== targetPath && cur.replace(/\/$/, '') !== '/' + first.slug) {
+    if (cur !== targetPath && cur.replace(/\/$/, '') !== '/' + row.slug) {
       window.history.replaceState(null, '', targetPath + (window.location.search || ''));
     }
-    setOrgContext(first.id, first.slug, first.role);
-    var listFlag = onboardingModalNeededFromRow(first);
-    var needsOnList = listFlag !== null ? listFlag : await fetchOrgNeedsOnboarding(first.id);
+    setOrgContext(row.id, row.slug, row.role);
+    if (row.needs_onboarding !== undefined && row.needs_onboarding !== null) {
+      return { ok: true, needsOnboarding: !!row.needs_onboarding };
+    }
+    var listFlag = onboardingModalNeededFromRow(row);
+    var needsOnList = listFlag !== null ? listFlag : await fetchOrgNeedsOnboarding(row.id);
     return { ok: true, needsOnboarding: needsOnList };
   }
 
@@ -480,7 +557,7 @@
       }
       // Transient slowness (cold Supabase connection, flaky network, tab backgrounded): one full retry.
       if (isOrgResolveTimeoutError(err)) {
-        await sleep(400);
+        await sleep(50);
         return await withTimeout(ensureOrganizationContext(user, authSession), ORG_RESOLVE_MS, timedOutMsg);
       }
       throw err;
@@ -771,7 +848,11 @@
     var path = String(meta.profile_avatar_path || '').trim();
     if (path && supabase) {
       try {
-        var signed = await supabase.storage.from('brand-assets').createSignedUrl(path, 60 * 30);
+        var signed = await withTimeout(
+          supabase.storage.from('brand-assets').createSignedUrl(path, 60 * 30),
+          ONBOARD_AVATAR_SIGN_MS,
+          'avatar_signed_url'
+        );
         if (!signed.error && signed.data && signed.data.signedUrl) {
           setOnboardAvatarPreviewImage(signed.data.signedUrl);
           if (rmBtn) rmBtn.disabled = false;
@@ -1031,7 +1112,7 @@
             owner: ownerFull,
             ownerRole: '',
             tagline: '',
-            accent: '#e8501a',
+            accent: '#0a0a0a',
           });
         } catch (_) {}
       }
@@ -1662,6 +1743,7 @@
     if (shell) shell.style.display = 'flex';
     if (app) app.classList.remove('on');
     updateGateInviteHint();
+    void refreshLoginShellBrandingFromUrl();
   }
 
   window.__dashboardShowLogin = showLogin;
@@ -1806,6 +1888,8 @@
           window.currentUser &&
           String(window.currentUser.id) === String(user.id)
         ) {
+          var loadFp = $('auth-loading');
+          if (loadFp) loadFp.style.display = 'none';
           wireOnboardingWizard(user);
           var needsKnown = await fetchOrgNeedsOnboarding(window.currentOrganizationId);
           await withTimeout(
@@ -1826,6 +1910,8 @@
           showLogin();
           return;
         }
+        var loadingAfterResolve = $('auth-loading');
+        if (loadingAfterResolve) loadingAfterResolve.style.display = 'none';
         wireOnboardingWizard(user);
         await withTimeout(
           maybeWorkspaceOnboardingThenShowApp(user, ctx.needsOnboarding),
@@ -1943,7 +2029,11 @@
     drainInviteFlashIntoApp();
 
     if (window.initDataFromSupabase) {
-      window.initDataFromSupabase();
+      requestAnimationFrame(function () {
+        try {
+          window.initDataFromSupabase();
+        } catch (_) {}
+      });
     }
     if (typeof window.bizdashRefreshSidebarProfileAvatars === 'function') {
       window.bizdashRefreshSidebarProfileAvatars();

@@ -11,6 +11,15 @@ import '../legacy/dashboard-assistant.js';
 import { mountAdvisorReactComposer } from './advisor-react-mount.tsx';
 import { mountSchedulingApp } from './scheduling-react-mount.tsx';
 
+/*
+ * financial-core `init()` can run synchronously while `document.readyState !== 'loading'`
+ * (typical for deferred module graphs). That happens before this file's prior imports finish,
+ * so `wireDashboardAssistant` did not exist yet and Advisor never wired — React composer never mounted.
+ */
+if (typeof window.wireDashboardAssistant === 'function') {
+  window.wireDashboardAssistant();
+}
+
 /** Advisor React island — mount after legacy `wireDashboardAssistant` defines `bizDashAdvisorGetComposerApi`. */
 function mountAdvisorComposerWhenReady() {
   if (typeof window.bizDashAdvisorGetComposerApi !== 'function') {

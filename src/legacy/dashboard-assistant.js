@@ -4,6 +4,9 @@
 (function () {
   'use strict';
 
+  /** Prevents duplicate listeners if init() and bootstrap both call wire. */
+  var dashboardAssistantWired = false;
+
   /** Minimum time to show the “thinking” state before revealing the reply (ms). */
   var THINKING_MIN_MS = 2000;
 
@@ -550,9 +553,11 @@
   }
 
   window.wireDashboardAssistant = function () {
+    if (dashboardAssistantWired) return;
     var pageChat = document.getElementById('page-chat');
     var logEl = document.getElementById('chat-log');
     if (!logEl) return;
+    dashboardAssistantWired = true;
 
     var fileInput = document.getElementById('chat-file-input');
     if (!fileInput && pageChat) {

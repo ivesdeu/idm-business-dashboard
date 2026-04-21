@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Business Dashboard</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e8501a'/%3E%3Ctext x='50%25' y='52%25' text-anchor='middle' font-size='32' fill='white' font-family='sans-serif'%3EBD%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a0a0a'/%3E%3Ctext x='50%25' y='52%25' text-anchor='middle' font-size='32' fill='white' font-family='sans-serif'%3EBD%3C/text%3E%3C/svg%3E">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -17,13 +17,13 @@
     --text:     #0a0a0a;
     --text2:    #52525b;
     --text3:    #a1a1aa;
-    --coral:    #e8501a;
-    --coral2:   #d14816;
-    --coral-bg: rgba(232,80,26,0.08);
-    --coral-border-soft: rgba(232,80,26,0.14);
-    --coral-border-mid: rgba(232,80,26,0.18);
-    --coral-border-strong: rgba(232,80,26,0.2);
-    --coral-border-focus: rgba(232,80,26,0.35);
+    --coral:    #0a0a0a;
+    --coral2:   #000000;
+    --coral-bg: rgba(10,10,10,0.08);
+    --coral-border-soft: rgba(10,10,10,0.14);
+    --coral-border-mid: rgba(10,10,10,0.18);
+    --coral-border-strong: rgba(10,10,10,0.2);
+    --coral-border-focus: rgba(10,10,10,0.35);
     --green:    #16a34a;
     --green-bg: rgba(22,163,74,0.1);
     --red:      #dc2626;
@@ -460,7 +460,7 @@
     box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--sw);
   }
   .accent-swatch:focus-visible {
-    outline: 2px solid var(--coral, #e8501a);
+    outline: 2px solid var(--coral, #0a0a0a);
     outline-offset: 3px;
   }
 
@@ -4636,13 +4636,13 @@
     min-height:100vh;
     padding:40px 20px;
     box-sizing:border-box;
-    --coral:#e8501a;
-    --coral2:#d14816;
-    --coral-bg:rgba(232,80,26,0.08);
-    --coral-border-soft:rgba(232,80,26,0.14);
-    --coral-border-mid:rgba(232,80,26,0.18);
-    --coral-border-strong:rgba(232,80,26,0.2);
-    --coral-border-focus:rgba(232,80,26,0.35);
+    --coral:#0a0a0a;
+    --coral2:#000000;
+    --coral-bg:rgba(10,10,10,0.08);
+    --coral-border-soft:rgba(10,10,10,0.14);
+    --coral-border-mid:rgba(10,10,10,0.18);
+    --coral-border-strong:rgba(10,10,10,0.2);
+    --coral-border-focus:rgba(10,10,10,0.35);
   }
   #auth-login-shell .gate-card {
     background:var(--bg2);
@@ -5062,8 +5062,8 @@
     .spend-kpi-row { grid-template-columns: 1fr; }
   }
 </style>
-  <script type="module" crossorigin src="/assets/index-D3NAukuM.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-C6xWl_1K.css">
+  <script type="module" crossorigin src="/assets/index-CNjJv6HS.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-C1ey36Cf.css">
 </head>
 <body>
 
@@ -5087,6 +5087,10 @@
       <div class="fgp" id="gate-confirm-wrap" style="display:none;"><label class="fl">Confirm password</label><input class="fi" id="gate-confirm-password" type="password" autocomplete="new-password" placeholder="••••••••" /></div>
     </div>
     <div id="gate-auth-error" style="font-size:13px;color:var(--red);margin-bottom:12px;min-height:1.2em;"></div>
+    <div id="gate-signup-email-hint" style="display:none;font-size:12px;color:var(--text2);line-height:1.5;margin:-4px 0 10px;">
+      If no message arrives: without <strong>Authentication → SMTP</strong> enabled, mail only goes to your Supabase <strong>org team</strong> addresses. If SMTP is already on, open <strong>Logs → Auth</strong> for the exact error, verify the <strong>sender domain</strong> at your provider (Resend/SendGrid/…), check spam, and add this site under <strong>Authentication → URL configuration → Redirect URLs</strong>.
+    </div>
+    <button type="button" class="btn" id="gate-resend-confirm" style="display:none;width:100%;margin:-4px 0 10px;font-size:13px;">Resend confirmation email</button>
     <div id="gate-invite-hint" style="display:none;font-size:13px;color:var(--text2);line-height:1.45;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);"></div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
       <button type="button" class="btn btn-p" id="gate-signin">Sign in</button>
@@ -6470,6 +6474,7 @@
                       <p class="accent-preset-hint">Choose the main color that defines the overall tone.</p>
                     </div>
                     <div class="accent-preset-swatches" id="setting-accent-presets" role="group" aria-label="Accent color presets">
+                      <button type="button" class="accent-swatch" data-accent-preset="#0a0a0a" style="--sw:#0a0a0a" title="Black" aria-pressed="false"></button>
                       <button type="button" class="accent-swatch" data-accent-preset="#2563eb" style="--sw:#2563eb" title="Royal blue" aria-pressed="false"></button>
                       <button type="button" class="accent-swatch" data-accent-preset="#06b6d4" style="--sw:#06b6d4" title="Cyan" aria-pressed="false"></button>
                       <button type="button" class="accent-swatch" data-accent-preset="#eab308" style="--sw:#eab308" title="Gold" aria-pressed="false"></button>
@@ -6478,8 +6483,8 @@
                       <button type="button" class="accent-swatch" data-accent-preset="#a855f7" style="--sw:#a855f7" title="Purple" aria-pressed="false"></button>
                       <button type="button" class="accent-swatch" data-accent-preset="#34d399" style="--sw:#34d399" title="Mint" aria-pressed="false"></button>
                     </div>
-                    <input type="hidden" id="setting-accent" value="#e8501a" />
-                    <input type="hidden" id="setting-accent-hex" value="#e8501a" />
+                    <input type="hidden" id="setting-accent" value="#0a0a0a" />
+                    <input type="hidden" id="setting-accent-hex" value="#0a0a0a" />
                   </div>
                   <div class="fgp"><label class="fl">Logo (light mode)</label><input class="fi" id="setting-logo-light" type="file" accept="image/*" /></div>
                   <div class="fgp"><label class="fl">Logo (dark mode)</label><input class="fi" id="setting-logo-dark" type="file" accept="image/*" /></div>

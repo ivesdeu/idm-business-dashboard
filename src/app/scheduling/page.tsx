@@ -387,48 +387,54 @@ export function SchedulingPage () {
         </div>
         <button
           type="button"
-          className="scheduling-connect-pulse shrink-0 rounded-lg border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] px-4 py-2 text-sm font-semibold text-[var(--sched-accent,#e8501a)] shadow-sm hover:bg-black/[0.02]"
+          className="shrink-0 border border-[var(--sched-border,#e2e8f0)] bg-transparent px-3 py-1.5 text-sm font-medium text-[var(--sched-accent,#0a0a0a)] hover:bg-black/[0.03]"
           onClick={() => setConnectOpen (true)}
         >
           Connect Google Calendar
         </button>
       </header>
 
-      <div className="mb-6 flex flex-wrap gap-2 border-b border-[var(--sched-border,#e2e8f0)] pb-3">
+      <nav className="mb-6 flex flex-wrap gap-4 border-b border-[var(--sched-border,#e2e8f0)]" aria-label="Scheduling views">
         <button
           type="button"
-          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${
-            subView === 'calendar' ? 'bg-[var(--sched-accent,#e8501a)] text-white' : 'border border-transparent hover:bg-black/[0.04]'
+          className={`-mb-px inline-flex items-center gap-1.5 border-b-2 pb-2.5 pt-0.5 text-sm font-medium transition-colors ${
+            subView === 'calendar'
+              ? 'border-[var(--sched-accent,#0a0a0a)] text-[var(--sched-text,#0f172a)]'
+              : 'border-transparent text-[var(--sched-muted,#64748b)] hover:text-[var(--sched-text,#0f172a)]'
           }`}
           onClick={() => setSubView ('calendar')}
         >
-          <CalendarIcon className="h-4 w-4" strokeWidth={2} />
+          <CalendarIcon className="h-4 w-4 opacity-70" strokeWidth={2} />
           Calendar
         </button>
         <button
           type="button"
-          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${
-            subView === 'list' ? 'bg-[var(--sched-accent,#e8501a)] text-white' : 'border border-transparent hover:bg-black/[0.04]'
+          className={`-mb-px inline-flex items-center gap-1.5 border-b-2 pb-2.5 pt-0.5 text-sm font-medium transition-colors ${
+            subView === 'list'
+              ? 'border-[var(--sched-accent,#0a0a0a)] text-[var(--sched-text,#0f172a)]'
+              : 'border-transparent text-[var(--sched-muted,#64748b)] hover:text-[var(--sched-text,#0f172a)]'
           }`}
           onClick={() => setSubView ('list')}
         >
-          <LayoutList className="h-4 w-4" strokeWidth={2} />
+          <LayoutList className="h-4 w-4 opacity-70" strokeWidth={2} />
           Appointments
         </button>
         <button
           type="button"
-          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${
-            subView === 'new' ? 'bg-[var(--sched-accent,#e8501a)] text-white' : 'border border-transparent hover:bg-black/[0.04]'
+          className={`-mb-px inline-flex items-center gap-1.5 border-b-2 pb-2.5 pt-0.5 text-sm font-medium transition-colors ${
+            subView === 'new'
+              ? 'border-[var(--sched-accent,#0a0a0a)] text-[var(--sched-text,#0f172a)]'
+              : 'border-transparent text-[var(--sched-muted,#64748b)] hover:text-[var(--sched-text,#0f172a)]'
           }`}
           onClick={() => {
             setEditTarget (null);
             setSubView ('new');
           }}
         >
-          <PlusCircle className="h-4 w-4" strokeWidth={2} />
+          <PlusCircle className="h-4 w-4 opacity-70" strokeWidth={2} />
           New appointment
         </button>
-      </div>
+      </nav>
 
       {loading ? (
         <p className="text-sm text-[var(--sched-muted)]">Loading appointments…</p>
@@ -490,7 +496,7 @@ export function SchedulingPage () {
         {toasts.map ((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto rounded-lg border px-4 py-3 text-sm shadow-lg ${
+            className={`pointer-events-auto border px-4 py-3 text-sm ${
               t.kind === 'success'
                 ? 'border-emerald-500/40 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100'
                 : 'border-red-500/40 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-100'

@@ -93,7 +93,7 @@ export function AppointmentsList ({
   }
 
   return (
-    <div className="rounded-xl border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] shadow-sm">
+    <div className="border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)]">
       <div className="flex flex-wrap items-end gap-3 border-b border-[var(--sched-border)] p-4">
         <label className="flex flex-col gap-1 text-xs font-semibold text-[var(--sched-muted)]">
           When
@@ -178,7 +178,7 @@ export function AppointmentsList ({
                     </button>
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 rounded-md bg-[var(--sched-accent,#e8501a)] px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded-md bg-[var(--sched-accent,#0a0a0a)] px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
                       onClick={() => void onSync (a)}
                       disabled={syncLoadingId === a.id}
                     >

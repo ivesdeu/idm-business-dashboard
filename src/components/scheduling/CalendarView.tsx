@@ -100,7 +100,7 @@ export function CalendarView ({ appointments, onSelect }: Props) {
   }
 
   return (
-    <div className="rounded-xl border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] p-4 shadow-sm">
+    <div className="border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
@@ -129,7 +129,7 @@ export function CalendarView ({ appointments, onSelect }: Props) {
           </button>
           <button
             type="button"
-            className="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--sched-accent,#e8501a)] hover:underline"
+            className="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--sched-accent,#0a0a0a)] hover:underline"
             onClick={() => setCursor (new Date ())}
           >
             Today
@@ -139,14 +139,14 @@ export function CalendarView ({ appointments, onSelect }: Props) {
         <div className="flex rounded-lg border border-[var(--sched-border)] p-0.5">
           <button
             type="button"
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === 'month' ? 'bg-[var(--sched-accent,#e8501a)] text-white' : 'hover:bg-black/[0.03]'}`}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === 'month' ? 'bg-[var(--sched-accent,#0a0a0a)] text-white' : 'hover:bg-black/[0.03]'}`}
             onClick={() => setMode ('month')}
           >
             Month
           </button>
           <button
             type="button"
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === 'week' ? 'bg-[var(--sched-accent,#e8501a)] text-white' : 'hover:bg-black/[0.03]'}`}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === 'week' ? 'bg-[var(--sched-accent,#0a0a0a)] text-white' : 'hover:bg-black/[0.03]'}`}
             onClick={() => setMode ('week')}
           >
             Week

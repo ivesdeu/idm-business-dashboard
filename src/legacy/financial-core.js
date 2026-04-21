@@ -2956,7 +2956,7 @@
         phone: val('setting-phone'),
         address: val('setting-address'),
         period: val('setting-period'),
-        accent: parseAccentHexOrNull(val('setting-accent-hex')) || normalizeHexColor(val('setting-accent'), '#e8501a'),
+        accent: parseAccentHexOrNull(val('setting-accent-hex')) || normalizeHexColor(val('setting-accent'), '#0a0a0a'),
         terms: Math.max(0, Math.round(numEl('setting-terms', 30))),
         tax: Math.max(0, numEl('setting-tax', 0)),
         currency: curEl && curEl.value ? curEl.value : 'USD',
@@ -3232,7 +3232,7 @@
       if (biz.address != null) setv('setting-address', biz.address);
       if (biz.period != null) setv('setting-period', biz.period);
       if (biz.accent) {
-        var accentNorm = normalizeHexColor(biz.accent, '#e8501a');
+        var accentNorm = normalizeHexColor(biz.accent, '#0a0a0a');
         setv('setting-accent', accentNorm);
         setv('setting-accent-hex', accentNorm);
         syncAccentPresetSwatches(accentNorm);
@@ -3243,7 +3243,7 @@
       if (cur && biz.currency) cur.value = biz.currency;
       var fis = gid('setting-fiscal');
       if (fis && biz.fiscal) fis.value = biz.fiscal;
-      if (biz.accent) applyAccentBranding(normalizeHexColor(biz.accent, '#e8501a'));
+      if (biz.accent) applyAccentBranding(normalizeHexColor(biz.accent, '#0a0a0a'));
       var lightSigned = await resolveBrandLogoStorageUrl(biz.logo_light_url || '');
       var darkSigned = await resolveBrandLogoStorageUrl(biz.logo_dark_url || '');
       applyBrandLogo(lightSigned, darkSigned);
@@ -3312,7 +3312,7 @@
   function syncAccentPresetSwatches(hex) {
     var wrap = document.getElementById('setting-accent-presets');
     if (!wrap) return;
-    var h = normalizeHexColor(hex, '#e8501a').toLowerCase();
+    var h = normalizeHexColor(hex, '#0a0a0a').toLowerCase();
     wrap.querySelectorAll('[data-accent-preset]').forEach(function (btn) {
       var ph = normalizeHexColor(btn.getAttribute('data-accent-preset') || '', '').toLowerCase();
       var on = Boolean(ph && ph === h);
@@ -3455,7 +3455,7 @@
   }
 
   function applyAccentBranding(accentHex) {
-    var accent = normalizeHexColor(accentHex, '#e8501a');
+    var accent = normalizeHexColor(accentHex, '#0a0a0a');
     var rgb = hexToRgb(accent);
     if (!rgb) return;
     var root = document.documentElement;
@@ -5854,7 +5854,7 @@ var incomePowerState = {
   }
 
   // Light UI chart theme: primary series follow Settings accent; muted grays for secondary series.
-  var CHART_ORANGE = '#e8501a';
+  var CHART_ORANGE = '#0a0a0a';
   var CHART_ORANGE_FILL = 'rgba(232, 80, 26, 0.1)';
   var CHART_ORANGE_FILL_BAR = 'rgba(232, 80, 26, 0.32)';
   var CHART_ORANGE_BORDER_BAR = 'rgba(232, 80, 26, 0.45)';
@@ -7333,10 +7333,10 @@ var incomePowerState = {
     if (accentInput) {
       var accentPresets = document.getElementById('setting-accent-presets');
       function accentHexNow() {
-        return parseAccentHexOrNull(accentHexInput && accentHexInput.value) || normalizeHexColor(accentInput.value, '#e8501a');
+        return parseAccentHexOrNull(accentHexInput && accentHexInput.value) || normalizeHexColor(accentInput.value, '#0a0a0a');
       }
       function syncAccentFieldsAndApply(hex) {
-        var h = normalizeHexColor(hex, '#e8501a');
+        var h = normalizeHexColor(hex, '#0a0a0a');
         accentInput.value = h;
         if (accentHexInput) accentHexInput.value = h;
         syncAccentPresetSwatches(h);
@@ -7347,7 +7347,7 @@ var incomePowerState = {
         }
       }
       if (accentHexInput && !accentHexInput.value.trim()) {
-        accentHexInput.value = normalizeHexColor(accentInput.value, '#e8501a');
+        accentHexInput.value = normalizeHexColor(accentInput.value, '#0a0a0a');
       }
       syncAccentFieldsAndApply(accentHexNow());
       if (accentPresets) {
@@ -7355,7 +7355,7 @@ var incomePowerState = {
           var t = ev.target && ev.target.closest ? ev.target.closest('[data-accent-preset]') : null;
           if (!t || !accentPresets.contains(t)) return;
           var raw = t.getAttribute('data-accent-preset');
-          var p = parseAccentHexOrNull(raw) || normalizeHexColor(raw, '#e8501a');
+          var p = parseAccentHexOrNull(raw) || normalizeHexColor(raw, '#0a0a0a');
           syncAccentFieldsAndApply(p);
         });
       }
@@ -16037,7 +16037,7 @@ var incomePowerState = {
     if (orr && payload.ownerRole != null) orr.value = String(payload.ownerRole);
     if (tg && payload.tagline != null) tg.value = String(payload.tagline);
     if (payload.accent) {
-      var hex = normalizeHexColor(payload.accent, '#e8501a');
+      var hex = normalizeHexColor(payload.accent, '#0a0a0a');
       if (ac) ac.value = hex;
       if (ach) ach.value = hex;
       syncAccentPresetSwatches(hex);

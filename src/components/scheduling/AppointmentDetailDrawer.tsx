@@ -24,7 +24,7 @@ export function AppointmentDetailDrawer ({ appointment, onClose, onEdit }: Props
   return (
     <div className="fixed inset-0 z-[110] flex justify-end bg-black/25" role="presentation" onMouseDown={onClose}>
       <div
-        className="flex h-full w-full max-w-md flex-col border-l border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#f8fafc)] shadow-2xl"
+        className="flex h-full w-full max-w-md flex-col border-l border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#f8fafc)]"
         role="dialog"
         aria-labelledby="drawer-appt-title"
         onMouseDown={(e) => e.stopPropagation ()}

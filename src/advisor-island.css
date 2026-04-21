@@ -9,8 +9,8 @@
   --advisor-text: var(--text, #0f172a);
   --advisor-muted: var(--text3, #94a3b8);
   --advisor-border: var(--border, #e2e8f0);
-  --advisor-accent: var(--coral, #e8501a);
-  --advisor-accent-2: var(--coral2, #d14816);
-  --advisor-tint: color-mix(in srgb, var(--coral, #e8501a) 12%, transparent);
-  --advisor-tint-border: color-mix(in srgb, var(--coral, #e8501a) 45%, transparent);
+  --advisor-accent: var(--coral, #0a0a0a);
+  --advisor-accent-2: var(--coral2, #000000);
+  --advisor-tint: color-mix(in srgb, var(--coral, #0a0a0a) 12%, transparent);
+  --advisor-tint-border: color-mix(in srgb, var(--coral, #0a0a0a) 45%, transparent);
 }

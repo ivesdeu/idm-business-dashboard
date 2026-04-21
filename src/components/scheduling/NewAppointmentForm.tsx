@@ -109,7 +109,7 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
   }
 
   return (
-    <form onSubmit={(e) => void handleSubmit (e)} className="max-w-xl rounded-xl border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] p-6 shadow-sm">
+    <form onSubmit={(e) => void handleSubmit (e)} className="max-w-xl border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] p-6">
       {initial ? (
         <div className="mb-4 flex items-center justify-between gap-2">
           <h3 className="text-base font-semibold text-[var(--sched-text,#0f172a)]">Edit appointment</h3>
@@ -214,7 +214,7 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
         </label>
         <button
           type="submit"
-          className="w-full rounded-lg bg-[var(--sched-accent,#e8501a)] py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-lg bg-[var(--sched-accent,#0a0a0a)] py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           disabled={demoMode || submitting}
         >
           {submitting ? 'Saving…' : initial ? 'Update appointment' : 'Create appointment'}
