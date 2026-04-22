@@ -479,21 +479,56 @@
   }
 
   var CUSTOMERS_COLUMN_DEFS = [
-    { id: 'company', label: 'Company', index: 1 },
-    { id: 'contact', label: 'Contact', index: 2 },
-    { id: 'email', label: 'Email', index: 3 },
-    { id: 'phone', label: 'Phone', index: 4 },
-    { id: 'preferred', label: 'Preferred', index: 5 },
-    { id: 'style', label: 'Style', index: 6 },
-    { id: 'status', label: 'Status', index: 7 },
-    { id: 'projects', label: 'Projects', index: 8 },
-    { id: 'revenue', label: 'Revenue', index: 9 },
-    { id: 'allocated', label: 'Allocated cost', index: 10 },
-    { id: 'profit', label: 'Profit', index: 11 },
-    { id: 'margin', label: 'Margin', index: 12 },
-    { id: 'roi', label: 'ROI', index: 13 },
-    { id: 'actions', label: 'Actions', index: 14, locked: true },
+    { id: 'company', label: 'Company', index: 1, cellType: 'title', fieldKey: 'companyName', editable: true },
+    { id: 'contact', label: 'Contact', index: 2, cellType: 'text', fieldKey: 'contactName', editable: true },
+    { id: 'email', label: 'Email', index: 3, cellType: 'text', fieldKey: 'email', editable: true },
+    { id: 'phone', label: 'Phone', index: 4, cellType: 'text', fieldKey: 'phone', editable: true },
+    { id: 'preferred', label: 'Preferred', index: 5, cellType: 'select', fieldKey: 'preferredChannel', editable: true, selectKey: 'preferred' },
+    { id: 'style', label: 'Style', index: 6, cellType: 'select', fieldKey: 'communicationStyle', editable: true, selectKey: 'style' },
+    { id: 'status', label: 'Status', index: 7, cellType: 'select', fieldKey: 'status', editable: true, selectKey: 'status' },
+    { id: 'projects', label: 'Projects', index: 8, cellType: 'readonly', fieldKey: null, editable: false },
+    { id: 'revenue', label: 'Revenue', index: 9, cellType: 'readonly', fieldKey: null, editable: false },
+    { id: 'allocated', label: 'Allocated cost', index: 10, cellType: 'readonly', fieldKey: null, editable: false },
+    { id: 'profit', label: 'Profit', index: 11, cellType: 'readonly', fieldKey: null, editable: false },
+    { id: 'margin', label: 'Margin', index: 12, cellType: 'readonly', fieldKey: null, editable: false },
+    { id: 'roi', label: 'ROI', index: 13, cellType: 'readonly', fieldKey: null, editable: false },
+    { id: 'updated', label: 'Updated', index: 14, cellType: 'readonly', fieldKey: 'updatedAt', editable: false },
+    { id: 'actions', label: 'Actions', index: 15, locked: true, cellType: 'readonly', fieldKey: null, editable: false },
   ];
+
+  var CRM_PREF_CHANNEL_OPTS = ['Email', 'Phone', 'Slack', 'In-person', 'Text', 'Other'];
+  var CRM_COMM_STYLE_OPTS = ['Concise', 'Detailed', 'Formal', 'Casual', 'Direct'];
+
+  function crmStatusSelectOptions() {
+    var seen = {};
+    var out = [];
+    ['Lead', 'Active', 'Inactive', 'Churned'].forEach(function (s) {
+      if (s && !seen[s]) {
+        seen[s] = true;
+        out.push(s);
+      }
+    });
+    (projectStatuses || []).forEach(function (s) {
+      if (s && !seen[s]) {
+        seen[s] = true;
+        out.push(s);
+      }
+    });
+    return out;
+  }
+
+  var crmInlineState = {
+    selectedRowId: null,
+    selectedColId: null,
+    lastClickKey: null,
+    activeCell: null,
+    draftSnapshot: null,
+    overlayEl: null,
+    suppressBlur: false,
+    mouseRowId: null,
+  };
+
+  var crmCustomersInlineWired = false;
 
   function defaultCustomersColumnPrefs() {
     var prefs = {};
@@ -3479,6 +3514,7 @@
     CHART_EXPENSE_ADVERTISING = '#475569';
     CHART_VENDOR_PAL = [CHART_ORANGE, '#71717a', '#64748b', '#a1a1aa', '#94a3b8', '#78716c', '#d4d4d8', '#cbd5e1'];
     syncBrandingAcrossCharts();
+    if (typeof window.bizDashRepaintAllBrandedIcons === 'function') window.bizDashRepaintAllBrandedIcons();
   }
 
   async function persistAppSettingsToSupabase(opts) {
@@ -3631,6 +3667,7 @@
       relationshipNotes: row.relationship_notes || '',
       totalRevenue: Number(row.total_revenue || 0),
       createdAt: row.created_at || null,
+      updatedAt: row.updated_at ? String(row.updated_at) : row.created_at ? String(row.created_at) : '',
       retainer: retainer,
       pipelineId: row.pipeline_id || null,
       pipelineStageId: row.pipeline_stage_id || null,
@@ -10745,58 +10782,796 @@ var incomePowerState = {
     });
   }
 
+  function crmClientsDisplayList() {
+    var q = '';
+    var inp = document.getElementById('customers-search');
+    if (inp) q = String(inp.value || '').trim().toLowerCase();
+    if (!q) return clients.slice();
+    return clients.filter(function (c) {
+      if (!c) return false;
+      var blob = [c.companyName, c.contactName, c.email, c.phone, c.status, c.industry]
+        .map(function (x) {
+          return String(x || '').toLowerCase();
+        })
+        .join(' ');
+      return blob.indexOf(q) !== -1;
+    });
+  }
+
+  function crmFindClientIndex(id) {
+    var tid = String(id || '');
+    for (var i = 0; i < clients.length; i++) {
+      if (clients[i] && String(clients[i].id) === tid) return i;
+    }
+    return -1;
+  }
+
+  function crmFormatUpdatedDisplay(c) {
+    var raw = c && c.updatedAt ? String(c.updatedAt) : c && c.createdAt ? String(c.createdAt) : '';
+    if (!raw) return '—';
+    try {
+      var d = new Date(raw);
+      if (isNaN(d.getTime())) return '—';
+      return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch (_) {
+      return '—';
+    }
+  }
+
+  function crmCloseSelectOverlay() {
+    if (crmInlineState.overlayEl && crmInlineState.overlayEl.parentNode) {
+      crmInlineState.overlayEl.parentNode.removeChild(crmInlineState.overlayEl);
+    }
+    crmInlineState.overlayEl = null;
+  }
+
+  function crmClearEdit() {
+    crmCloseSelectOverlay();
+    crmInlineState.activeCell = null;
+    crmInlineState.draftSnapshot = null;
+    var tbody = $('customers-tbody');
+    if (tbody) {
+      tbody.querySelectorAll('.crm-cell-editing').forEach(function (td) {
+        td.classList.remove('crm-cell-editing');
+        var disp = td.querySelector('.crm-cell-display');
+        var ed = td.querySelector('.crm-cell-editor');
+        if (disp) disp.removeAttribute('hidden');
+        if (ed) ed.setAttribute('hidden', '');
+      });
+    }
+  }
+
+  function crmClearSelection() {
+    crmInlineState.selectedRowId = null;
+    crmInlineState.selectedColId = null;
+    crmInlineState.lastClickKey = null;
+    var tbody = $('customers-tbody');
+    if (tbody) {
+      tbody.querySelectorAll('.crm-row-selected').forEach(function (tr) {
+        tr.classList.remove('crm-row-selected');
+      });
+    }
+  }
+
+  function crmClearAll() {
+    crmClearEdit();
+    crmClearSelection();
+    crmInlineState.mouseRowId = null;
+  }
+
+  function crmColDefById(colId) {
+    for (var i = 0; i < CUSTOMERS_COLUMN_DEFS.length; i++) {
+      if (CUSTOMERS_COLUMN_DEFS[i].id === colId) return CUSTOMERS_COLUMN_DEFS[i];
+    }
+    return null;
+  }
+
+  function crmVisibleEditableColIds() {
+    return CUSTOMERS_COLUMN_DEFS.filter(function (col) {
+      if (!col.editable || col.locked) return false;
+      return customersColumnPrefs[col.id] !== false;
+    }).map(function (c) {
+      return c.id;
+    });
+  }
+
+  function crmVisibleNavColIds() {
+    return CUSTOMERS_COLUMN_DEFS.filter(function (col) {
+      if (col.id === 'actions') return false;
+      return customersColumnPrefs[col.id] !== false;
+    }).map(function (c) {
+      return c.id;
+    });
+  }
+
+  function crmGetField(client, fieldKey) {
+    if (!client || !fieldKey) return '';
+    var v = client[fieldKey];
+    return v != null ? String(v) : '';
+  }
+
+  function crmSetField(client, fieldKey, val) {
+    if (!client || !fieldKey) return;
+    client[fieldKey] = val;
+  }
+
+  function crmSelectRowVisual(rowId) {
+    var tbody = $('customers-tbody');
+    if (!tbody) return;
+    tbody.querySelectorAll('.crm-row-selected').forEach(function (tr) {
+      tr.classList.remove('crm-row-selected');
+    });
+    var tr = tbody.querySelector('tr[data-client-id="' + escAttr(rowId) + '"]');
+    if (tr) tr.classList.add('crm-row-selected');
+  }
+
+  function crmSelectRow(rowId, colId) {
+    crmInlineState.selectedRowId = rowId ? String(rowId) : null;
+    crmInlineState.selectedColId = colId || null;
+    crmSelectRowVisual(rowId);
+  }
+
+  function crmFlashCellError(rowId, colId) {
+    var td = document.querySelector(
+      'tr[data-client-id="' + escAttr(rowId) + '"] .crm-cell[data-col-id="' + escAttr(colId) + '"]',
+    );
+    if (!td) return;
+    td.classList.add('crm-cell-err');
+    window.setTimeout(function () {
+      td.classList.remove('crm-cell-err');
+    }, 1400);
+  }
+
+  function crmRemoveDraftIfEmpty(clientId) {
+    var idx = crmFindClientIndex(clientId);
+    if (idx < 0) return;
+    var c = clients[idx];
+    if (!c || !c._crmDraft || c._crmInserted) return;
+    if (String(c.companyName || '').trim()) return;
+    clients.splice(idx, 1);
+    saveClients(clients);
+    crmClearAll();
+    renderClients();
+    if (state.computed) renderInsights();
+  }
+
+  async function crmCommitDraftInsert(clientId) {
+    var idx = crmFindClientIndex(clientId);
+    if (idx < 0) return;
+    var c = clients[idx];
+    if (!c || !c._crmDraft || c._crmInserted) return;
+    if (!String(c.companyName || '').trim()) {
+      crmRemoveDraftIfEmpty(clientId);
+      return;
+    }
+    if (isDemoDashboardUser()) {
+      c._crmInserted = true;
+      delete c._crmDraft;
+      c.updatedAt = new Date().toISOString();
+      saveClients(clients);
+      renderClients();
+      return;
+    }
+    var prev = JSON.parse(JSON.stringify(c));
+    var mode = 'insert';
+    var res = await persistClientToSupabase(c, mode);
+    if (res === 'ok' || res === 'skipped') {
+      c._crmInserted = true;
+      delete c._crmDraft;
+      c.updatedAt = new Date().toISOString();
+      saveClients(clients);
+      renderClients();
+      if (state.computed) renderInsights();
+    } else {
+      clients[idx] = prev;
+      saveClients(clients);
+      renderClients();
+      crmFlashCellError(clientId, 'company');
+      if (persistClientLastError) window.alert(persistClientLastError);
+    }
+  }
+
+  function crmOnLeaveRow(rowId) {
+    var idx = crmFindClientIndex(rowId);
+    if (idx < 0) return;
+    var c = clients[idx];
+    if (c && c._crmDraft && !c._crmInserted) {
+      crmCommitDraftInsert(rowId);
+    }
+  }
+
+  async function crmPersistField(client, fieldKey, colId, prevVal) {
+    if (!client || !fieldKey || client._crmDraft) return;
+    if (isDemoDashboardUser()) {
+      client.updatedAt = new Date().toISOString();
+      saveClients(clients);
+      renderClients();
+      return;
+    }
+    var res = await persistClientToSupabase(client, 'update');
+    if (res === 'ok' || res === 'skipped') {
+      client.updatedAt = new Date().toISOString();
+      saveClients(clients);
+      renderClients();
+    } else {
+      if (prevVal !== undefined) client[fieldKey] = prevVal;
+      saveClients(clients);
+      renderClients();
+      crmFlashCellError(client.id, colId);
+    }
+  }
+
+  function crmSyncDisplayFromClient(td, client, colId) {
+    var def = crmColDefById(colId);
+    if (!def || !td) return;
+    var disp = td.querySelector('.crm-cell-display');
+    if (!disp) return;
+    if (def.id === 'status') {
+      var st = crmGetField(client, 'status') || '—';
+      disp.innerHTML =
+        esc(st) +
+        (clientIsRetainer(client)
+          ? ' <span style="font-size:10px;font-weight:600;color:var(--coral);white-space:nowrap;">Retainer</span>'
+          : '');
+      return;
+    }
+    if (def.fieldKey) {
+      disp.textContent = crmGetField(client, def.fieldKey) || '—';
+    }
+  }
+
+  function crmOpenSelectOverlay(rowId, colId, cellEl, client) {
+    crmCloseSelectOverlay();
+    var def = crmColDefById(colId);
+    if (!def || def.cellType !== 'select' || !def.selectKey) return;
+    var opts =
+      def.selectKey === 'preferred'
+        ? CRM_PREF_CHANNEL_OPTS
+        : def.selectKey === 'style'
+          ? CRM_COMM_STYLE_OPTS
+          : crmStatusSelectOptions();
+    var cur = crmGetField(client, def.fieldKey);
+    var menu = document.createElement('div');
+    menu.className = 'crm-select-overlay';
+    menu.setAttribute('role', 'listbox');
+    opts.forEach(function (opt) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'crm-select-opt' + (String(opt) === String(cur) ? ' crm-select-opt-on' : '');
+      b.textContent = opt;
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var prevSel = crmInlineState.draftSnapshot;
+        crmSetField(client, def.fieldKey, opt);
+        saveClients(clients);
+        crmCloseSelectOverlay();
+        crmClearEdit();
+        renderClients();
+        crmPersistField(client, def.fieldKey, colId, prevSel);
+      });
+      menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+    crmInlineState.overlayEl = menu;
+    var r = cellEl.getBoundingClientRect();
+    function placeOverlay() {
+      var h = menu.offsetHeight || 120;
+      menu.style.left = Math.min(Math.max(4, r.left), window.innerWidth - 224) + 'px';
+      menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 8 - h) + 'px';
+    }
+    placeOverlay();
+    window.requestAnimationFrame(placeOverlay);
+  }
+
+  function crmEnterEdit(rowId, colId) {
+    var def = crmColDefById(colId);
+    if (!def || !def.editable) return;
+    var td = document.querySelector(
+      'tr[data-client-id="' + escAttr(rowId) + '"] .crm-cell[data-col-id="' + escAttr(colId) + '"]',
+    );
+    if (!td) return;
+    var idx = crmFindClientIndex(rowId);
+    var client = idx >= 0 ? clients[idx] : null;
+    if (!client) return;
+    crmClearEdit();
+    crmInlineState.activeCell = { rowId: String(rowId), colId: colId };
+    crmInlineState.draftSnapshot = crmGetField(client, def.fieldKey);
+    td.classList.add('crm-cell-editing');
+    var disp = td.querySelector('.crm-cell-display');
+    var ed = td.querySelector('.crm-cell-editor');
+    if (disp) disp.setAttribute('hidden', '');
+    if (ed) ed.removeAttribute('hidden');
+    if (def.cellType === 'select') {
+      crmOpenSelectOverlay(rowId, colId, td, client);
+      return;
+    }
+    var inp = ed && ed.querySelector('.crm-cell-input');
+    if (inp) {
+      inp.value = crmGetField(client, def.fieldKey);
+      crmInlineState.suppressBlur = true;
+      inp.focus();
+      inp.select();
+      window.setTimeout(function () {
+        crmInlineState.suppressBlur = false;
+      }, 0);
+    }
+  }
+
+  function crmCommitActiveTextEdit() {
+    var ac = crmInlineState.activeCell;
+    if (!ac) return;
+    var def = crmColDefById(ac.colId);
+    if (!def || def.cellType === 'select') return;
+    var idx = crmFindClientIndex(ac.rowId);
+    if (idx < 0) return;
+    var client = clients[idx];
+    var td = document.querySelector(
+      'tr[data-client-id="' + escAttr(ac.rowId) + '"] .crm-cell[data-col-id="' + escAttr(ac.colId) + '"]',
+    );
+    var inp = td && td.querySelector('.crm-cell-input');
+    var nextVal = inp ? String(inp.value || '').trim() : '';
+    var prevForPersist = crmInlineState.draftSnapshot;
+    crmSetField(client, def.fieldKey, nextVal);
+    saveClients(clients);
+    if (def.fieldKey === 'companyName') {
+      if (!nextVal && client._crmDraft) {
+        crmRemoveDraftIfEmpty(ac.rowId);
+        crmClearEdit();
+        return;
+      }
+    }
+    crmClearEdit();
+    if (client._crmDraft && !client._crmInserted) {
+      renderClients();
+      return;
+    }
+    crmPersistField(client, def.fieldKey, ac.colId, prevForPersist);
+  }
+
+  function crmCancelActiveEdit() {
+    var ac = crmInlineState.activeCell;
+    if (!ac) return;
+    var def = crmColDefById(ac.colId);
+    var idx = crmFindClientIndex(ac.rowId);
+    if (idx >= 0 && def && def.fieldKey) {
+      crmSetField(clients[idx], def.fieldKey, crmInlineState.draftSnapshot != null ? crmInlineState.draftSnapshot : '');
+      saveClients(clients);
+    }
+    crmCloseSelectOverlay();
+    crmClearEdit();
+    renderClients();
+  }
+
+  function crmMoveSelection(deltaCol, deltaRow) {
+    var list = crmClientsDisplayList();
+    var cols = crmVisibleNavColIds();
+    if (!crmInlineState.selectedRowId || !cols.length) return;
+    var ri = -1;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && String(list[i].id) === String(crmInlineState.selectedRowId)) {
+        ri = i;
+        break;
+      }
+    }
+    if (ri < 0) return;
+    var ci = cols.indexOf(crmInlineState.selectedColId);
+    if (ci < 0) {
+      var scid = crmInlineState.selectedColId;
+      var si = -1;
+      for (var j = 0; j < CUSTOMERS_COLUMN_DEFS.length; j++) {
+        if (CUSTOMERS_COLUMN_DEFS[j].id === scid) {
+          si = CUSTOMERS_COLUMN_DEFS[j].index;
+          break;
+        }
+      }
+      ci = 0;
+      if (si >= 0) {
+        var best = 0;
+        var bestDist = 999;
+        for (var t = 0; t < cols.length; t++) {
+          var dd = crmColDefById(cols[t]);
+          if (!dd) continue;
+          var dist = Math.abs(dd.index - si);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = t;
+          }
+        }
+        ci = best;
+      }
+    }
+    var ni = Math.max(0, Math.min(cols.length - 1, ci + deltaCol));
+    var nr = Math.max(0, Math.min(list.length - 1, ri + deltaRow));
+    var nrow = list[nr];
+    if (!nrow) return;
+    crmClearEdit();
+    crmSelectRow(nrow.id, cols[ni]);
+  }
+
+  function crmDismissSelectEditor() {
+    crmCloseSelectOverlay();
+    var ac = crmInlineState.activeCell;
+    crmInlineState.activeCell = null;
+    crmInlineState.draftSnapshot = null;
+    if (!ac) return;
+    var td = document.querySelector(
+      'tr[data-client-id="' + escAttr(ac.rowId) + '"] .crm-cell[data-col-id="' + escAttr(ac.colId) + '"]',
+    );
+    if (!td) return;
+    td.classList.remove('crm-cell-editing');
+    var disp = td.querySelector('.crm-cell-display');
+    var ed = td.querySelector('.crm-cell-editor');
+    if (disp) disp.removeAttribute('hidden');
+    if (ed) ed.setAttribute('hidden', '');
+  }
+
+  function crmHandleCellClick(ev, cell) {
+    if (ev.target.closest('button')) return;
+    var rowId = cell.getAttribute('data-client-id');
+    var colId = cell.getAttribute('data-col-id');
+    if (!rowId || !colId) return;
+    var def = crmColDefById(colId);
+    var key = rowId + ':' + colId;
+    if (
+      def &&
+      def.editable &&
+      crmInlineState.selectedRowId === rowId &&
+      crmInlineState.selectedColId === colId &&
+      crmInlineState.lastClickKey === key &&
+      !crmInlineState.activeCell
+    ) {
+      crmEnterEdit(rowId, colId);
+      crmInlineState.lastClickKey = null;
+      return;
+    }
+    crmClearEdit();
+    crmSelectRow(rowId, colId);
+    crmInlineState.lastClickKey = key;
+  }
+
+  function crmBeforeRenderClients() {
+    crmCloseSelectOverlay();
+    var listIds = {};
+    crmClientsDisplayList().forEach(function (c) {
+      if (c && c.id) listIds[String(c.id)] = true;
+    });
+    if (crmInlineState.selectedRowId && !listIds[String(crmInlineState.selectedRowId)]) {
+      crmClearAll();
+    }
+  }
+
+  function crmAfterRenderClients() {
+    if (crmInlineState.activeCell) {
+      var ac = crmInlineState.activeCell;
+      window.requestAnimationFrame(function () {
+        crmEnterEdit(ac.rowId, ac.colId);
+      });
+    } else if (crmInlineState.selectedRowId) {
+      crmSelectRowVisual(crmInlineState.selectedRowId);
+    }
+  }
+
+  function crmBuildClientRowHtml(c) {
+    var rev = effectiveClientRevenue(c);
+    var cost = effectiveClientAllocatedCost(c);
+    var pr = fmtProfitMarginRoi(rev, cost);
+    var profitStyle = 'font-variant-numeric:tabular-nums;';
+    if (pr.profit < 0) profitStyle += 'color:var(--red);';
+    else if (pr.profit > 0) profitStyle += 'color:var(--green);';
+    var pcount = clientProjectCount(c.id);
+    var revTitle = c.custTabRevenue != null ? ' title="Custom revenue — edit client to change"' : '';
+    var costTitle = c.custTabAllocatedCost != null ? ' title="Custom allocated cost — edit client to change"' : '';
+    var rowSel = crmInlineState.selectedRowId === String(c.id);
+    var ac = crmInlineState.activeCell;
+    var rowClass = 'crm-row' + (rowSel ? ' crm-row-selected' : '');
+
+    function cellHtml(def, innerDisplay, extraTdClass, tdOpenExtra) {
+      var openX = tdOpenExtra || '';
+      var isEdit = ac && ac.rowId === String(c.id) && ac.colId === def.id;
+      var cls = 'crm-cell td-truncate' + (extraTdClass || '') + (isEdit ? ' crm-cell-editing' : '');
+      if (def.editable) {
+        var editorInner =
+          def.cellType === 'select'
+            ? ''
+            : '<input type="text" class="fi crm-cell-input" autocomplete="off" />';
+        return (
+          '<td class="' +
+          cls +
+          '"' +
+          openX +
+          ' data-client-id="' +
+          escAttr(c.id) +
+          '" data-col-id="' +
+          escAttr(def.id) +
+          '" tabindex="-1">' +
+          '<div class="crm-cell-display"' +
+          (isEdit ? ' hidden' : '') +
+          '>' +
+          innerDisplay +
+          '</div>' +
+          '<div class="crm-cell-editor"' +
+          (isEdit ? '' : ' hidden') +
+          '>' +
+          editorInner +
+          '</div></td>'
+        );
+      }
+      return (
+        '<td class="' +
+        cls +
+        '"' +
+        openX +
+        ' data-client-id="' +
+        escAttr(c.id) +
+        '" data-col-id="' +
+        escAttr(def.id) +
+        '" tabindex="-1">' +
+        innerDisplay +
+        '</td>'
+      );
+    }
+
+    var companyText = c.companyName || '—';
+    var contactText = c.contactName || '—';
+    var emailText = c.email || '—';
+    var phoneText = c.phone || '—';
+    var stHtml =
+      esc(c.status || '—') +
+      (clientIsRetainer(c) ? ' <span style="font-size:10px;font-weight:600;color:var(--coral);white-space:nowrap;">Retainer</span>' : '');
+
+    var tds = '';
+    tds += cellHtml(crmColDefById('company'), esc(companyText), ' tdp');
+    tds += cellHtml(crmColDefById('contact'), esc(contactText), '');
+    tds += cellHtml(crmColDefById('email'), esc(emailText), '');
+    tds += cellHtml(crmColDefById('phone'), esc(phoneText), '');
+    tds += cellHtml(crmColDefById('preferred'), esc(c.preferredChannel || '—'), '');
+    tds += cellHtml(crmColDefById('style'), esc(c.communicationStyle || '—'), '');
+    tds += cellHtml(crmColDefById('status'), stHtml, '');
+    tds += cellHtml(crmColDefById('projects'), pcount ? String(pcount) : '—', '', '');
+    tds += cellHtml(crmColDefById('revenue'), fmtCurrency(rev), '', revTitle);
+    tds += cellHtml(crmColDefById('allocated'), fmtCurrency(cost), '', costTitle);
+    tds += cellHtml(crmColDefById('profit'), fmtCurrency(pr.profit), ' tdp', ' style="' + profitStyle.replace(/"/g, '') + '"');
+    tds += cellHtml(crmColDefById('margin'), pr.marginStr, '');
+    tds += cellHtml(crmColDefById('roi'), pr.roiStr, '');
+    tds += cellHtml(crmColDefById('updated'), esc(crmFormatUpdatedDisplay(c)), '');
+    tds +=
+      '<td class="crm-cell td-truncate" data-client-id="' +
+      escAttr(c.id) +
+      '" data-col-id="actions" tabindex="-1">' +
+      '<div style="display:flex;gap:6px;flex-wrap:nowrap;">' +
+      '<button type="button" class="btn" data-client-edit="' +
+      escAttr(c.id) +
+      '">Full record</button>' +
+      '<button type="button" class="btn" data-client-del="' +
+      escAttr(c.id) +
+      '" style="color:var(--red);">Delete</button>' +
+      '</div></td>';
+
+    return '<tr class="' + rowClass + '" data-client-id="' + escAttr(c.id) + '">' + tds + '</tr>';
+  }
+
+  function wireCrmInlineCustomers() {
+    if (crmCustomersInlineWired) return;
+    crmCustomersInlineWired = true;
+    var tbl = $('customers-table');
+    if (!tbl) return;
+    tbl.addEventListener('mousedown', function (ev) {
+      var trM = ev.target.closest && ev.target.closest('tr[data-client-id]');
+      crmInlineState.mouseRowId = trM ? trM.getAttribute('data-client-id') : null;
+    }, true);
+    tbl.addEventListener('focusout', function (ev) {
+      if (crmInlineState.suppressBlur) return;
+      var t = ev.target;
+      if (!t || !t.classList || !t.classList.contains('crm-cell-input')) return;
+      var td = t.closest('.crm-cell');
+      var tr = t.closest('tr');
+      if (!td || !tr) return;
+      var rowId = tr.getAttribute('data-client-id');
+      var rel = ev.relatedTarget;
+      var leaveRow = !rel || !tr.contains(rel);
+      if (leaveRow && !rel && crmInlineState.mouseRowId && String(crmInlineState.mouseRowId) === String(rowId)) {
+        leaveRow = false;
+      }
+      if (rel && tr.contains(rel)) {
+        crmCommitActiveTextEdit();
+        return;
+      }
+      crmCommitActiveTextEdit();
+      if (leaveRow) crmOnLeaveRow(rowId);
+    });
+    tbl.addEventListener('keydown', function (ev) {
+      var pg = $('page-customers');
+      if (!pg || !pg.classList.contains('on')) return;
+      if (!crmInlineState.activeCell) return;
+      var inp = ev.target;
+      if (!inp || !inp.classList.contains('crm-cell-input')) return;
+      if (ev.key === 'Tab') {
+        ev.preventDefault();
+        var cols = crmVisibleEditableColIds();
+        var ac = crmInlineState.activeCell;
+        var ix = cols.indexOf(ac.colId);
+        crmCommitActiveTextEdit();
+        var ni = ev.shiftKey ? ix - 1 : ix + 1;
+        if (ni >= 0 && ni < cols.length) {
+          crmSelectRow(ac.rowId, cols[ni]);
+          crmEnterEdit(ac.rowId, cols[ni]);
+        } else if (!ev.shiftKey && ni >= cols.length) {
+          crmOnLeaveRow(ac.rowId);
+        }
+        return;
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        var rid = crmInlineState.activeCell.rowId;
+        var cid = crmInlineState.activeCell.colId;
+        crmCommitActiveTextEdit();
+        var list = crmClientsDisplayList();
+        var ri = -1;
+        for (var i = 0; i < list.length; i++) {
+          if (list[i] && String(list[i].id) === String(rid)) {
+            ri = i;
+            break;
+          }
+        }
+        if (ri >= 0 && ri + 1 < list.length) {
+          var nr = list[ri + 1].id;
+          crmSelectRow(nr, cid);
+          crmEnterEdit(nr, cid);
+        }
+        return;
+      }
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        crmCancelActiveEdit();
+      }
+    });
+    document.addEventListener('mousedown', function (ev) {
+      var pg = $('page-customers');
+      if (!pg || !pg.classList.contains('on')) return;
+      if (ev.target.closest && ev.target.closest('.crm-select-overlay')) return;
+      var ct = $('customers-table');
+      if (ct && ct.contains(ev.target)) return;
+      crmClearAll();
+    }, true);
+    document.addEventListener('keydown', function (ev) {
+      var pg = $('page-customers');
+      if (!pg || !pg.classList.contains('on')) return;
+      if (ev.key === 'Escape' && crmInlineState.activeCell) {
+        var escDef = crmColDefById(crmInlineState.activeCell.colId);
+        if (escDef && escDef.cellType === 'select') {
+          ev.preventDefault();
+          crmCancelActiveEdit();
+          return;
+        }
+      }
+      var ac0 = crmInlineState.activeCell;
+      if (ac0) {
+        var acd0 = crmColDefById(ac0.colId);
+        if (acd0 && acd0.cellType === 'select' && ev.key === 'Tab') {
+          ev.preventDefault();
+          var ridT = ac0.rowId;
+          var cidT = ac0.colId;
+          crmDismissSelectEditor();
+          var colsT = crmVisibleEditableColIds();
+          var ixT = colsT.indexOf(cidT);
+          var niT = ev.shiftKey ? ixT - 1 : ixT + 1;
+          if (niT >= 0 && niT < colsT.length) {
+            crmSelectRow(ridT, colsT[niT]);
+            crmEnterEdit(ridT, colsT[niT]);
+          } else if (!ev.shiftKey && niT >= colsT.length) {
+            crmOnLeaveRow(ridT);
+          }
+          return;
+        }
+      }
+      if (crmInlineState.activeCell || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (!crmInlineState.selectedRowId || !crmInlineState.selectedColId) return;
+      if (ev.key === 'ArrowRight') {
+        ev.preventDefault();
+        crmMoveSelection(1, 0);
+        return;
+      }
+      if (ev.key === 'ArrowLeft') {
+        ev.preventDefault();
+        crmMoveSelection(-1, 0);
+        return;
+      }
+      if (ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        crmMoveSelection(0, 1);
+        return;
+      }
+      if (ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        crmMoveSelection(0, -1);
+        return;
+      }
+      var scCol = crmColDefById(crmInlineState.selectedColId);
+      if (ev.key.length === 1 && !ev.key.match(/\s/) && scCol && scCol.editable) {
+        ev.preventDefault();
+        var rid = crmInlineState.selectedRowId;
+        var cid = crmInlineState.selectedColId;
+        if (scCol.cellType === 'select') {
+          crmEnterEdit(rid, cid);
+          return;
+        }
+        crmEnterEdit(rid, cid);
+        window.requestAnimationFrame(function () {
+          var td = document.querySelector(
+            'tr[data-client-id="' + escAttr(rid) + '"] .crm-cell[data-col-id="' + escAttr(cid) + '"]',
+          );
+          var inp = td && td.querySelector('.crm-cell-input');
+          if (inp) {
+            inp.value = ev.key;
+            inp.focus();
+          }
+        });
+      }
+    });
+    var searchInp = $('customers-search');
+    if (searchInp) {
+      searchInp.addEventListener('input', function () {
+        crmBeforeRenderClients();
+        renderClients();
+      });
+    }
+  }
+
+  function crmStartNewClientRow() {
+    var st0 = crmStatusSelectOptions()[0] || 'Lead';
+    var row = {
+      id: uuid(),
+      companyName: '',
+      contactName: '',
+      email: '',
+      phone: '',
+      status: st0,
+      industry: '',
+      preferredChannel: CRM_PREF_CHANNEL_OPTS[0] || '',
+      communicationStyle: CRM_COMM_STYLE_OPTS[0] || '',
+      notes: '',
+      birthday: '',
+      lastTouchAt: '',
+      nextFollowUpAt: '',
+      relationshipNotes: '',
+      totalRevenue: 0,
+      createdAt: Date.now(),
+      retainer: false,
+      _crmDraft: true,
+      _crmInserted: false,
+    };
+    clients.push(row);
+    saveClients(clients);
+    crmClearAll();
+    crmInlineState.selectedRowId = String(row.id);
+    crmInlineState.selectedColId = 'company';
+    renderClients();
+    window.requestAnimationFrame(function () {
+      crmEnterEdit(row.id, 'company');
+    });
+    if (state.computed) renderInsights();
+  }
+
   function renderClients() {
+    crmBeforeRenderClients();
     var tbody = $('customers-tbody');
     var empty = $('customers-empty');
     var table = $('customers-table');
     if (!tbody) return;
 
-    if (!clients.length) {
+    var list = crmClientsDisplayList();
+    if (!list.length) {
+      crmClearAll();
       tbody.innerHTML = '';
       if (empty) empty.style.display = 'block';
       if (table) table.style.display = 'none';
     } else {
       if (empty) empty.style.display = 'none';
       if (table) table.style.display = 'table';
-      tbody.innerHTML = clients.map(function (c) {
-        var rev = effectiveClientRevenue(c);
-        var cost = effectiveClientAllocatedCost(c);
-        var pr = fmtProfitMarginRoi(rev, cost);
-        var profitStyle = 'font-variant-numeric:tabular-nums;';
-        if (pr.profit < 0) profitStyle += 'color:var(--red);';
-        else if (pr.profit > 0) profitStyle += 'color:var(--green);';
-        var pcount = clientProjectCount(c.id);
-        var revTitle = c.custTabRevenue != null ? ' title="Custom revenue — edit client to change"' : '';
-        var costTitle = c.custTabAllocatedCost != null ? ' title="Custom allocated cost — edit client to change"' : '';
-        var companyText = c.companyName || '—';
-        var contactText = c.contactName || '—';
-        var emailText = c.email || '—';
-        var phoneText = c.phone || '—';
-        return '<tr>' +
-          '<td class="tdp td-truncate" title="' + escAttr(companyText) + '">' + esc(companyText) + '</td>' +
-          '<td class="td-truncate" title="' + escAttr(contactText) + '">' + esc(contactText) + '</td>' +
-          '<td class="td-truncate" title="' + escAttr(emailText) + '">' + esc(emailText) + '</td>' +
-          '<td class="td-truncate" title="' + escAttr(phoneText) + '">' + esc(phoneText) + '</td>' +
-          '<td>' + esc(c.preferredChannel || '—') + '</td>' +
-          '<td>' + esc(c.communicationStyle || '—') + '</td>' +
-          '<td>' + esc(c.status || '—') +
-            (clientIsRetainer(c) ? ' <span style="font-size:10px;font-weight:600;color:var(--coral);white-space:nowrap;">Retainer</span>' : '') +
-          '</td>' +
-          '<td>' + (pcount ? String(pcount) : '—') + '</td>' +
-          '<td' + revTitle + ' style="font-variant-numeric:tabular-nums;">' + fmtCurrency(rev) + '</td>' +
-          '<td' + costTitle + ' style="font-variant-numeric:tabular-nums;">' + fmtCurrency(cost) + '</td>' +
-          '<td class="tdp" style="' + profitStyle + '">' + fmtCurrency(pr.profit) + '</td>' +
-          '<td>' + pr.marginStr + '</td>' +
-          '<td>' + pr.roiStr + '</td>' +
-          '<td style="min-width:120px;">' +
-            '<div style="display:flex;gap:6px;flex-wrap:nowrap;">' +
-              '<button type="button" class="btn" data-client-edit="' + c.id + '">Edit</button>' +
-              '<button type="button" class="btn" data-client-del="' + c.id + '" style="color:var(--red);">Delete</button>' +
-            '</div>' +
-          '</td>' +
-        '</tr>';
-      }).join('');
+      tbody.innerHTML = list.map(crmBuildClientRowHtml).join('');
       applyCustomersColumnVisibility();
+      crmAfterRenderClients();
     }
 
     var k = computeClientKpis();
@@ -13526,6 +14301,11 @@ var incomePowerState = {
     var custTable = $('customers-table');
     if (custTable) {
       custTable.addEventListener('click', function (ev) {
+        var cell = ev.target.closest && ev.target.closest('.crm-cell');
+        if (cell && !ev.target.closest('button')) {
+          crmHandleCellClick(ev, cell);
+          return;
+        }
         var editBtn = ev.target.closest('[data-client-edit]');
         if (editBtn) {
           var editId = editBtn.getAttribute('data-client-edit');
@@ -14805,8 +15585,7 @@ var incomePowerState = {
     if (btnAddClient) {
       btnAddClient.addEventListener('click', async function () {
         await wfRefreshFromSupabase();
-        openClientModal();
-        wfFillClientPipelineSelect($('client-pipeline-stage'), null);
+        crmStartNewClientRow();
       });
     }
     if (btnClientCancel) btnClientCancel.addEventListener('click', closeClientModal);
@@ -15476,6 +16255,9 @@ var incomePowerState = {
         if (settingsRow && settingsRow.dashboard_settings) {
           await applyDashboardSettingsFromCloud(settingsRow.dashboard_settings);
         }
+        await hydrateWorkspaceUiIconsFromSupabase();
+        renderListsSidebar();
+        if (typeof window.bizDashRepaintAllBrandedIcons === 'function') window.bizDashRepaintAllBrandedIcons();
         if (userUiPrefsCache && userUiPrefsCache.preferences != null && userUiPrefsCache.preferences !== undefined) {
           applyPreferencesRuntime(userUiPrefsCache.preferences);
         }
@@ -16921,6 +17703,9 @@ var incomePowerState = {
   var listsSbNewPageTargetId = null;
   var listsSbCtxWired = false;
   var listsUi = { selectedTplId: null, activeCat: 'content', search: '' };
+  var workspaceUiIconsCache = {};
+  var brandedNavIconsWired = false;
+  var listsSbIconClickWired = false;
 
   var LIST_CATEGORIES = [
     { id: 'content', label: 'Content' },
@@ -16991,8 +17776,8 @@ var incomePowerState = {
   function tplColumnsForEnabled(tpl, enabledMap) {
     var cols = [];
     (tpl.columnDefs || []).forEach(function (d) {
-      if (d.required) cols.push({ id: d.id, name: d.name });
-      else if (d.featureId && enabledMap[d.featureId]) cols.push({ id: d.id, name: d.name });
+      if (d.required) cols.push({ id: d.id, name: d.name, icon: null, iconStyle: 'filled' });
+      else if (d.featureId && enabledMap[d.featureId]) cols.push({ id: d.id, name: d.name, icon: null, iconStyle: 'filled' });
     });
     return cols;
   }
@@ -17033,6 +17818,8 @@ var incomePowerState = {
       enabledFeatureIds: JSON.parse(JSON.stringify(enabledMap)),
       activeView: av,
       updatedAt: new Date().toISOString(),
+      icon: tpl && tpl.emoji ? String(tpl.emoji) : null,
+      iconStyle: 'filled',
     };
   }
 
@@ -17053,6 +17840,8 @@ var incomePowerState = {
       supportsCalendarView: false,
       activeView: 'table',
       updatedAt: new Date().toISOString(),
+      icon: null,
+      iconStyle: 'filled',
     };
   }
 
@@ -17068,6 +17857,345 @@ var incomePowerState = {
       if (String(lists[i].id) === String(id)) return i;
     }
     return -1;
+  }
+
+  function getWorkspaceBrandingAccentHex() {
+    var ah = document.getElementById('setting-accent-hex');
+    if (ah && String(ah.value || '').trim()) return normalizeHexColor(String(ah.value).trim(), '#0a0a0a');
+    var coral = '';
+    try {
+      coral = (getComputedStyle(document.documentElement).getPropertyValue('--coral') || '').trim();
+    } catch (_) {}
+    if (coral) return normalizeHexColor(coral, '#0a0a0a');
+    return '#0a0a0a';
+  }
+
+  function workspaceUiIconCacheKey(entityType, entityId) {
+    return String(entityType) + '|' + String(entityId);
+  }
+
+  async function hydrateWorkspaceUiIconsFromSupabase() {
+    workspaceUiIconsCache = {};
+    supabase = window.supabaseClient || supabase;
+    if (!supabase || !getCurrentOrgId() || isDemoDashboardUser()) return;
+    try {
+      var res = await supabase
+        .from('workspace_ui_icons')
+        .select('entity_type,entity_id,icon,icon_style')
+        .eq('organization_id', getCurrentOrgId());
+      if (res.error) {
+        var em = String(res.error.message || res.error || '').toLowerCase();
+        if (em.indexOf('could not find') !== -1 || em.indexOf('schema') !== -1) return;
+        return;
+      }
+      (res.data || []).forEach(function (row) {
+        if (!row || !row.entity_type || row.entity_id == null) return;
+        workspaceUiIconsCache[workspaceUiIconCacheKey(row.entity_type, row.entity_id)] = {
+          icon: row.icon != null ? String(row.icon) : '',
+          iconStyle: row.icon_style === 'outlined' ? 'outlined' : 'filled',
+        };
+      });
+      applyWorkspaceUiIconsCacheToListsInMemory();
+    } catch (_) {}
+  }
+
+  async function upsertWorkspaceUiIconRemote(entityType, entityId, icon, iconStyle) {
+    supabase = window.supabaseClient || supabase;
+    if (!supabase || !getCurrentOrgId() || isDemoDashboardUser()) return;
+    var payload = {
+      organization_id: getCurrentOrgId(),
+      entity_type: entityType,
+      entity_id: String(entityId),
+      icon: icon != null && String(icon).trim() ? String(icon).trim() : null,
+      icon_style: iconStyle === 'outlined' ? 'outlined' : 'filled',
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      var res = await supabase.from('workspace_ui_icons').upsert(payload, {
+        onConflict: 'organization_id,entity_type,entity_id',
+      });
+      if (res.error) {
+        var es = String(res.error.message || '').toLowerCase();
+        if (es.indexOf('workspace_ui_icons') !== -1 || es.indexOf('could not find') !== -1) return;
+      }
+    } catch (_) {}
+  }
+
+  function rememberWorkspaceUiIconLocal(entityType, entityId, icon, iconStyle) {
+    var k = workspaceUiIconCacheKey(entityType, entityId);
+    if (icon == null || !String(icon).trim()) {
+      delete workspaceUiIconsCache[k];
+      return;
+    }
+    workspaceUiIconsCache[k] = {
+      icon: String(icon).trim(),
+      iconStyle: iconStyle === 'outlined' ? 'outlined' : 'filled',
+    };
+  }
+
+  function applyWorkspaceUiIconsCacheToListsInMemory() {
+    var lists = loadWorkspaceLists();
+    var dirty = false;
+    function touchList(listId, icon, iconStyle) {
+      var ix = findWorkspaceListIndexById(listId);
+      if (ix < 0) return;
+      if (icon !== undefined && lists[ix].icon !== icon) {
+        lists[ix].icon = icon;
+        dirty = true;
+      }
+      if (iconStyle !== undefined && lists[ix].iconStyle !== iconStyle) {
+        lists[ix].iconStyle = iconStyle;
+        dirty = true;
+      }
+    }
+    function touchCol(listId, colId, icon, iconStyle) {
+      var ix = findWorkspaceListIndexById(listId);
+      if (ix < 0) return;
+      var cols = lists[ix].columns || [];
+      for (var c = 0; c < cols.length; c++) {
+        if (String(cols[c].id) === String(colId)) {
+          if (icon !== undefined) cols[c].icon = icon;
+          if (iconStyle !== undefined) cols[c].iconStyle = iconStyle;
+          dirty = true;
+          break;
+        }
+      }
+    }
+    Object.keys(workspaceUiIconsCache).forEach(function (key) {
+      var rec = workspaceUiIconsCache[key];
+      var pipe = key.indexOf('|');
+      if (pipe < 0) return;
+      var typ = key.slice(0, pipe);
+      var idRest = key.slice(pipe + 1);
+      if (typ === 'list') touchList(idRest, rec.icon, rec.iconStyle);
+      if (typ === 'list_column') {
+        var colon = idRest.indexOf(':');
+        if (colon > 0) touchCol(idRest.slice(0, colon), idRest.slice(colon + 1), rec.icon, rec.iconStyle);
+      }
+    });
+    if (dirty) saveWorkspaceLists(lists);
+  }
+
+  function paintBrandedIconIntoHost(host, icon, iconStyle) {
+    if (!host) return;
+    var br = window.bizDashIconBranding;
+    var hex = getWorkspaceBrandingAccentHex();
+    var token = br ? br.brandingColorTokenFromAccentHex(hex) : 'black-white';
+    var color = br ? br.resolveIconColor(token) : '#0a0a0a';
+    host.classList.toggle('bizdash-ico-outlined', !!(br && br.shouldRenderOutlined && br.shouldRenderOutlined(token, iconStyle, icon)));
+    host.innerHTML = '';
+    host.style.color = color;
+    if (!icon || !String(icon).trim()) {
+      host.innerHTML = '<span class="bizdash-ico-ph" aria-hidden="true">▢</span>';
+      return;
+    }
+    var parsed = br ? br.parseStoredIcon(icon) : { kind: 'emoji', value: String(icon) };
+    if (parsed.kind === 'emoji') {
+      var sp = document.createElement('span');
+      sp.className = 'bizdash-ico-emoji';
+      sp.textContent = parsed.value;
+      host.appendChild(sp);
+      return;
+    }
+    if (parsed.kind === 'lucide') {
+      var img = document.createElement('img');
+      img.setAttribute('alt', '');
+      img.width = 16;
+      img.height = 16;
+      img.className = 'bizdash-ico-lucide';
+      img.src =
+        'https://api.iconify.design/lucide/' +
+        encodeURIComponent(parsed.value) +
+        '.svg?color=' +
+        encodeURIComponent(color);
+      host.appendChild(img);
+      return;
+    }
+    host.innerHTML = '<span class="bizdash-ico-ph" aria-hidden="true">▢</span>';
+  }
+
+  function paintNavSidebarIcon(nav, hit) {
+    if (!hit) return;
+    var svg0 = hit.querySelector('svg');
+    if (svg0 && !hit._defaultSvgXml) hit._defaultSvgXml = svg0.outerHTML;
+    var k = workspaceUiIconCacheKey('sidebar_nav', nav);
+    var rec = workspaceUiIconsCache[k];
+    var icon = rec && rec.icon ? rec.icon : null;
+    var sty = rec && rec.iconStyle ? rec.iconStyle : 'filled';
+    if (!icon) {
+      if (hit._defaultSvgXml) hit.innerHTML = hit._defaultSvgXml;
+      return;
+    }
+    paintBrandedIconIntoHost(hit, icon, sty);
+  }
+
+  function bizDashRepaintAllBrandedIcons() {
+    document.querySelectorAll('[data-nav-icon-hit]').forEach(function (hit) {
+      var nav = hit.getAttribute('data-nav-icon-hit');
+      if (nav) paintNavSidebarIcon(nav, hit);
+    });
+    document.querySelectorAll('.lists-sb-ico-hit').forEach(function (hit) {
+      var lid = hit.getAttribute('data-list-icon-id');
+      if (!lid) return;
+      var L = listsSbGetListById(lid);
+      if (!L) return;
+      normalizeListForUi(L);
+      var tpl = L.templateId ? findListTemplate(L.templateId) : null;
+      var ck = workspaceUiIconCacheKey('list', lid);
+      var rec = workspaceUiIconsCache[ck];
+      var icon = L.icon != null && String(L.icon) !== '' ? L.icon : rec && rec.icon ? rec.icon : tpl && tpl.emoji ? tpl.emoji : null;
+      var sty = L.iconStyle || (rec && rec.iconStyle) || 'filled';
+      paintBrandedIconIntoHost(hit, icon, sty);
+    });
+    paintListTableHeaderIcons();
+  }
+
+  window.bizDashRepaintAllBrandedIcons = bizDashRepaintAllBrandedIcons;
+
+  function ensureNavIconHitsInstalled() {
+    if (brandedNavIconsWired) return;
+    brandedNavIconsWired = true;
+    document.querySelectorAll('.sb-nav .ni[data-nav]').forEach(function (ni) {
+      if (ni.querySelector('[data-nav-icon-hit]')) return;
+      var svg = ni.querySelector('svg');
+      if (!svg) return;
+      var nav = ni.getAttribute('data-nav');
+      var hit = document.createElement('span');
+      hit.className = 'ni-ico-scope';
+      hit.setAttribute('data-nav-icon-hit', nav);
+      ni.insertBefore(hit, svg);
+      hit.appendChild(svg);
+      hit.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openWorkspaceNavIconPicker(nav, hit);
+      });
+      paintNavSidebarIcon(nav, hit);
+    });
+  }
+
+  function openWorkspaceNavIconPicker(nav, anchorEl) {
+    if (typeof window.bizDashIconPickerOpen !== 'function') return;
+    var k = workspaceUiIconCacheKey('sidebar_nav', nav);
+    var rec = workspaceUiIconsCache[k] || {};
+    window.bizDashIconPickerOpen({
+      anchorEl: anchorEl,
+      brandingAccentHex: getWorkspaceBrandingAccentHex(),
+      initialIcon: rec.icon || null,
+      initialIconStyle: rec.iconStyle || 'filled',
+      onCommit: function (payload) {
+        rememberWorkspaceUiIconLocal('sidebar_nav', nav, payload.icon, payload.iconStyle);
+        void upsertWorkspaceUiIconRemote('sidebar_nav', nav, payload.icon, payload.iconStyle);
+        paintNavSidebarIcon(nav, anchorEl);
+      },
+      onClose: function () {},
+    });
+  }
+
+  function wireBrandedNavIconsOnce() {
+    ensureNavIconHitsInstalled();
+  }
+
+  function openListIconPicker(listId, anchorEl) {
+    if (typeof window.bizDashIconPickerOpen !== 'function') return;
+    var L = listsSbGetListById(listId);
+    var ck = workspaceUiIconCacheKey('list', listId);
+    var rec = workspaceUiIconsCache[ck] || {};
+    var tpl = L && L.templateId ? findListTemplate(L.templateId) : null;
+    var initial =
+      L && L.icon != null && String(L.icon) !== ''
+        ? L.icon
+        : rec.icon
+          ? rec.icon
+          : tpl && tpl.emoji
+            ? String(tpl.emoji)
+            : null;
+    window.bizDashIconPickerOpen({
+      anchorEl: anchorEl,
+      brandingAccentHex: getWorkspaceBrandingAccentHex(),
+      initialIcon: initial,
+      initialIconStyle: (L && L.iconStyle) || rec.iconStyle || 'filled',
+      onCommit: function (payload) {
+        updateWorkspaceListById(listId, function (X) {
+          X.icon = payload.icon || null;
+          X.iconStyle = payload.iconStyle || 'filled';
+        });
+        rememberWorkspaceUiIconLocal('list', listId, payload.icon, payload.iconStyle);
+        void upsertWorkspaceUiIconRemote('list', listId, payload.icon, payload.iconStyle);
+        paintBrandedIconIntoHost(anchorEl, payload.icon || null, payload.iconStyle);
+      },
+      onClose: function () {},
+    });
+  }
+
+  function openListColumnIconPicker(listId, colId, anchorEl) {
+    if (typeof window.bizDashIconPickerOpen !== 'function') return;
+    var L = listsSbGetListById(listId);
+    if (!L) return;
+    var col = null;
+    (L.columns || []).forEach(function (c) {
+      if (String(c.id) === String(colId)) col = c;
+    });
+    if (!col) return;
+    var ck = workspaceUiIconCacheKey('list_column', listId + ':' + colId);
+    var rec = workspaceUiIconsCache[ck] || {};
+    window.bizDashIconPickerOpen({
+      anchorEl: anchorEl,
+      brandingAccentHex: getWorkspaceBrandingAccentHex(),
+      initialIcon: col.icon != null && String(col.icon) !== '' ? col.icon : rec.icon || null,
+      initialIconStyle: col.iconStyle || rec.iconStyle || 'filled',
+      onCommit: function (payload) {
+        updateWorkspaceListById(listId, function (X) {
+          (X.columns || []).forEach(function (c) {
+            if (String(c.id) === String(colId)) {
+              c.icon = payload.icon || null;
+              c.iconStyle = payload.iconStyle || 'filled';
+            }
+          });
+        });
+        rememberWorkspaceUiIconLocal('list_column', listId + ':' + colId, payload.icon, payload.iconStyle);
+        void upsertWorkspaceUiIconRemote('list_column', listId + ':' + colId, payload.icon, payload.iconStyle);
+        paintBrandedIconIntoHost(anchorEl, payload.icon || null, payload.iconStyle);
+      },
+      onClose: function () {},
+    });
+  }
+
+  function wireListsSidebarIconClicksOnce() {
+    if (listsSbIconClickWired) return;
+    listsSbIconClickWired = true;
+    var host = document.getElementById('lists-sb-items');
+    if (!host) return;
+    host.addEventListener('click', function (ev) {
+      var hit = ev.target.closest && ev.target.closest('.lists-sb-ico-hit');
+      if (!hit) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var lid = hit.getAttribute('data-list-icon-id');
+      if (!lid) return;
+      openListIconPicker(lid, hit);
+    });
+  }
+
+  function paintListTableHeaderIcons() {
+    var wrap = document.getElementById('lists-detail-table-wrap');
+    if (!wrap) return;
+    var det = document.getElementById('lists-view-detail');
+    var listId = det && det.getAttribute('data-active-list');
+    var L = listId ? listsSbGetListById(listId) : null;
+    if (!L) return;
+    normalizeListForUi(L);
+    wrap.querySelectorAll('.lists-th-ico-hit').forEach(function (hit) {
+      var cid = hit.getAttribute('data-col-icon-id');
+      var col = null;
+      (L.columns || []).forEach(function (c) {
+        if (String(c.id) === String(cid)) col = c;
+      });
+      var ck = workspaceUiIconCacheKey('list_column', L.id + ':' + cid);
+      var rec = workspaceUiIconsCache[ck] || {};
+      var icon = col && col.icon != null && String(col.icon) !== '' ? col.icon : rec.icon || null;
+      var sty = (col && col.iconStyle) || rec.iconStyle || 'filled';
+      paintBrandedIconIntoHost(hit, icon, sty);
+    });
   }
 
   function updateWorkspaceListById(id, mutator) {
@@ -17162,6 +18290,8 @@ var incomePowerState = {
       previewTabs: [],
       activeView: p.supportsCalendarView ? 'calendar' : 'table',
       updatedAt: new Date().toISOString(),
+      icon: null,
+      iconStyle: 'filled',
     };
     if (L.supportsCalendarView && !L.calendarDateColumnId) {
       L.calendarDateColumnId = colIds.length > 1 ? colIds[1] : colIds[0];
@@ -17184,8 +18314,9 @@ var incomePowerState = {
     ev.preventDefault();
     ev.stopPropagation();
     if (action === 'open') {
-      openListDetailView(listId);
+      /* nav('lists') resets to the grid; open detail after so we land in list space, not the overview. */
       window.nav('lists', document.querySelector('.ni[data-nav="lists"]'));
+      openListDetailView(listId);
       document.body.classList.remove('mobile-nav-open');
       return;
     }
@@ -17548,8 +18679,6 @@ var incomePowerState = {
       .slice(0, 8)
       .map(function (L) {
         normalizeListForUi(L);
-        var tpl = L.templateId ? findListTemplate(L.templateId) : null;
-        var ico = tpl && tpl.emoji ? tpl.emoji : L.layout === 'notion' ? '▦' : '▤';
         var tabs = listDetailEffectiveTabs(L);
         var activeTab = L.activeTabId && tabs.some(function (t) { return t.id === L.activeTabId; }) ? L.activeTabId : tabs[0] ? tabs[0].id : 'all';
         var viewsHtml = tabs
@@ -17572,9 +18701,9 @@ var incomePowerState = {
           escList(L.id) +
           '">' +
           '<div class="lists-sb-bar">' +
-          '<span class="lists-sb-ico" aria-hidden="true">' +
-          escList(ico) +
-          '</span>' +
+          '<span class="lists-sb-ico lists-sb-ico-hit" data-list-icon-id="' +
+          escList(L.id) +
+          '" role="button" tabindex="0" aria-label="List icon"></span>' +
           '<button type="button" class="lists-sb-chev" aria-expanded="false" aria-label="Views">' +
           '›' +
           '</button>' +
@@ -17648,6 +18777,26 @@ var incomePowerState = {
         wireListRowMenu(e, lid, 'open');
       });
     });
+    host.querySelectorAll('.lists-sb-ico-hit').forEach(function (hit) {
+      var lid = hit.getAttribute('data-list-icon-id');
+      var L2 = listsSbGetListById(lid);
+      if (!L2) return;
+      normalizeListForUi(L2);
+      var tpl2 = L2.templateId ? findListTemplate(L2.templateId) : null;
+      var ck2 = workspaceUiIconCacheKey('list', lid);
+      var rec2 = workspaceUiIconsCache[ck2] || {};
+      var icon =
+        L2.icon != null && String(L2.icon) !== ''
+          ? L2.icon
+          : rec2.icon
+            ? rec2.icon
+            : tpl2 && tpl2.emoji
+              ? String(tpl2.emoji)
+              : null;
+      var sty = L2.iconStyle || rec2.iconStyle || 'filled';
+      paintBrandedIconIntoHost(hit, icon, sty);
+    });
+    wireListsSidebarIconClicksOnce();
   }
 
   var ADVISOR_CHAT_TURNS_CAP = 48;
@@ -17829,7 +18978,15 @@ var incomePowerState = {
       '<tr>' +
       cols
         .map(function (c) {
-          return '<th>' + escList(c.name) + '</th>';
+          return (
+            '<th class="lists-th-cell">' +
+            '<span class="lists-th-ico-hit" data-col-icon-id="' +
+            escList(c.id) +
+            '" role="button" tabindex="0" aria-label="Column icon"></span>' +
+            '<span class="lists-th-txt">' +
+            escList(c.name) +
+            '</span></th>'
+          );
         })
         .join('') +
       '</tr>';
@@ -18032,10 +19189,15 @@ var incomePowerState = {
     if (vType === 'calendar') wrap.innerHTML = listsCalendarHtml(L);
     else if (vType === 'board' && L.boardGroupColumnId) wrap.innerHTML = listsBoardHtml(L);
     else wrap.innerHTML = listsTableHtml(L);
+    if (vType === 'table') paintListTableHeaderIcons();
   }
 
   function normalizeListForUi(L) {
     if (!L) return;
+    if (!L.iconStyle) L.iconStyle = 'filled';
+    (L.columns || []).forEach(function (c) {
+      if (!c.iconStyle) c.iconStyle = 'filled';
+    });
     if (L.supportsCalendarView == null) L.supportsCalendarView = false;
     if (!L.previewTabs && L.templateId) {
       var t = findListTemplate(L.templateId);
@@ -18514,6 +19676,22 @@ var incomePowerState = {
     if (tModal) {
       tModal.addEventListener('click', function (ev) {
         if (ev.target === tModal) closeListTemplatesModal();
+      });
+    }
+
+    var lTableWrap = document.getElementById('lists-detail-table-wrap');
+    if (lTableWrap && !lTableWrap._listsThIconDelegated) {
+      lTableWrap._listsThIconDelegated = true;
+      lTableWrap.addEventListener('click', function (e) {
+        var hit = e.target.closest && e.target.closest('.lists-th-ico-hit');
+        if (!hit) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var det = document.getElementById('lists-view-detail');
+        var listId = det && det.getAttribute('data-active-list');
+        var cid = hit.getAttribute('data-col-icon-id');
+        if (!listId || !cid) return;
+        openListColumnIconPicker(listId, cid, hit);
       });
     }
 
@@ -19518,6 +20696,7 @@ var incomePowerState = {
     wireProjectsAndStatuses();
     wireFilter();
     wireCustomersColumnsPicker();
+    wireCrmInlineCustomers();
     wireIncomePowerTable();
     wireSpendingReport();
     wireSettingsSave();
@@ -19541,6 +20720,15 @@ var incomePowerState = {
     wireTasksTab();
     wireEmailsPage();
     wireListsFeature();
+    if (typeof requestAnimationFrame !== 'undefined') {
+      requestAnimationFrame(function () {
+        wireBrandedNavIconsOnce();
+        if (typeof window.bizDashRepaintAllBrandedIcons === 'function') window.bizDashRepaintAllBrandedIcons();
+      });
+    } else {
+      wireBrandedNavIconsOnce();
+      if (typeof window.bizDashRepaintAllBrandedIcons === 'function') window.bizDashRepaintAllBrandedIcons();
+    }
     wireQuickActionsPalette();
     wireSidebarChrome();
     wireModalBackdropDismissAll();

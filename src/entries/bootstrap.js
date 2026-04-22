@@ -2,6 +2,10 @@
  * Load order matches the previous index.html script tags:
  * Telemetry → Supabase global → Chart → app data → auth gate → advisor.
  */
+import { mountIconPicker } from './icon-picker-mount.tsx';
+
+mountIconPicker();
+
 import './telemetry-init.js';
 import './supabase-vendor.js';
 import './chart-setup.js';

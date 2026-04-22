@@ -1867,15 +1867,24 @@
   .conn-detail-pane[hidden] {
     display: none !important;
   }
-  /* Chat — Claude/ChatGPT-style: flat #fafafa page, transcript scrolls above a fixed bottom-centered composer */
+  /* When Advisor is open, make .main a flex column so #page-chat fills height (transcript + composer split reliably). */
+  #app-shell.on:has(#page-chat.pg.on) .main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #e4e4e9;
+  }
+  /* Chat — distinct from dashboard: cool grey canvas, white transcript card, composer below */
   #page-chat.pg.on {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     align-items: stretch;
     padding: 12px 16px max(12px, env(safe-area-inset-bottom, 0px));
     min-height: calc(100dvh - 72px);
     box-sizing: border-box;
-    background: #fafafa;
+    background: linear-gradient(180deg, #dfe0e6 0%, #e8e9ee 48%, #ececf1 100%);
   }
   #page-chat.pg.on > .chat-shell {
     flex: 1 1 auto;
@@ -1926,6 +1935,18 @@
     background: #fafafa;
     overflow: hidden;
   }
+  #page-chat.pg.on .chat-transcript {
+    background: #ffffff;
+    border: 1px solid #d6d6dc;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+    margin: 0 0 14px;
+    overflow: hidden;
+  }
+  #page-chat.pg.on .chat-log {
+    padding: 12px 12px 18px;
+    gap: 12px;
+  }
   .chat-log {
     flex: 1 1 auto;
     min-height: 0;
@@ -1949,15 +1970,15 @@
   }
   .chat-msg.user {
     align-self: flex-end;
-    background: #f0f0f0;
-    border: 1px solid #e5e5e5;
-    color: #18181b;
+    background: #e8f2fe;
+    border: 1px solid #c5dcf5;
+    color: #0f172a;
     font-weight: 500;
   }
   .chat-msg.asst {
     align-self: flex-start;
-    background: #f4f4f5;
-    border: 1px solid #ececec;
+    background: #f4f4f6;
+    border: 1px solid #e4e4e9;
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -2097,6 +2118,10 @@
       padding-left: 12px;
       padding-right: 12px;
       min-height: calc(100dvh - 112px);
+    }
+    #page-chat.pg.on .chat-transcript {
+      border-radius: 12px;
+      margin-bottom: 10px;
     }
     .chat-composer-stack,
     .advisor-react-composer-root {
@@ -2310,6 +2335,79 @@
   #customers-table td:nth-child(1).td-truncate { max-width: 200px; }
   #customers-table td:nth-child(3).td-truncate { max-width: 220px; }
   #customers-table td:nth-child(4).td-truncate { max-width: 130px; }
+  .ni-ico-scope {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-right: 6px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .ni-ico-scope:hover { background: var(--bg3, rgba(127,127,127,0.1)); }
+  .ni-ico-scope svg { width: 16px; height: 16px; }
+  .lists-sb-ico.lists-sb-ico-hit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    margin-right: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .lists-sb-ico-hit:hover { background: var(--bg3, rgba(127,127,127,0.1)); }
+  .lists-th-cell { vertical-align: middle; white-space: nowrap; }
+  .lists-th-ico-hit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-right: 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    vertical-align: middle;
+    flex-shrink: 0;
+  }
+  .lists-th-ico-hit:hover { background: var(--bg3, rgba(127,127,127,0.1)); }
+  .lists-th-txt { vertical-align: middle; }
+  .bizdash-ico-ph { font-size: 12px; opacity: 0.45; line-height: 1; }
+  .bizdash-ico-emoji { font-size: 15px; line-height: 1; display: inline-block; }
+  .bizdash-ico-outlined .bizdash-ico-lucide { opacity: 0.86; }
+  #customers-table tbody tr.crm-row:hover { background: var(--bg3, rgba(127,127,127,0.08)); }
+  #customers-table tbody tr.crm-row-selected { background: var(--bg3, rgba(127,127,127,0.12)); }
+  #customers-table .crm-cell-editing { outline: 2px solid #2383e2; outline-offset: -2px; border-radius: 2px; }
+  #customers-table .crm-cell-err { outline: 2px solid var(--red); outline-offset: -2px; }
+  .crm-select-overlay {
+    position: fixed;
+    z-index: 10050;
+    min-width: 168px;
+    max-height: 260px;
+    overflow: auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+    padding: 4px;
+  }
+  .crm-select-opt {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+  .crm-select-opt:hover { background: var(--bg3, rgba(127,127,127,0.1)); }
+  .crm-select-opt-on { font-weight: 600; }
   /* Keep columns menu above customer cards but below modal overlays. */
   #page-customers .ph { position: relative; z-index: 90; }
   /* Tasks tab (Attio-style) */
@@ -5787,8 +5885,8 @@
     .spend-kpi-row { grid-template-columns: 1fr; }
   }
 </style>
-  <script type="module" crossorigin src="/assets/index-Dr8poT_Z.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-3cTalj_P.css">
+  <script type="module" crossorigin src="/assets/index-gbVwK77W.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-VsEKCSww.css">
 </head>
 <body>
 
@@ -6069,7 +6167,7 @@
     <div class="card">
       <div id="customers-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No customers yet.</div>
       <table class="dt" id="customers-table" style="display:none;">
-        <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Preferred</th><th>Style</th><th>Status</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th style="width:140px;">Actions</th></tr></thead>
+        <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Preferred</th><th>Style</th><th>Status</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th>Updated</th><th style="width:140px;">Actions</th></tr></thead>
         <tbody id="customers-tbody"></tbody>
       </table>
     </div>
@@ -8745,5 +8843,6 @@
     }
   })();
 </script>
+<div id="icon-picker-root"></div>
 </body>
 </html>

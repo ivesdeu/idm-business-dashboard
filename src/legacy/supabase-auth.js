@@ -1291,24 +1291,6 @@
       return { ok: true, inviteUrl: j.inviteUrl ? String(j.inviteUrl) : '' };
     }
 
-    // #region agent log
-    function __dbgOAuthIngestOnboard(payload) {
-      fetch('http://127.0.0.1:7914/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1266cb' },
-        body: JSON.stringify({
-          sessionId: '1266cb',
-          location: payload.location,
-          message: payload.message,
-          data: payload.data,
-          timestamp: Date.now(),
-          hypothesisId: payload.hypothesisId,
-          runId: payload.runId || 'pre-fix',
-        }),
-      }).catch(function () {});
-    }
-    // #endregion
-
     async function startOAuthFromOnboarding(provider) {
       var err = $('onboard-error-4');
       if (err) err.textContent = '';
@@ -1344,52 +1326,11 @@
         j = await res.json();
       } catch (_) {}
       if (!res.ok || !j.url) {
-        // #region agent log
-        __dbgOAuthIngestOnboard({
-          location: 'supabase-auth.js:startOAuthFromOnboarding',
-          message: 'oauth start failed before redirect',
-          hypothesisId: 'H4',
-          data: {
-            provider: provider,
-            httpStatus: res.status,
-            supabaseHost: base ? new URL(base).hostname : '',
-            errSnippet: j.error ? String(j.error).slice(0, 120) : '',
-          },
-        });
-        // #endregion
         try {
           sessionStorage.removeItem('bizdash_oauth_from_onboarding');
         } catch (_) {}
         if (err) err.textContent = j.error ? String(j.error) : 'Could not start sign-in.';
         return;
-      }
-      if (provider === 'google') {
-        // #region agent log
-        try {
-          var authU2 = new URL(String(j.url));
-          var cid2 = authU2.searchParams.get('client_id') || '';
-          var ruri2 = authU2.searchParams.get('redirect_uri') || '';
-          __dbgOAuthIngestOnboard({
-            location: 'supabase-auth.js:startOAuthFromOnboarding',
-            message: 'oauth-google-start ok; auth URL params',
-            hypothesisId: 'H1',
-            data: {
-              supabaseHost: base ? new URL(base).hostname : '',
-              clientIdLen: cid2.length,
-              clientIdLooksWeb: /\.apps\.googleusercontent\.com$/.test(cid2),
-              redirectUriFromAuthUrl: ruri2 ? decodeURIComponent(ruri2) : '',
-              redirectUriFromApi: j.redirect_uri ? String(j.redirect_uri) : null,
-            },
-          });
-        } catch (_e2) {
-          __dbgOAuthIngestOnboard({
-            location: 'supabase-auth.js:startOAuthFromOnboarding',
-            message: 'parse google auth URL failed',
-            hypothesisId: 'H1',
-            data: { err: String(_e2 && _e2.message ? _e2.message : _e2) },
-          });
-        }
-        // #endregion
       }
       window.location.href = String(j.url);
     }
@@ -2094,6 +2035,10 @@
     } else {
       console.error('financial-core: loadScreenshotMockData not available (script order?)');
     }
+    if (typeof window.nav === 'function') {
+      var dashNavDemo = document.querySelector('.ni[data-nav="dashboard"]');
+      window.nav('dashboard', dashNavDemo || null);
+    }
   }
 
   /**
@@ -2142,12 +2087,22 @@
     var loading = $('auth-loading');
     var shell = $('auth-login-shell');
     var app = $('app-shell');
+    var uid = user && user.id != null ? String(user.id) : '';
+    var dashboardWarmBoot =
+      !!(
+        app &&
+        app.classList.contains('on') &&
+        uid &&
+        lastStableAppUserId === uid &&
+        user &&
+        !isDemoDashboardUserId(user.id)
+      );
     if (loading) loading.style.display = 'none';
     if (shell) shell.style.display = 'none';
     if (app) app.classList.add('on');
     markStableAppUser(user);
 
-    if (user && !isDemoDashboardUserId(user.id)) {
+    if (user && !isDemoDashboardUserId(user.id) && !dashboardWarmBoot) {
       bizDashShowDashboardDataLoading();
     }
 
@@ -2166,6 +2121,21 @@
     }
 
     drainInviteFlashIntoApp();
+
+    if (dashboardWarmBoot) {
+      if (typeof window.bizdashRefreshSidebarProfileAvatars === 'function') {
+        window.bizdashRefreshSidebarProfileAvatars();
+      } else if (user) {
+        bizdashApplyAuthUserAvatarChrome(user);
+      }
+      return;
+    }
+
+    // showLogin() hides #app-shell but does not reset `.pg.on`; resume on the dashboard after auth/demo entry.
+    if (typeof window.nav === 'function') {
+      var dashNav = document.querySelector('.ni[data-nav="dashboard"]');
+      window.nav('dashboard', dashNav || null);
+    }
 
     requestAnimationFrame(function () {
       var initP = null;
@@ -2254,6 +2224,11 @@
 
     if (event === 'TOKEN_REFRESHED') {
       setCurrentUser(session.user);
+      // Session token rotation must not replay the cold-boot path: full-screen loader + initDataFromSupabase
+      // blocks the UI and feels like the app "reloaded". When the shell is already up for this user, stop here.
+      if (shouldSkipSessionReflow(session)) {
+        return;
+      }
       // Avoid showApp + initData before org resolution finishes (setCurrentUser runs early in runAuthSessionFlow).
       // While the onboarding wizard is open, app-shell is off — showApp would hide the modal and strand the user.
       if (hasResolvedWorkspaceContext(session) && !isOnboardingOrPrefillPhase()) {

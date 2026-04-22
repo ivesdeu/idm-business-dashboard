@@ -635,6 +635,28 @@
         };
       }
       req = Object.assign({}, req, { organizationId: oid });
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7914/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '65e8fd' },
+          body: JSON.stringify({
+            sessionId: '65e8fd',
+            runId: 'pre-fix',
+            hypothesisId: 'pre-invoke',
+            location: 'dashboard-assistant.js:invokeAdvisorTask',
+            message: 'before ai-assistant invoke',
+            data: {
+              hasOrgId: !!oid,
+              orgIdLen: oid ? String(oid).length : 0,
+              task: req && req.task ? String(req.task) : null,
+              hasMessage: !!(req && req.message && String(req.message).trim()),
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(function () {});
+      } catch (_) {}
+      // #endregion
       var res = await supabase.functions.invoke('ai-assistant', {
         body: req,
         headers: {
@@ -642,10 +664,67 @@
         },
       });
       if (res.error) {
+        // #region agent log
+        try {
+          var ctxE = res.error && res.error.context;
+          var stE =
+            ctxE && typeof ctxE.status === 'number'
+              ? ctxE.status
+              : res.error.status != null
+                ? Number(res.error.status)
+                : null;
+          var hidE =
+            stE === 401
+              ? 'H1'
+              : stE === 404
+                ? 'H2'
+                : stE === 500
+                  ? 'H3'
+                  : stE === 400 || stE === 413
+                    ? 'H4'
+                    : stE === 403
+                      ? 'H5'
+                      : 'H0';
+          fetch('http://127.0.0.1:7914/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '65e8fd' },
+            body: JSON.stringify({
+              sessionId: '65e8fd',
+              runId: 'pre-fix',
+              hypothesisId: hidE,
+              location: 'dashboard-assistant.js:invokeAdvisorTask',
+              message: 'after ai-assistant invoke res.error',
+              data: {
+                errMessage: String((res.error && res.error.message) || ''),
+                status: stE,
+                code: res.error && res.error.code != null ? String(res.error.code) : null,
+              },
+              timestamp: Date.now(),
+            }),
+          }).catch(function () {});
+        } catch (_) {}
+        // #endregion
         return { ok: false, error: res.error.message || 'Invoke failed', response: { title: 'Stub call failed', bullets: [res.error.message || 'Unknown function error'] } };
       }
       return { ok: true, response: res.data || { title: 'No data', bullets: [] } };
     } catch (err) {
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7914/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '65e8fd' },
+          body: JSON.stringify({
+            sessionId: '65e8fd',
+            runId: 'pre-fix',
+            hypothesisId: 'H-net',
+            location: 'dashboard-assistant.js:invokeAdvisorTask',
+            message: 'invokeAdvisorTask threw',
+            data: { errMessage: String(err && err.message ? err.message : err) },
+            timestamp: Date.now(),
+          }),
+        }).catch(function () {});
+      } catch (_) {}
+      // #endregion
       return { ok: false, error: String(err && err.message ? err.message : err), response: { title: 'Stub call failed', bullets: ['Advisor function could not be reached.'] } };
     }
   }
