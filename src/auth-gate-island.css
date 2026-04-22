@@ -4,7 +4,7 @@
 
 /* Notion-adjacent: soft neutrals, minimal elevation (no stacked drop shadows). */
 .auth-gate-tw {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --background: 40 14% 97%;
   --foreground: 240 6% 10%;
   --card: 0 0% 100%;
@@ -28,10 +28,29 @@
   color: hsl(var(--foreground));
 }
 
-/* Flatten shadcn button shadows inside the gate only (avoids “stacked” 3D look). */
-.auth-gate-tw button[class*='shadow-sm'],
-.auth-gate-tw [class*='shadow-sm']:is(button) {
+/* Preflight is off globally: div borders need an explicit style. */
+.auth-gate-tw .rounded-lg.border,
+.auth-gate-tw .rounded-md.border,
+.auth-gate-tw .rounded-xl.border {
+  border-style: solid;
+}
+
+/*
+ * Flat UI: kill OS/beveled chrome and any residual box-shadow.
+ * Merged classNames often drop the literal "shadow-sm" substring, so the old
+ * attribute-substring rule missed many buttons.
+ */
+.auth-gate-tw button {
+  appearance: none;
+  -webkit-appearance: none;
   box-shadow: none !important;
+}
+
+.auth-gate-tw input:not([type='checkbox']):not([type='radio']) {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border-style: solid;
 }
 
 @keyframes auth-form-enter {

@@ -2,7 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Advisor React island — inherits app shell typography; composer styles live in `ai-chat-input.tsx`. */
+/* ---------------------------------------------------------------------------
+   Token bridge — maps app-shell CSS variables to shadcn/Radix names used by
+   the PromptBox primitives (popover, tooltip). Scoped to the composer root so
+   nothing leaks into the rest of the app.
+   --------------------------------------------------------------------------- */
+#advisor-react-composer-root,
+[data-radix-popper-content-wrapper] {
+  --background: 0 0% 100%;
+  --foreground: 240 6% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 6% 10%;
+  --muted-foreground: 240 4% 46%;
+  --accent: 240 5% 96%;
+  --accent-foreground: 240 6% 10%;
+  --border: 240 5% 90%;
+  --ring: 240 6% 10%;
+  --radius: 0.625rem;
+}
+
 #advisor-react-composer-root {
   width: 100%;
+}
+
+/* Textarea: no browser default box-shadow / appearance on Safari */
+#advisor-react-composer-root textarea {
+  -webkit-appearance: none;
+  appearance: none;
+  box-shadow: none !important;
+}
+
+/* Hide the greeting once the chat has messages (docked composer mode) */
+#page-chat.chat-compose-docked .advisor-greeting {
+  display: none;
+}
+
+/* Popover and tooltip use Tailwind utility classes from the component; ensure
+   the root has font-family so sub-portals inherit correctly. */
+[data-radix-popper-content-wrapper] {
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  font-size: 14px;
+}
+
+/* Smooth send-button disabled transition */
+#advisor-react-composer-root button:disabled {
+  cursor: not-allowed;
 }

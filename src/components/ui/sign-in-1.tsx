@@ -81,25 +81,25 @@ export const AuthForm = React.forwardRef<HTMLDivElement, AuthFormProps>(
       <Card
         ref={ref}
         className={cn(
-          'auth-form-enter w-full rounded-lg border border-neutral-200/90 bg-white shadow-none ring-1 ring-black/[0.04]',
+          'auth-form-enter w-full rounded-xl border border-solid border-neutral-200/70 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04),0_6px_20px_-8px_rgba(0,0,0,0.08)]',
           className,
         )}
       >
-        <CardHeader className="space-y-1 px-8 pb-0 pt-8 text-center">
+        <CardHeader className="space-y-1.5 px-8 pb-0 pt-9 text-center">
           <div className="mx-auto mb-4 flex justify-center">
             <img src={logoSrc} alt={logoAlt} className="h-12 w-auto object-contain" width={120} height={48} />
           </div>
           <CardTitle className="text-xl font-semibold tracking-tight text-foreground">{title}</CardTitle>
           <CardDescription className="text-[13px] leading-relaxed text-muted-foreground">{description}</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3 px-8 pb-8 pt-6">
-          <div id="gate-oauth-stack" className="flex flex-col gap-2">
+        <CardContent className="flex flex-col gap-4 px-8 pb-9 pt-7">
+          <div id="gate-oauth-stack" className="flex flex-col gap-2.5">
             <Button
               type="button"
               id={primaryAction.id}
               variant={primaryAction.variant ?? 'default'}
               className={cn(
-                'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md text-[14px] font-medium shadow-none',
+                'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-[14px] font-medium text-white shadow-none hover:bg-neutral-800',
                 primaryAction.className,
               )}
               onClick={primaryAction.onClick}
@@ -114,7 +114,7 @@ export const AuthForm = React.forwardRef<HTMLDivElement, AuthFormProps>(
                 id={action.id}
                 variant={action.variant ?? 'outline'}
                 className={cn(
-                  'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border-neutral-200/90 bg-white text-[14px] font-normal shadow-none hover:bg-neutral-50',
+                  'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-solid border-neutral-200/80 bg-white text-[14px] font-medium text-foreground shadow-none hover:bg-neutral-50/90',
                   action.className,
                 )}
                 onClick={action.onClick}
@@ -131,7 +131,7 @@ export const AuthForm = React.forwardRef<HTMLDivElement, AuthFormProps>(
               id={skipAction.id}
               variant={skipAction.variant ?? 'secondary'}
               className={cn(
-                'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-transparent bg-neutral-100 text-[14px] font-normal text-foreground shadow-none hover:bg-neutral-200/70',
+                'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-solid border-transparent bg-neutral-100 text-[14px] font-medium text-foreground shadow-none hover:bg-neutral-200/60',
                 skipAction.className,
               )}
               onClick={skipAction.onClick}
