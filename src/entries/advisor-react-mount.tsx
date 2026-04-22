@@ -6,7 +6,7 @@ import '../advisor-island.css';
 let root: Root | null = null;
 
 /**
- * Mounts the Tailwind + Motion Advisor composer into #advisor-react-composer-root.
+ * Mounts the Tailwind Advisor composer into #advisor-react-composer-root.
  * Call once after `wireDashboardAssistant` so `window.bizDashAdvisorGetComposerApi` exists.
  */
 export function mountAdvisorReactComposer() {

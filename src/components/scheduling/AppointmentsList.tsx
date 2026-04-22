@@ -93,28 +93,28 @@ export function AppointmentsList ({
   }
 
   return (
-    <div className="border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)]">
-      <div className="flex flex-wrap items-end gap-3 border-b border-[var(--sched-border)] p-4">
-        <label className="flex flex-col gap-1 text-xs font-semibold text-[var(--sched-muted)]">
-          When
-          <select className="rounded-lg border border-[var(--sched-border)] bg-white px-2 py-1.5 text-sm" value={when} onChange={(e) => setWhen (e.target.value as WhenFilter)}>
+    <div className="card">
+      <div className="sched-appt-filters">
+        <div className="spend-dd">
+          <span className="spend-dd-lbl">When</span>
+          <select className="fi" value={when} onChange={(e) => setWhen (e.target.value as WhenFilter)} title="When">
             <option value="upcoming">Upcoming</option>
             <option value="past">Past</option>
             <option value="all">All</option>
           </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-semibold text-[var(--sched-muted)]">
-          Status
-          <select className="rounded-lg border border-[var(--sched-border)] bg-white px-2 py-1.5 text-sm" value={statusF} onChange={(e) => setStatusF (e.target.value as StatusFilter)}>
+        </div>
+        <div className="spend-dd">
+          <span className="spend-dd-lbl">Status</span>
+          <select className="fi" value={statusF} onChange={(e) => setStatusF (e.target.value as StatusFilter)} title="Status">
             <option value="all">All</option>
             <option value="confirmed">Confirmed</option>
             <option value="pending">Pending</option>
             <option value="cancelled">Cancelled</option>
           </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-semibold text-[var(--sched-muted)]">
-          Client
-          <select className="rounded-lg border border-[var(--sched-border)] bg-white px-2 py-1.5 text-sm" value={clientId} onChange={(e) => setClientId (e.target.value)}>
+        </div>
+        <div className="spend-dd">
+          <span className="spend-dd-lbl">Client</span>
+          <select className="fi" value={clientId} onChange={(e) => setClientId (e.target.value)} title="Client">
             <option value="">All clients</option>
             {clientOptions.map ((c) => (
               <option key={c.id} value={c.id}>
@@ -122,59 +122,58 @@ export function AppointmentsList ({
               </option>
             ))}
           </select>
-        </label>
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+      <div style={{ overflowX: 'auto' }}>
+        <table className="dt" style={{ minWidth: '720px' }}>
           <thead>
-            <tr className="border-b border-[var(--sched-border)] text-xs font-semibold uppercase text-[var(--sched-muted)]">
-              <th className="cursor-pointer px-3 py-2 hover:bg-black/[0.02]" onClick={() => toggleSort ('date')}>
+            <tr>
+              <th className="th-sort" scope="col" onClick={() => toggleSort ('date')}>
                 Date / time {sortKey === 'date' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
               </th>
-              <th className="cursor-pointer px-3 py-2 hover:bg-black/[0.02]" onClick={() => toggleSort ('client')}>
+              <th className="th-sort" scope="col" onClick={() => toggleSort ('client')}>
                 Client {sortKey === 'client' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
               </th>
-              <th className="cursor-pointer px-3 py-2 hover:bg-black/[0.02]" onClick={() => toggleSort ('title')}>
+              <th className="th-sort" scope="col" onClick={() => toggleSort ('title')}>
                 Title / type {sortKey === 'title' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
               </th>
-              <th className="cursor-pointer px-3 py-2 hover:bg-black/[0.02]" onClick={() => toggleSort ('duration')}>
+              <th className="th-sort" scope="col" onClick={() => toggleSort ('duration')}>
                 Duration {sortKey === 'duration' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
               </th>
-              <th className="cursor-pointer px-3 py-2 hover:bg-black/[0.02]" onClick={() => toggleSort ('status')}>
+              <th className="th-sort" scope="col" onClick={() => toggleSort ('status')}>
                 Status {sortKey === 'status' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
               </th>
-              <th className="px-3 py-2">Sync</th>
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th scope="col">Sync</th>
+              <th scope="col" style={{ width: '200px', textAlign: 'right' }}>
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
             {sorted.map ((a) => (
-              <tr key={a.id} className="border-b border-[var(--sched-border)] hover:bg-black/[0.02]">
-                <td className="px-3 py-2.5 text-[var(--sched-text)]">
-                  <button type="button" className="text-left font-medium text-[var(--sched-accent)] hover:underline" onClick={() => onSelect (a)}>
+              <tr key={a.id}>
+                <td>
+                  <button type="button" className="sched-link" onClick={() => onSelect (a)}>
                     {formatSlot (a.startTime)}
                   </button>
                 </td>
-                <td className="px-3 py-2.5 text-[var(--sched-text)]">{a.clientName}</td>
-                <td className="px-3 py-2.5 text-[var(--sched-text)]">{a.title}</td>
-                <td className="px-3 py-2.5 text-[var(--sched-muted)]">{durationLabel (a.startTime, a.endTime)}</td>
-                <td className="px-3 py-2.5 capitalize text-[var(--sched-text)]">{a.status}</td>
-                <td className="px-3 py-2.5">
+                <td>{a.clientName}</td>
+                <td>{a.title}</td>
+                <td>{durationLabel (a.startTime, a.endTime)}</td>
+                <td className="capitalize">{a.status}</td>
+                <td>
                   <SyncBadge synced={!!a.googleCalendarEventId} />
                 </td>
-                <td className="px-3 py-2.5 text-right">
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      className="inline-flex h-8 items-center rounded-md border border-[var(--sched-border)] bg-[var(--sched-surface,#fff)] px-2.5 text-xs font-medium text-[var(--sched-text)] hover:bg-neutral-50"
-                      onClick={() => onEdit (a)}
-                    >
+                <td style={{ textAlign: 'right' }}>
+                  <div className="sched-appt-actions">
+                    <button type="button" className="btn" style={{ fontSize: '12px', padding: '5px 12px' }} onClick={() => onEdit (a)}>
                       Edit
                     </button>
                     <button
                       type="button"
-                      className="inline-flex h-8 items-center rounded-md border border-[var(--sched-border)] bg-[var(--sched-surface,#fff)] px-2.5 text-xs font-medium text-[var(--sched-text)] hover:bg-neutral-50 disabled:opacity-40"
+                      className="btn"
+                      style={{ fontSize: '12px', padding: '5px 12px' }}
                       onClick={() => onCancel (a)}
                       disabled={a.status === 'cancelled'}
                     >
@@ -182,11 +181,12 @@ export function AppointmentsList ({
                     </button>
                     <button
                       type="button"
-                      className="inline-flex h-8 items-center gap-1 rounded-md bg-[var(--sched-accent,#0a0a0a)] px-2.5 text-xs font-medium text-white hover:opacity-95 disabled:opacity-50"
+                      className="btn btn-p"
+                      style={{ fontSize: '12px', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                       onClick={() => void onSync (a)}
                       disabled={syncLoadingId === a.id}
                     >
-                      {syncLoadingId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      {syncLoadingId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
                       Sync
                     </button>
                   </div>
@@ -197,7 +197,9 @@ export function AppointmentsList ({
         </table>
       </div>
       {sorted.length === 0 ? (
-        <p className="p-8 text-center text-sm text-[var(--sched-muted)]">No appointments match these filters.</p>
+        <p style={{ fontSize: '13px', color: 'var(--text3)', padding: '28px 8px', textAlign: 'center', margin: 0 }}>
+          No appointments match these filters.
+        </p>
       ) : null}
     </div>
   );

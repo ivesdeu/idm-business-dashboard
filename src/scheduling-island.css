@@ -9,3 +9,124 @@
   --sched-border: var(--border, #e2e8f0);
   --sched-accent: var(--coral, #0a0a0a);
 }
+
+/* View tabs: icon + label inside shell buttons */
+#page-scheduling .scheduling-root .sched-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#page-scheduling .scheduling-root .sched-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+/* Appointments filter row — mirrors .spend-toolbar-right rhythm */
+#page-scheduling .scheduling-root .sched-appt-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 14px;
+  margin-bottom: 18px;
+}
+
+#page-scheduling .scheduling-root .dt th.th-sort {
+  cursor: pointer;
+  user-select: none;
+}
+
+#page-scheduling .scheduling-root .dt th.th-sort:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+#page-scheduling .scheduling-root .dt th.th-sort:focus-visible {
+  outline: 2px solid var(--border);
+  outline-offset: 2px;
+}
+
+#page-scheduling .scheduling-root .sched-appt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+#page-scheduling .scheduling-root .sched-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 500;
+  color: var(--coral);
+  cursor: pointer;
+  text-align: left;
+}
+
+#page-scheduling .scheduling-root .sched-link:hover {
+  text-decoration: underline;
+}
+
+#page-scheduling .scheduling-root .sched-cal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 14px;
+  margin-bottom: 18px;
+}
+
+#page-scheduling .scheduling-root .sched-cal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+#page-scheduling .scheduling-root .sched-cal-title {
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1 1 140px;
+}
+
+#page-scheduling .scheduling-root .sched-mode-toggle {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#page-scheduling .scheduling-root .sched-empty-card {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+#page-scheduling .scheduling-root .sched-empty-card p {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+#page-scheduling .scheduling-root .sched-empty-card .sched-empty-sub {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text3);
+}
+
+#page-scheduling .scheduling-root .sched-form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  #page-scheduling .scheduling-root .sched-form-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}

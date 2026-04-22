@@ -43,18 +43,10 @@ export function GoogleCalendarModal ({ open, onClose }: Props) {
           will ship in a later release — this dialog is here for demos.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            type="button"
-            className="inline-flex h-9 items-center rounded-md bg-[var(--sched-accent,#0a0a0a)] px-3.5 text-sm font-medium text-white hover:opacity-95"
-            onClick={stubAuthorize}
-          >
+          <button type="button" className="btn btn-p" onClick={stubAuthorize}>
             Authorize with Google
           </button>
-          <button
-            type="button"
-            className="inline-flex h-9 items-center rounded-md border border-[var(--sched-border)] bg-[var(--sched-surface,#fff)] px-3.5 text-sm font-medium text-[var(--sched-text)] hover:bg-neutral-50"
-            onClick={onClose}
-          >
+          <button type="button" className="btn" onClick={onClose}>
             Not now
           </button>
         </div>

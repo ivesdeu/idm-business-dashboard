@@ -83,6 +83,22 @@
     return document.getElementById(id);
   }
 
+  /** Full-screen overlay on #app-shell while initDataFromSupabase hydrates cloud data and branding. */
+  function bizDashShowDashboardDataLoading() {
+    var el = $('dashboard-data-loading');
+    var app = $('app-shell');
+    if (el) el.classList.add('on');
+    if (app) app.setAttribute('aria-busy', 'true');
+  }
+  function bizDashHideDashboardDataLoading() {
+    var el = $('dashboard-data-loading');
+    var app = $('app-shell');
+    if (el) el.classList.remove('on');
+    if (app) app.removeAttribute('aria-busy');
+  }
+  window.bizDashShowDashboardDataLoading = bizDashShowDashboardDataLoading;
+  window.bizDashHideDashboardDataLoading = bizDashHideDashboardDataLoading;
+
   /**
    * Ceilings for org / onboarding resolution (not session read — that is driven by INITIAL_SESSION).
    * These are UX timeouts only; the auth session itself has no artificial cap.
@@ -1834,6 +1850,7 @@
     var loading = $('auth-loading');
     var shell = $('auth-login-shell');
     var app = $('app-shell');
+    bizDashHideDashboardDataLoading();
     if (loading) loading.style.display = 'flex';
     if (shell) shell.style.display = 'none';
     if (app) app.classList.remove('on');
@@ -1849,6 +1866,7 @@
     var loading = $('auth-loading');
     var shell = $('auth-login-shell');
     var app = $('app-shell');
+    bizDashHideDashboardDataLoading();
     if (loading) loading.style.display = 'none';
     if (shell) shell.style.display = 'flex';
     if (app) app.classList.remove('on');
@@ -1859,30 +1877,21 @@
   window.__dashboardShowLogin = showLogin;
 
   var authRecoveryMode = false;
+  window.__bizdashIsAuthRecoveryMode = function () {
+    return authRecoveryMode;
+  };
+  /** Recovery / sign-in labels are owned by React (`auth-login-gate.tsx`); this only syncs the flag. */
   function setAuthRecoveryMode(on) {
     authRecoveryMode = !!on;
-    var heading = $('gate-auth-heading');
-    var subtitle = $('gate-auth-subtitle');
-    var signin = $('gate-signin');
-    var signup = $('gate-signup');
-    var oauthStack = $('gate-oauth-stack');
-    var forgot = $('gate-forgot-password');
-    var confirmWrap = $('gate-confirm-wrap');
-    var errorBox = $('gate-auth-error');
-    if (heading) heading.textContent = authRecoveryMode ? 'Reset password' : 'Sign in';
-    if (subtitle) {
-      subtitle.textContent = authRecoveryMode
-        ? 'Set a new password for your account.'
-        : 'Sign in to use the dashboard.';
-    }
-    if (signin) signin.textContent = authRecoveryMode ? 'Update password' : 'Sign in';
-    if (signup) signup.style.display = authRecoveryMode ? 'none' : '';
-    if (oauthStack) oauthStack.style.display = authRecoveryMode ? 'none' : '';
-    if (forgot) forgot.style.display = authRecoveryMode ? 'none' : '';
-    if (confirmWrap) confirmWrap.style.display = authRecoveryMode ? 'flex' : 'none';
-    if (errorBox && authRecoveryMode && !errorBox.textContent) {
-      errorBox.textContent = 'Enter and confirm your new password.';
-    }
+    try {
+      window.dispatchEvent(new CustomEvent('bizdash-auth-recovery-mode', { detail: { on: authRecoveryMode } }));
+    } catch (_) {}
+  }
+
+  function notifyAuthGateLoggedOut() {
+    try {
+      window.dispatchEvent(new CustomEvent('bizdash-auth-logged-out'));
+    } catch (_) {}
   }
 
   /**
@@ -1968,6 +1977,7 @@
       clearOrgContext();
       setCurrentUser(null);
       showLogin();
+      notifyAuthGateLoggedOut();
       return;
     }
     if (shouldSkipSessionReflowForUser(user)) {
@@ -2018,6 +2028,7 @@
           }
           setCurrentUser(null);
           showLogin();
+          notifyAuthGateLoggedOut();
           return;
         }
         var loadingAfterResolve = $('auth-loading');
@@ -2039,6 +2050,7 @@
         var ge = $('gate-auth-error');
         if (ge && err && err.message) ge.textContent = String(err.message);
         showLogin();
+        notifyAuthGateLoggedOut();
       } finally {
         sessionFlowPromise = null;
       }
@@ -2054,6 +2066,7 @@
     var loading = $('auth-loading');
     var shell = $('auth-login-shell');
     var app = $('app-shell');
+    bizDashHideDashboardDataLoading();
     if (loading) loading.style.display = 'none';
     if (shell) shell.style.display = 'none';
     if (app) app.classList.add('on');
@@ -2122,6 +2135,10 @@
     if (app) app.classList.add('on');
     markStableAppUser(user);
 
+    if (user && !isDemoDashboardUserId(user.id)) {
+      bizDashShowDashboardDataLoading();
+    }
+
     if (user) {
       var nameEl = document.getElementById('user-name');
       var roleEl = document.getElementById('user-role');
@@ -2138,13 +2155,22 @@
 
     drainInviteFlashIntoApp();
 
-    if (window.initDataFromSupabase) {
-      requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      var initP = null;
+      try {
+        if (window.initDataFromSupabase) initP = window.initDataFromSupabase();
+      } catch (_) {}
+      function hideDashboardBoot() {
         try {
-          window.initDataFromSupabase();
+          bizDashHideDashboardDataLoading();
         } catch (_) {}
-      });
-    }
+      }
+      if (initP && typeof initP.finally === 'function') {
+        initP.finally(hideDashboardBoot);
+      } else {
+        hideDashboardBoot();
+      }
+    });
     if (typeof window.bizdashRefreshSidebarProfileAvatars === 'function') {
       window.bizdashRefreshSidebarProfileAvatars();
     } else if (user) {
@@ -2165,6 +2191,7 @@
       clearOrgContext();
       setCurrentUser(null);
       showLogin();
+      notifyAuthGateLoggedOut();
       return;
     }
 
@@ -2178,6 +2205,7 @@
       if (!session || !session.user) {
         setAuthRecoveryMode(false);
         showLogin();
+        notifyAuthGateLoggedOut();
         return;
       }
       if (shouldSkipSessionReflow(session)) {
@@ -2202,6 +2230,7 @@
       clearOrgContext();
       setCurrentUser(null);
       showLogin();
+      notifyAuthGateLoggedOut();
       return;
     }
 
@@ -2241,19 +2270,102 @@
     await runAuthSessionFlow(session.user, session);
   });
 
-  var authFormWired = false;
+  var oauthDemoWired = false;
+  var emailAuthWired = false;
 
-  function wireAuthForm() {
-    if (!$('gate-email')) {
+  function clearOAuthRelatedGateHints() {
+    var hint = $('gate-signup-email-hint');
+    var btnR = $('gate-resend-confirm');
+    if (hint) hint.style.display = 'none';
+    if (btnR) btnR.style.display = 'none';
+    var confirmWrap = $('gate-confirm-wrap');
+    var confirmInput = $('gate-confirm-password');
+    if (confirmWrap && !authRecoveryMode) confirmWrap.style.display = 'none';
+    if (confirmInput && !authRecoveryMode) confirmInput.value = '';
+  }
+
+  /** Google + GitHub OAuth and View demo — does not wait for `#gate-email` (provider-first React gate). */
+  function wireAuthGateOauthAndDemo() {
+    if (!$('gate-google')) {
       if (typeof requestAnimationFrame !== 'undefined') {
-        requestAnimationFrame(wireAuthForm);
+        requestAnimationFrame(wireAuthGateOauthAndDemo);
       } else {
-        setTimeout(wireAuthForm, 0);
+        setTimeout(wireAuthGateOauthAndDemo, 0);
       }
       return;
     }
-    if (authFormWired) return;
-    authFormWired = true;
+    if (oauthDemoWired) return;
+    oauthDemoWired = true;
+
+    function setOauthError(msg) {
+      var errorBox = $('gate-auth-error');
+      if (errorBox) errorBox.textContent = msg || '';
+    }
+
+    function wireOAuthProvider(btnId, provider, label) {
+      var btn = $(btnId);
+      if (!btn) return;
+      btn.addEventListener('click', async function () {
+        clearOAuthRelatedGateHints();
+        setOauthError('');
+        try {
+          if (typeof window.setBizdashScreenshotNoCloud === 'function') {
+            window.setBizdashScreenshotNoCloud(false);
+          }
+        } catch (_) {}
+        try {
+          var path = window.location.pathname || '/';
+          var search = window.location.search || '';
+          var redirectTo = window.location.origin + path + search;
+          var res = await supabase.auth.signInWithOAuth({
+            provider: provider,
+            options: {
+              redirectTo: redirectTo,
+            },
+          });
+          if (res.error) {
+            setOauthError(res.error.message || label + ' sign-in failed.');
+          }
+        } catch (err) {
+          console.error(provider + ' auth error', err);
+          setOauthError('Unexpected error starting ' + label + ' sign-in.');
+        }
+      });
+    }
+
+    var btnViewDemo = $('gate-view-demo');
+    if (btnViewDemo) {
+      btnViewDemo.addEventListener('click', function () {
+        showDemoDashboard();
+      });
+    }
+
+    wireOAuthProvider('gate-github', 'github', 'GitHub');
+    wireOAuthProvider('gate-google', 'google', 'Google');
+
+    var btnWs = $('btn-open-workspaces');
+    if (btnWs) {
+      btnWs.addEventListener('click', function () {
+        if (typeof window.openWorkspaceSwitcherModal === 'function') {
+          window.openWorkspaceSwitcherModal();
+        }
+      });
+    }
+    wireWorkspaceModal();
+  }
+
+  /** Email/password, forgot password, resend, recovery — wired when React mounts the email step (`bizdash-auth-email-mounted`). */
+  function wireAuthGateEmailFlow() {
+    if (emailAuthWired) return;
+    if (!$('gate-email')) {
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(wireAuthGateEmailFlow);
+      } else {
+        setTimeout(wireAuthGateEmailFlow, 0);
+      }
+      return;
+    }
+    emailAuthWired = true;
 
     captureInviteFromUrlToStorage();
     updateGateInviteHint();
@@ -2284,7 +2396,7 @@
       if (errorBox) errorBox.textContent = msg || '';
     }
 
-    /** Inline confirm password is only used for password recovery (signup uses the React modal). */
+    /** Inline confirm row is for password recovery only (sign up is the inline React step in `auth-login-gate.tsx`). */
     function setSignupMode(_on) {
       void _on;
       if (confirmWrap) confirmWrap.style.display = authRecoveryMode ? 'flex' : 'none';
@@ -2366,8 +2478,6 @@
       });
     }
 
-    /* Sign up is handled by the React modal in `sign-in-form.tsx` (#gate-signup opens it). */
-
     var btnResendConfirm = $('gate-resend-confirm');
     if (btnResendConfirm) {
       btnResendConfirm.addEventListener('click', async function () {
@@ -2421,65 +2531,21 @@
         }
       });
     }
-
-    var btnViewDemo = $('gate-view-demo');
-    if (btnViewDemo) {
-      btnViewDemo.addEventListener('click', function () {
-        showDemoDashboard();
-      });
-    }
-
-    function wireOAuthProvider(btnId, provider, label) {
-      var btn = $(btnId);
-      if (!btn) return;
-      btn.addEventListener('click', async function () {
-        setSignupMode(false);
-        setSignupEmailDeliverabilityHint(false);
-        setError('');
-        try {
-          var path = window.location.pathname || '/';
-          var search = window.location.search || '';
-          var redirectTo = window.location.origin + path + search;
-          var res = await supabase.auth.signInWithOAuth({
-            provider: provider,
-            options: {
-              redirectTo: redirectTo,
-            },
-          });
-          if (res.error) {
-            setError(res.error.message || label + ' sign-in failed.');
-          }
-        } catch (err) {
-          console.error(provider + ' auth error', err);
-          setError('Unexpected error starting ' + label + ' sign-in.');
-        }
-      });
-    }
-
-    wireOAuthProvider('gate-github', 'github', 'GitHub');
-    wireOAuthProvider('gate-google', 'google', 'Google');
-    wireOAuthProvider('gate-apple', 'apple', 'Apple');
-
-    var btnWs = $('btn-open-workspaces');
-    if (btnWs) {
-      btnWs.addEventListener('click', function () {
-        if (typeof window.openWorkspaceSwitcherModal === 'function') {
-          window.openWorkspaceSwitcherModal();
-        }
-      });
-    }
-    wireWorkspaceModal();
   }
+
+  window.addEventListener('bizdash-auth-email-mounted', function () {
+    wireAuthGateEmailFlow();
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       captureInviteFromUrlToStorage();
       updateGateInviteHint();
-      wireAuthForm();
+      wireAuthGateOauthAndDemo();
     });
   } else {
     captureInviteFromUrlToStorage();
     updateGateInviteHint();
-    wireAuthForm();
+    wireAuthGateOauthAndDemo();
   }
 })();

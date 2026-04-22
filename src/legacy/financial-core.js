@@ -5452,7 +5452,9 @@
       '.ph, .kg .kc, .card, .ts-kpi, .bva-row, .dt tbody tr, ' +
       '.tasks-attio-hdr, .tasks-attio-toolbar, .tasks-learn, #tasks-tab-empty.on, ' +
       '.tasks-group-hdr, .tasks-table tbody tr, ' +
-      '.eml-topbar, .eml-panel.on, .eml-learn';
+      '.eml-topbar, .eml-panel.on, .eml-learn, ' +
+      /* Scheduling (React island): stagger header → subnav → body like other tabs */
+      '.scheduling-root > .ph, .scheduling-root > nav, .scheduling-root > p, .scheduling-root > div:not(.pointer-events-none)';
     var nodes = container.querySelectorAll(selectors);
     var cap = Math.min(nodes.length, 22);
     for (var i = 0; i < cap; i += 1) {
@@ -13840,6 +13842,8 @@ var incomePowerState = {
   }
 
   var PROFILE_AVATAR_STORAGE_KEY = 'bizdash.profileAvatarDataUrl';
+  /** Coalesces overlapping applyProfileAvatarFromUser runs (e.g. showApp + setOrgContext). */
+  var profileAvatarApplySeq = 0;
 
   function getStoredProfileAvatarDataUrl() {
     try {
@@ -13875,9 +13879,15 @@ var incomePowerState = {
 
   /** Profile panel + sidebar account circle (user avatar). Workspace chip uses org icon from prefs. */
   async function applyProfileAvatarFromUser(user) {
+    var seq = ++profileAvatarApplySeq;
     var resolved =
       arguments.length && user === null ? null : user || window.currentUser || currentUser;
+    var pathKey =
+      resolved && resolved.user_metadata && resolved.user_metadata.profile_avatar_path
+        ? String(resolved.user_metadata.profile_avatar_path).trim()
+        : '';
     var displayUrl = resolved ? await resolveProfileAvatarDisplayUrl(resolved) : '';
+    if (seq !== profileAvatarApplySeq) return;
     var img = document.getElementById('profile-avatar-img');
     var fb = document.getElementById('profile-avatar-fallback');
     if (displayUrl) {
@@ -13899,18 +13909,30 @@ var incomePowerState = {
     var userAv = document.getElementById('user-avatar');
     if (userAv) {
       if (displayUrl) {
-        userAv.innerHTML = '';
-        var imu = document.createElement('img');
-        imu.src = displayUrl;
-        imu.alt = '';
-        imu.width = 26;
-        imu.height = 26;
-        imu.style.borderRadius = '50%';
-        imu.style.objectFit = 'cover';
-        imu.style.display = 'block';
-        userAv.appendChild(imu);
+        var existingImg = userAv.querySelector('img');
+        var prevPath = userAv.getAttribute('data-profile-avatar-path') || '';
+        var stableKey = pathKey || (displayUrl.indexOf('data:') === 0 ? 'data-url' : '');
+        if (existingImg && stableKey && prevPath === stableKey) {
+          existingImg.src = displayUrl;
+        } else {
+          userAv.innerHTML = '';
+          if (stableKey) userAv.setAttribute('data-profile-avatar-path', stableKey);
+          else userAv.removeAttribute('data-profile-avatar-path');
+          var imu = document.createElement('img');
+          imu.src = displayUrl;
+          imu.alt = '';
+          imu.width = 26;
+          imu.height = 26;
+          imu.style.borderRadius = '50%';
+          imu.style.objectFit = 'cover';
+          imu.style.display = 'block';
+          userAv.appendChild(imu);
+        }
+        userAv.classList.add('avatar--photo');
       } else {
+        userAv.removeAttribute('data-profile-avatar-path');
         userAv.innerHTML = '';
+        userAv.classList.remove('avatar--photo');
         if (resolved && resolved.email) {
           userAv.textContent = String(resolved.email).charAt(0).toUpperCase();
         } else {
@@ -17737,7 +17759,8 @@ var incomePowerState = {
     var menuLabel = document.getElementById('sb-menu-ws-label');
     if (menuLetter) menuLetter.textContent = letter;
     if (menuLabel) menuLabel.textContent = display;
-    applyWorkspaceChromeProfileAvatar();
+    /* Workspace labels + org monogram only; user avatar refresh runs via bizdashRefreshSidebarProfileAvatars. */
+    void refreshWorkspaceSidebarMonogramFromPrefs();
   }
 
   var sidebarChromeMenuOpen = false;

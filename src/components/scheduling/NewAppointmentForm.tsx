@@ -109,43 +109,50 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
   }
 
   return (
-    <form onSubmit={(e) => void handleSubmit (e)} className="max-w-xl border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] p-6">
+    <form
+      onSubmit={(e) => void handleSubmit (e)}
+      className="card"
+      style={{ maxWidth: '36rem' }}
+    >
       {initial ? (
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <h3 className="text-base font-semibold text-[var(--sched-text,#0f172a)]">Edit appointment</h3>
-          <button type="button" className="text-sm text-[var(--sched-accent)] hover:underline" onClick={onCancelEdit}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' }}>
+          <div className="fst" style={{ marginTop: 0, marginBottom: 0 }}>
+            Edit appointment
+          </div>
+          <button type="button" className="btn" style={{ fontSize: '12px', padding: '5px 12px' }} onClick={onCancelEdit}>
             Clear
           </button>
         </div>
       ) : (
-        <h3 className="mb-4 text-base font-semibold text-[var(--sched-text,#0f172a)]">New appointment</h3>
+        <div className="fst" style={{ marginTop: 0 }}>
+          New appointment
+        </div>
       )}
 
       {demoMode ? (
-        <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+        <p
+          style={{
+            fontSize: '13px',
+            color: 'var(--text2)',
+            margin: '0 0 16px',
+            padding: '10px 12px',
+            borderRadius: '6px',
+            border: '1px solid var(--border)',
+            background: 'var(--bg3)',
+          }}
+        >
           Sign in with a workspace to create and save appointments. Demo mode shows sample data only.
         </p>
       ) : null}
 
-      <div className="space-y-4">
-        <label className="block text-xs font-semibold uppercase text-[var(--sched-muted)]">
-          Title
-          <input
-            className="mt-1 w-full rounded-md border border-[var(--sched-border)] px-3 py-2 text-sm disabled:opacity-60"
-            value={title}
-            onChange={(e) => setTitle (e.target.value)}
-            disabled={demoMode}
-            required
-          />
-        </label>
-        <label className="block text-xs font-semibold uppercase text-[var(--sched-muted)]">
-          Client
-          <select
-            className="mt-1 w-full rounded-md border border-[var(--sched-border)] px-3 py-2 text-sm disabled:opacity-60"
-            value={clientId}
-            onChange={(e) => setClientId (e.target.value)}
-            disabled={demoMode}
-          >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div className="fgp">
+          <span className="fl">Title</span>
+          <input className="fi" value={title} onChange={(e) => setTitle (e.target.value)} disabled={demoMode} required />
+        </div>
+        <div className="fgp">
+          <span className="fl">Client</span>
+          <select className="fi" value={clientId} onChange={(e) => setClientId (e.target.value)} disabled={demoMode}>
             <option value="">— Select client —</option>
             {clientOptions.map ((c) => (
               <option key={c.id || c.label} value={c.id}>
@@ -153,70 +160,36 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
               </option>
             ))}
           </select>
-        </label>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label className="block text-xs font-semibold uppercase text-[var(--sched-muted)]">
-            Date
-            <input
-              type="date"
-              className="mt-1 w-full rounded-md border border-[var(--sched-border)] px-3 py-2 text-sm disabled:opacity-60"
-              value={dateStr}
-              onChange={(e) => setDateStr (e.target.value)}
-              disabled={demoMode}
-              required
-            />
-          </label>
-          <label className="block text-xs font-semibold uppercase text-[var(--sched-muted)]">
-            Start
-            <input
-              type="time"
-              className="mt-1 w-full rounded-md border border-[var(--sched-border)] px-3 py-2 text-sm disabled:opacity-60"
-              value={startT}
-              onChange={(e) => setStartT (e.target.value)}
-              disabled={demoMode}
-              required
-            />
-          </label>
-          <label className="block text-xs font-semibold uppercase text-[var(--sched-muted)]">
-            End
-            <input
-              type="time"
-              className="mt-1 w-full rounded-md border border-[var(--sched-border)] px-3 py-2 text-sm disabled:opacity-60"
-              value={endT}
-              onChange={(e) => setEndT (e.target.value)}
-              disabled={demoMode}
-              required
-            />
-          </label>
         </div>
-        <label className="block text-xs font-semibold uppercase text-[var(--sched-muted)]">
-          Location <span className="font-normal">(optional)</span>
-          <input
-            className="mt-1 w-full rounded-md border border-[var(--sched-border)] px-3 py-2 text-sm disabled:opacity-60"
-            value={location}
-            onChange={(e) => setLocation (e.target.value)}
-            disabled={demoMode}
-          />
-        </label>
-        <label className="block text-xs font-semibold uppercase text-[var(--sched-muted)]">
-          Notes
-          <textarea
-            className="mt-1 w-full rounded-md border border-[var(--sched-border)] px-3 py-2 text-sm disabled:opacity-60"
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes (e.target.value)}
-            disabled={demoMode}
-          />
-        </label>
-        <label className="flex items-center gap-2 text-sm text-[var(--sched-text)]">
+        <div className="sched-form-grid-3">
+          <div className="fgp">
+            <span className="fl">Date</span>
+            <input className="fi" type="date" value={dateStr} onChange={(e) => setDateStr (e.target.value)} disabled={demoMode} required />
+          </div>
+          <div className="fgp">
+            <span className="fl">Start</span>
+            <input className="fi" type="time" value={startT} onChange={(e) => setStartT (e.target.value)} disabled={demoMode} required />
+          </div>
+          <div className="fgp">
+            <span className="fl">End</span>
+            <input className="fi" type="time" value={endT} onChange={(e) => setEndT (e.target.value)} disabled={demoMode} required />
+          </div>
+        </div>
+        <div className="fgp">
+          <span className="fl">
+            Location <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(optional)</span>
+          </span>
+          <input className="fi" value={location} onChange={(e) => setLocation (e.target.value)} disabled={demoMode} />
+        </div>
+        <div className="fgp">
+          <span className="fl">Notes</span>
+          <textarea className="fi" rows={3} value={notes} onChange={(e) => setNotes (e.target.value)} disabled={demoMode} />
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem', color: 'var(--text2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={syncToGoogle} onChange={(e) => setSyncToGoogle (e.target.checked)} disabled={demoMode} />
           Sync to Google Calendar after save (stub)
         </label>
-        <button
-          type="submit"
-          className="h-10 w-full rounded-md bg-[var(--sched-accent,#0a0a0a)] text-sm font-medium text-white hover:opacity-95 disabled:opacity-50"
-          disabled={demoMode || submitting}
-        >
+        <button type="submit" className="btn btn-p" style={{ width: '100%', marginTop: '4px' }} disabled={demoMode || submitting}>
           {submitting ? 'Saving…' : initial ? 'Update appointment' : 'Create appointment'}
         </button>
       </div>

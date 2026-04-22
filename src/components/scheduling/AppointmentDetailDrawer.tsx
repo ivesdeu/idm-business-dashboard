@@ -71,7 +71,8 @@ export function AppointmentDetailDrawer ({ appointment, onClose, onEdit }: Props
           <div className="border-t border-[var(--sched-border)] px-5 py-4">
             <button
               type="button"
-              className="w-full rounded-lg border border-[var(--sched-border)] py-2.5 text-sm font-medium hover:bg-black/[0.03]"
+              className="btn"
+              style={{ width: '100%' }}
               onClick={() => {
                 onEdit (appointment);
                 onClose ();

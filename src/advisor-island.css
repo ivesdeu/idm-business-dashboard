@@ -2,15 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Advisor React island: tokens from the app shell (index.html) */
+/* Advisor React island — inherits app shell typography; composer styles live in `ai-chat-input.tsx`. */
 #advisor-react-composer-root {
-  --advisor-surface: var(--bg2, #f8fafc);
-  --advisor-elevated: var(--bg2, #f8fafc);
-  --advisor-text: var(--text, #0f172a);
-  --advisor-muted: var(--text3, #94a3b8);
-  --advisor-border: var(--border, #e2e8f0);
-  --advisor-accent: var(--coral, #0a0a0a);
-  --advisor-accent-2: var(--coral2, #000000);
-  --advisor-tint: color-mix(in srgb, var(--coral, #0a0a0a) 12%, transparent);
-  --advisor-tint-border: color-mix(in srgb, var(--coral, #0a0a0a) 45%, transparent);
+  width: 100%;
 }

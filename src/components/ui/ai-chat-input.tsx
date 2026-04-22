@@ -1,17 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, type FormEvent, type KeyboardEvent } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { Lightbulb, Mic, Globe, Paperclip, Send } from 'lucide-react';
-
-const PLACEHOLDERS = [
-  'Why is revenue down?',
-  'Compose an email for a follow-up',
-  'Create a financial report for June',
-  'Schedule an appointment with Alex',
-  'Send an invoice',
-  'Summarize this article',
-];
+import { ArrowUp, Mic, Plus, SlidersHorizontal } from 'lucide-react';
 
 export type AdvisorComposerApi = {
   send: (text: string) => void;
@@ -24,268 +14,134 @@ type Props = {
 };
 
 /**
- * Advisor composer (shadcn-style layout). Tailwind via `advisor-island.css` (preflight off).
- * Wired to window.bizDashAdvisorGetComposerApi() in dashboard-assistant.js.
+ * Advisor composer — minimal chat-style input (centered heading + rounded shell).
+ * Tailwind via `advisor-island.css` (preflight off). Wired from `dashboard-assistant.js`.
  */
 function AIChatInput({ composerApi }: Props) {
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const [showPlaceholder, setShowPlaceholder] = useState(true);
-  const [isActive, setIsActive] = useState(false);
-  const [thinkActive, setThinkActive] = useState(false);
-  const [deepSearchActive, setDeepSearchActive] = useState(false);
+  const [toolsActive, setToolsActive] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // Cycle placeholder when unfocused & empty
-  useEffect(() => {
-    if (isActive || inputValue) return;
-
-    const interval = setInterval(() => {
-      setShowPlaceholder(false);
-      setTimeout(() => {
-        setPlaceholderIndex((prev) => (prev + 1) % PLACEHOLDERS.length);
-        setShowPlaceholder(true);
-      }, 400);
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [isActive, inputValue]);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    composerApi?.setTools(thinkActive, deepSearchActive);
-  }, [thinkActive, deepSearchActive, composerApi]);
+    composerApi?.setTools(toolsActive, false);
+  }, [toolsActive, composerApi]);
 
-  // External prefill (CRM "ask advisor", clear)
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, 26), 180)}px`;
+  }, [inputValue]);
+
   useEffect(() => {
     const onPrefill = (e: Event) => {
       const d = (e as CustomEvent<{ value?: string; focus?: boolean }>).detail;
       if (d?.value != null) setInputValue(String(d.value));
-      if (d?.focus) requestAnimationFrame(() => inputRef.current?.focus());
+      if (d?.focus) requestAnimationFrame(() => taRef.current?.focus());
     };
     window.addEventListener('advisor-composer-prefill', onPrefill);
     return () => window.removeEventListener('advisor-composer-prefill', onPrefill);
   }, []);
 
-  // Click outside: collapse if empty
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        if (!inputValue) setIsActive(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [inputValue]);
-
-  const handleActivate = () => setIsActive(true);
-
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
+  const submit = () => {
     const t = inputValue.trim();
     if (!t || !composerApi) return;
     composerApi.send(t);
     setInputValue('');
-    setIsActive(false);
   };
 
-  const onKeyDown = (e: KeyboardEvent) => {
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    submit();
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (inputValue.trim() && composerApi) {
-        composerApi.send(inputValue.trim());
-        setInputValue('');
-        setIsActive(false);
-      }
+      submit();
     }
   };
 
   const onAttach = () => {
-    if (composerApi) composerApi.attach();
+    composerApi?.attach();
   };
 
-  const containerVariants = {
-    collapsed: {
-      height: 68,
-      boxShadow: '0 2px 8px 0 rgba(0, 0, 0, 0.08)',
-      transition: { type: 'spring' as const, stiffness: 120, damping: 18 },
-    },
-    expanded: {
-      height: 128,
-      boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.16)',
-      transition: { type: 'spring' as const, stiffness: 120, damping: 18 },
-    },
-  };
+  const iconCircle =
+    'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#3a3a3a] transition-colors hover:bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400';
+  const toolsBtnBase =
+    'inline-flex h-10 shrink-0 items-center justify-center rounded-full text-[#3a3a3a] gap-2 px-3.5 font-medium text-[14px] transition-colors hover:bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400';
 
   return (
-    <div className="w-full max-w-3xl mx-auto text-zinc-950" data-advisor-composer>
-      <motion.div
-        ref={wrapperRef}
-        className="w-full max-w-3xl"
-        variants={containerVariants}
-        animate={isActive || inputValue ? 'expanded' : 'collapsed'}
-        initial="collapsed"
-        onClick={handleActivate}
-        style={{
-          overflow: 'hidden',
-          /* Full pill — matches inner row so overflow:hidden does not clip circular buttons */
-          borderRadius: 9999,
-          background: '#fff',
-          boxSizing: 'border-box',
-        }}
-      >
-        <form className="flex flex-col h-full w-full" onSubmit={onSubmit}>
-          <div className="flex items-center gap-2 p-3 rounded-full bg-white max-w-3xl w-full min-w-0 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-            <button
-              className="p-3 rounded-full shrink-0 overflow-hidden transition hover:bg-gray-100 text-zinc-700"
-              title="Attach file"
-              type="button"
-              tabIndex={-1}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAttach();
-              }}
-            >
-              <Paperclip size={20} />
-            </button>
+    <div className="w-full max-w-2xl mx-auto px-2 sm:px-3" data-advisor-composer ref={wrapperRef}>
+      <h2 className="text-center text-[#0a0a0a] text-xl sm:text-[1.65rem] font-semibold tracking-tight mb-5 sm:mb-7">
+        How Can I Help You
+      </h2>
 
-            <div className="relative flex-1 min-w-0">
-              <input
-                ref={inputRef}
-                type="text"
-                name="advisor-prompt"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onFocus={handleActivate}
-                onKeyDown={onKeyDown}
-                className="flex-1 min-w-0 border-0 outline-0 rounded-md py-2 text-base bg-transparent w-full font-normal text-zinc-900"
-                style={{ position: 'relative', zIndex: 1 }}
-                maxLength={2000}
-                autoComplete="off"
-                aria-label="Message Advisor"
-              />
-              <div className="absolute inset-0 pointer-events-none flex items-center justify-center px-14 sm:px-16 py-2 min-w-0">
-                <AnimatePresence mode="wait">
-                  {showPlaceholder && !isActive && !inputValue && (
-                    <motion.span
-                      key={placeholderIndex}
-                      className="block max-w-full truncate text-center text-sm text-gray-400 select-none sm:text-base"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      {PLACEHOLDERS[placeholderIndex]}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
+      <div className="rounded-[28px] bg-white border border-[#e8e8e8] shadow-[0_4px_28px_rgba(0,0,0,0.07)] px-4 sm:px-5 pt-3.5 pb-3 flex flex-col min-h-[128px]">
+        <form className="flex flex-col flex-1 gap-3 min-h-0" onSubmit={onSubmit}>
+          <textarea
+            ref={taRef}
+            name="advisor-prompt"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={onKeyDown}
+            rows={1}
+            className="w-full min-h-[26px] max-h-[180px] resize-none border-0 bg-transparent text-[15px] leading-[1.5] text-[#1a1a1a] outline-none placeholder:text-[#8e8e8e] py-1"
+            placeholder="Message..."
+            maxLength={2000}
+            autoComplete="off"
+            aria-label="Message Advisor"
+          />
 
-            <button
-              className="p-3 rounded-full shrink-0 overflow-hidden transition hover:bg-gray-100 text-zinc-700"
-              title="Voice input"
-              type="button"
-              tabIndex={-1}
-            >
-              <Mic size={20} />
-            </button>
-            <button
-              className="flex items-center gap-1 overflow-hidden rounded-full bg-black p-3 font-medium text-white shrink-0 justify-center hover:bg-zinc-800"
-              title="Send"
-              type="button"
-              tabIndex={-1}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (inputValue.trim() && composerApi) {
-                  composerApi.send(inputValue.trim());
-                  setInputValue('');
-                  setIsActive(false);
-                }
-              }}
-            >
-              <Send size={18} />
-            </button>
-          </div>
-
-          <motion.div
-            className="w-full flex justify-start px-4 items-center text-sm"
-            variants={{
-              hidden: {
-                opacity: 0,
-                y: 20,
-                pointerEvents: 'none' as const,
-                transition: { duration: 0.25 },
-              },
-              visible: {
-                opacity: 1,
-                y: 0,
-                pointerEvents: 'auto' as const,
-                transition: { duration: 0.35, delay: 0.08 },
-              },
-            }}
-            initial="hidden"
-            animate={isActive || inputValue ? 'visible' : 'hidden'}
-            style={{ marginTop: 8 }}
-          >
-            <div className="flex gap-3 items-center flex-wrap">
+          <div className="flex items-center justify-between gap-3 pt-2 mt-auto border-t border-neutral-100">
+            <div className="flex items-center gap-0.5 min-w-0">
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setThinkActive((v) => {
-                    const n = !v;
-                    if (n) setDeepSearchActive(false);
-                    return n;
-                  });
-                }}
-                className={
-                  'flex items-center gap-1 px-4 py-2 rounded-full transition-all font-medium group ' +
-                  (thinkActive
-                    ? 'bg-blue-600/10 outline outline-blue-600/60 text-blue-950'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200')
-                }
-                title="Think"
+                className={iconCircle}
+                title="Attach image"
+                aria-label="Attach image"
+                onClick={onAttach}
               >
-                <Lightbulb className="group-hover:fill-yellow-300 transition-all" size={18} />
-                Think
+                <Plus size={20} strokeWidth={1.75} />
               </button>
-
-              <motion.button
+              <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDeepSearchActive((v) => {
-                    const n = !v;
-                    if (n) setThinkActive(false);
-                    return n;
-                  });
-                }}
                 className={
-                  'flex items-center px-4 gap-1 py-2 rounded-full transition font-medium whitespace-nowrap overflow-hidden justify-start ' +
-                  (deepSearchActive
-                    ? 'bg-blue-600/10 outline outline-blue-600/60 text-blue-950'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200')
+                  toolsBtnBase +
+                  (toolsActive ? ' bg-neutral-100 text-[#111] ring-1 ring-neutral-200/80' : '')
                 }
-                initial={false}
-                animate={{
-                  width: deepSearchActive ? 125 : 36,
-                  paddingLeft: deepSearchActive ? 8 : 9,
-                }}
-                title="Deep Search"
+                title="Tools"
+                aria-pressed={toolsActive}
+                onClick={() => setToolsActive((v) => !v)}
               >
-                <div className="flex-1 flex justify-center">
-                  <Globe size={18} />
-                </div>
-                <motion.span className="pb-[2px]" initial={false} animate={{ opacity: deepSearchActive ? 1 : 0 }}>
-                  Deep Search
-                </motion.span>
-              </motion.button>
+                <SlidersHorizontal size={18} strokeWidth={1.75} aria-hidden />
+                <span className="pr-0.5">Tools</span>
+              </button>
             </div>
-          </motion.div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                className={iconCircle}
+                title="Voice input"
+                aria-label="Voice input (not available yet)"
+              >
+                <Mic size={20} strokeWidth={1.75} />
+              </button>
+              <button
+                type="submit"
+                disabled={!inputValue.trim()}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#3f3f46] text-white shadow-sm transition-opacity hover:bg-[#2d2d33] disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-[#3f3f46] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
+                title="Send"
+                aria-label="Send message"
+              >
+                <ArrowUp size={18} strokeWidth={2.25} />
+              </button>
+            </div>
+          </div>
         </form>
-      </motion.div>
+      </div>
     </div>
   );
 }

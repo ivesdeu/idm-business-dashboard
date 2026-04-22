@@ -16,15 +16,6 @@ import { rowToSchedulingAppointment } from '@/lib/scheduling/supabase';
 
 type SubView = 'calendar' | 'list' | 'new';
 
-/** Outline vs solid accent — matches product-style “Manage statuses” / “+ Add” controls. */
-function schedSegmentClass (active: boolean): string {
-  const base =
-    'inline-flex h-9 shrink-0 items-center gap-2 rounded-md border px-3.5 text-sm font-medium transition-colors';
-  return active
-    ? `${base} border-[var(--sched-accent,#0a0a0a)] bg-[var(--sched-accent,#0a0a0a)] text-white hover:opacity-95`
-    : `${base} border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] text-[var(--sched-text,#0f172a)] hover:bg-neutral-50`;
-}
-
 function getSupabase (): SupabaseClient | null {
   if (typeof window === 'undefined') return null;
   const c = (window as unknown as { supabaseClient?: SupabaseClient }).supabaseClient;
@@ -386,54 +377,58 @@ export function SchedulingPage () {
   );
 
   return (
-    <div className="scheduling-root min-h-[420px] px-4 pb-10 pt-6 md:px-6">
-      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="scheduling-root min-h-[420px]">
+      <div className="ph">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--sched-text,#0f172a)]">Scheduling</h1>
-          <p className="mt-1 max-w-xl text-sm text-[var(--sched-muted,#64748b)]">
+          <div className="pt">Scheduling</div>
+          <div className="ps">
             Calendar and appointments for your workspace. Google Calendar sync is stubbed until OAuth is enabled.
-          </p>
+          </div>
         </div>
-        <button
-          type="button"
-          className="inline-flex h-9 shrink-0 items-center rounded-md border border-[var(--sched-border,#e2e8f0)] bg-[var(--sched-surface,#fff)] px-3.5 text-sm font-medium text-[var(--sched-text,#0f172a)] hover:bg-neutral-50"
-          onClick={() => setConnectOpen (true)}
-        >
+        <button type="button" className="btn btn-p" onClick={() => setConnectOpen (true)}>
           Connect Google Calendar
         </button>
-      </header>
+      </div>
 
-      <nav className="mb-6 flex flex-wrap items-center gap-2" aria-label="Scheduling views">
-        <button type="button" className={schedSegmentClass (subView === 'calendar')} onClick={() => setSubView ('calendar')}>
-          <CalendarIcon className="h-4 w-4 shrink-0" strokeWidth={2} />
+      <nav className="sched-view-tabs" aria-label="Scheduling views">
+        <button
+          type="button"
+          className={`btn spend-ctype sched-tab-btn${subView === 'calendar' ? ' on' : ''}`}
+          onClick={() => setSubView ('calendar')}
+        >
+          <CalendarIcon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
           Calendar
         </button>
-        <button type="button" className={schedSegmentClass (subView === 'list')} onClick={() => setSubView ('list')}>
-          <LayoutList className="h-4 w-4 shrink-0" strokeWidth={2} />
+        <button
+          type="button"
+          className={`btn spend-ctype sched-tab-btn${subView === 'list' ? ' on' : ''}`}
+          onClick={() => setSubView ('list')}
+        >
+          <LayoutList className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
           Appointments
         </button>
         <button
           type="button"
-          className={schedSegmentClass (subView === 'new')}
+          className={`btn spend-ctype sched-tab-btn${subView === 'new' ? ' on' : ''}`}
           onClick={() => {
             setEditTarget (null);
             setSubView ('new');
           }}
         >
-          <PlusCircle className="h-4 w-4 shrink-0" strokeWidth={2} />
+          <PlusCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
           New appointment
         </button>
       </nav>
 
       {loading ? (
-        <p className="text-sm text-[var(--sched-muted)]">Loading appointments…</p>
+        <p style={{ fontSize: '13px', color: 'var(--text3)' }}>Loading appointments…</p>
       ) : (
         <>
           {subView === 'calendar' ? (
             appointments.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[var(--sched-border)] bg-[var(--sched-surface,#f8fafc)] px-6 py-14 text-center">
-                <p className="text-base font-medium text-[var(--sched-text)]">No appointments yet</p>
-                <p className="mt-2 text-sm text-[var(--sched-muted)]">
+              <div className="card sched-empty-card" style={{ borderStyle: 'dashed' }}>
+                <p>No appointments yet</p>
+                <p className="sched-empty-sub">
                   {demoMode
                     ? 'Demo sample data failed to load — try leaving and re-opening View Demo.'
                     : 'Use New appointment to add one, or connect clients under Customers first.'}
