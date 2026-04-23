@@ -240,7 +240,7 @@ export function AuthLoginGate() {
       />
 
       <div hidden={step === 'signup'}>
-        <Card className="auth-form-enter w-full rounded-xl border border-solid border-neutral-200/70 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04),0_6px_20px_-8px_rgba(0,0,0,0.08)]">
+        <Card className="auth-form-enter w-full rounded-xl border border-solid border-neutral-200/70 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.06)]">
           <CardHeader className="space-y-1.5 px-8 pb-0 pt-9 text-center">
             <div className="mx-auto mb-4 flex justify-center">
               <img src="/idm-logo.png" alt="IDM" className="h-12 w-auto object-contain" width={120} height={48} />
@@ -274,7 +274,7 @@ export function AuthLoginGate() {
               <Label htmlFor="gate-email" className="text-foreground">
                 Email
               </Label>
-              <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]">
+              <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
                 <Mail className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <Input
                   id="gate-email"
@@ -290,7 +290,7 @@ export function AuthLoginGate() {
               <Label htmlFor="gate-password" className="text-foreground">
                 Password
               </Label>
-              <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]">
+              <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
                 <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <Input
                   id="gate-password"
@@ -310,7 +310,7 @@ export function AuthLoginGate() {
               <Label htmlFor="gate-confirm-password" className="text-foreground">
                 Confirm password
               </Label>
-              <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]">
+              <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
                 <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <Input
                   id="gate-confirm-password"
@@ -417,7 +417,7 @@ export function AuthLoginGate() {
       </div>
 
       {step === 'signup' ? (
-        <Card className="w-full rounded-xl border border-solid border-neutral-200/70 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04),0_6px_20px_-8px_rgba(0,0,0,0.08)]">
+        <Card className="w-full rounded-xl border border-solid border-neutral-200/70 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.06)]">
           <CardContent className="flex flex-col gap-6 px-8 py-9">
             <button
               type="button"
@@ -455,7 +455,7 @@ export function AuthLoginGate() {
                     value={signupFirst}
                     onChange={(ev) => setSignupFirst(ev.target.value)}
                     placeholder="Jane"
-                    className="h-11 rounded-lg border-solid border-neutral-200/90 bg-neutral-50/60 text-[15px] shadow-none transition-colors placeholder:text-muted-foreground/70 focus-visible:bg-white focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]"
+                    className="h-11 rounded-lg border-solid border-neutral-200/90 bg-neutral-50/60 text-[15px] shadow-none transition-colors placeholder:text-muted-foreground/70 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-ring/12 focus-visible:ring-offset-0"
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -468,7 +468,7 @@ export function AuthLoginGate() {
                     value={signupLast}
                     onChange={(ev) => setSignupLast(ev.target.value)}
                     placeholder="Doe"
-                    className="h-11 rounded-lg border-solid border-neutral-200/90 bg-neutral-50/60 text-[15px] shadow-none transition-colors placeholder:text-muted-foreground/70 focus-visible:bg-white focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]"
+                    className="h-11 rounded-lg border-solid border-neutral-200/90 bg-neutral-50/60 text-[15px] shadow-none transition-colors placeholder:text-muted-foreground/70 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-ring/12 focus-visible:ring-offset-0"
                   />
                 </div>
               </div>
@@ -482,14 +482,14 @@ export function AuthLoginGate() {
                   value={signupCompany}
                   onChange={(ev) => setSignupCompany(ev.target.value)}
                   placeholder="Acme Inc."
-                  className="h-11 rounded-lg border-solid border-neutral-200/90 bg-neutral-50/60 text-[15px] shadow-none transition-colors placeholder:text-muted-foreground/70 focus-visible:bg-white focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]"
+                  className="h-11 rounded-lg border-solid border-neutral-200/90 bg-neutral-50/60 text-[15px] shadow-none transition-colors placeholder:text-muted-foreground/70 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-ring/12 focus-visible:ring-offset-0"
                 />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="gate-signup-modal-email" className="text-foreground">
                   Email
                 </Label>
-                <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]">
+                <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
                   <Mail className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     id="gate-signup-modal-email"
@@ -506,7 +506,7 @@ export function AuthLoginGate() {
                 <Label htmlFor="gate-signup-modal-password" className="text-foreground">
                   Password
                 </Label>
-                <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]">
+                <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
                   <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     id="gate-signup-modal-password"
@@ -523,7 +523,7 @@ export function AuthLoginGate() {
                 <Label htmlFor="gate-signup-modal-confirm" className="text-foreground">
                   Confirm password
                 </Label>
-                <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.04)]">
+                <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
                   <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     id="gate-signup-modal-confirm"

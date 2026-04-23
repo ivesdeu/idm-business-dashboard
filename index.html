@@ -1926,6 +1926,34 @@
     gap: 8px;
     box-sizing: border-box;
   }
+  /* Advisor — no messages yet: fill space below header and center composer + greeting */
+  #page-chat.chat-advisor-centered.pg.on:has(#chat-log:empty) > .chat-shell > .chat-transcript {
+    flex: 0 0 0;
+    min-height: 0;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #page-chat.chat-advisor-centered.pg.on:has(#chat-log:empty) > .chat-shell > .chat-composer-dock {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    border-top: none;
+    padding-top: max(16px, 5vh);
+    padding-bottom: max(28px, 10vh);
+  }
+  #page-chat.chat-advisor-centered.pg.on:has(#chat-log:empty) > .chat-shell > .chat-composer-dock .chat-composer-inner {
+    flex: 0 1 auto;
+    width: 100%;
+  }
+  /* Hide hero greeting once the thread has content (user message, reply, or thinking row) */
+  #page-chat.chat-advisor-centered.pg.on:not(:has(#chat-log:empty)) .advisor-composer-greeting {
+    display: none;
+  }
   .advisor-chat-aux {
     width: 100%;
     max-width: 720px;
@@ -2463,6 +2491,17 @@
   .crm-select-opt-on { font-weight: 600; }
   /* Keep columns menu above customer cards but below modal overlays. */
   #page-customers .ph { position: relative; z-index: 90; }
+  /* Horizontal scroll when many CRM columns are visible (default view stays narrow). */
+  #page-customers .customers-table-scroll {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #page-customers .customers-table-scroll .dt {
+    width: max-content;
+    min-width: 100%;
+  }
   /* Tasks tab (Attio-style) */
   #page-tasks.tasks-attio {
     max-width: 1100px;
@@ -6411,10 +6450,12 @@
     </div>
     <div class="card">
       <div id="customers-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No customers yet.</div>
-      <table class="dt" id="customers-table" style="display:none;">
-        <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Preferred</th><th>Style</th><th>Status</th><th>Priority</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th>Updated</th><th style="width:140px;">Actions</th></tr></thead>
-        <tbody id="customers-tbody"></tbody>
-      </table>
+      <div class="customers-table-scroll">
+        <table class="dt" id="customers-table" style="display:none;">
+          <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Preferred</th><th>Style</th><th>Status</th><th>Priority</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th>Updated</th><th style="width:140px;">Actions</th></tr></thead>
+          <tbody id="customers-tbody"></tbody>
+        </table>
+      </div>
     </div>
     <div class="card" style="margin-top:12px;">
       <div class="sh"><div class="st">Relationship timeline</div><div class="ss">Recent outreach and reminders</div></div>

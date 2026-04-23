@@ -269,7 +269,7 @@ import {
   // ---------- Clients store ----------
 
   var CLIENTS_KEY = 'clients:v1';
-  var CUSTOMERS_COLUMNS_PREFS_KEY = 'customers-columns:v1';
+  var CUSTOMERS_COLUMNS_PREFS_KEY = 'customers-columns:v2';
   var USER_UI_PREFS_DEBOUNCE_MS = 400;
   var userUiPrefsCache = null;
   var userUiPrefsPersistTimer = null;
@@ -512,7 +512,8 @@ import {
   function defaultCustomersColumnPrefs() {
     var prefs = {};
     CUSTOMERS_COLUMN_DEFS.forEach(function (col) {
-      prefs[col.id] = true;
+      if (col.locked) prefs[col.id] = true;
+      else prefs[col.id] = col.defaultHidden ? false : true;
     });
     return prefs;
   }

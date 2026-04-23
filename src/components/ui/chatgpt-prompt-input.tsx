@@ -204,10 +204,14 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, Props>(({ compose
   const hasValue = value.trim().length > 0 || imagePreview;
 
   return (
-    <div
-      className="flex w-full cursor-text flex-col rounded-xl border border-border bg-background px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-neutral-300/90 focus-within:shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
-      data-advisor-composer
-    >
+    <div className="advisor-composer-shell flex w-full flex-col items-stretch gap-5 sm:gap-6">
+      <h2 className="advisor-composer-greeting text-center text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+        What can I do for you?
+      </h2>
+      <div
+        className="flex w-full cursor-text flex-col rounded-xl border border-border bg-background px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition-[border-color,box-shadow] focus-within:border-neutral-300/90 focus-within:shadow-[0_2px_12px_rgba(15,23,42,0.08)]"
+        data-advisor-composer
+      >
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
 
       {imagePreview && (
@@ -218,7 +222,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, Props>(({ compose
             </button>
             <button
               onClick={handleRemoveImage}
-              className="absolute -right-1 -top-1 z-10 flex h-5 w-5 items-center justify-center rounded-md border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-accent"
+              className="absolute -right-1 -top-1 z-10 flex h-5 w-5 items-center justify-center rounded-md border border-border bg-background text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-colors hover:bg-accent"
               aria-label="Remove image"
               type="button"
             >
@@ -238,10 +242,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, Props>(({ compose
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Message…"
+        placeholder="Ask anything…"
         maxLength={2000}
         autoComplete="off"
-        aria-label="Message Advisor"
+        aria-label="Ask Advisor"
         className="w-full min-h-[44px] max-h-[200px] resize-none border-0 bg-transparent px-0.5 py-1.5 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
       />
 
@@ -283,6 +287,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, Props>(({ compose
             </Tooltip>
           </div>
         </TooltipProvider>
+      </div>
       </div>
     </div>
   );

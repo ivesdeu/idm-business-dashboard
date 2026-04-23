@@ -32,6 +32,8 @@ export type CrmColumnDef = {
   fieldKey: string | null;
   editable: boolean;
   locked?: boolean;
+  /** When true, column is off until the user enables it in Columns (reduces default table width). */
+  defaultHidden?: boolean;
   selectKey?: string;
 };
 
@@ -143,18 +145,18 @@ export const CUSTOMERS_COLUMN_DEFS: CrmColumnDef[] = [
   fk('company', 'Company', 1, 'title', 'companyName', true),
   fk('contact', 'Contact', 2, 'text', 'contactName', true),
   fk('email', 'Email', 3, 'text', 'email', true),
-  fk('phone', 'Phone', 4, 'text', 'phone', true),
-  fk('preferred', 'Preferred', 5, 'select', 'preferredChannel', true, { selectKey: 'preferred' }),
-  fk('style', 'Style', 6, 'select', 'communicationStyle', true, { selectKey: 'style' }),
+  fk('phone', 'Phone', 4, 'text', 'phone', true, { defaultHidden: true }),
+  fk('preferred', 'Preferred', 5, 'select', 'preferredChannel', true, { selectKey: 'preferred', defaultHidden: true }),
+  fk('style', 'Style', 6, 'select', 'communicationStyle', true, { selectKey: 'style', defaultHidden: true }),
   fk('status', 'Status', 7, 'status', 'status', true, { selectKey: 'status' }),
-  fk('priority', 'Priority', 8, 'priority', 'priority', true, { selectKey: 'priority' }),
-  fk('projects', 'Projects', 9, 'readonly', null, false),
+  fk('priority', 'Priority', 8, 'priority', 'priority', true, { selectKey: 'priority', defaultHidden: true }),
+  fk('projects', 'Projects', 9, 'readonly', null, false, { defaultHidden: true }),
   fk('revenue', 'Revenue', 10, 'readonly', null, false),
   fk('allocated', 'Allocated cost', 11, 'readonly', null, false),
   fk('profit', 'Profit', 12, 'readonly', null, false),
   fk('margin', 'Margin', 13, 'readonly', null, false),
   fk('roi', 'ROI', 14, 'readonly', null, false),
-  fk('updated', 'Updated', 15, 'readonly', 'updatedAt', false),
+  fk('updated', 'Updated', 15, 'readonly', 'updatedAt', false, { defaultHidden: true }),
   fk('actions', 'Actions', 16, 'readonly', null, false, { locked: true }),
 ];
 

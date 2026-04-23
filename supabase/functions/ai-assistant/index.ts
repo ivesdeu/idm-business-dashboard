@@ -4,7 +4,7 @@
  * dedicated Edge handler that re-checks organization_members after authenticate.
  * Never add blind service-role writes from model output.
  */
-import { createClient } from "npm:@supabase/supabase-js@2.101.1";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { serveWithEdgeRequestLogging } from "../_shared/withEdgeRequestLogging.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
@@ -536,14 +536,22 @@ serveWithEdgeRequestLogging("ai-assistant", async (req, _ctx) => {
   }
   body = { ...body, context: sanitized.context, constraints: sanitized.constraints };
 
-  const jwt = authHeader.slice("Bearer ".length);
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return jsonResponse(req, 401, { error: "Missing bearer token." });
+
   const userClient = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: authHeader } },
   });
-  // Pass JWT explicitly — server-side clients have no session state.
-  const { data: userData, error: userErr } = await userClient.auth.getUser(jwt);
-  if (userErr || !userData?.user) return jsonResponse(req, 401, { error: "Invalid or expired auth token." });
-  const user = userData.user;
+  // JWT signing keys (ES256): verify via JWKS — getUser(jwt) returns UNAUTHORIZED_UNSUPPORTED_TOKEN_ALGORITHM.
+  const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
+  if (claimsErr || !claimsData?.claims) {
+    const msg = claimsErr?.message ? String(claimsErr.message) : "Invalid or expired auth token.";
+    return jsonResponse(req, 401, { error: msg });
+  }
+  const userId = typeof claimsData.claims.sub === "string" ? claimsData.claims.sub : "";
+  if (!userId || !/^[0-9a-f-]{36}$/i.test(userId)) {
+    return jsonResponse(req, 401, { error: "Invalid auth token (missing sub)." });
+  }
 
   const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
   const isGa4Configured = ga4Configured();
@@ -596,7 +604,7 @@ serveWithEdgeRequestLogging("ai-assistant", async (req, _ctx) => {
     .from("organization_members")
     .select("role")
     .eq("organization_id", body.organizationId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .maybeSingle();
   if (memErr || !membership) {
     return jsonResponse(req, 403, { error: "Not a member of this organization." });

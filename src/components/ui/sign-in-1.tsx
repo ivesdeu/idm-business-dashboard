@@ -81,7 +81,7 @@ export const AuthForm = React.forwardRef<HTMLDivElement, AuthFormProps>(
       <Card
         ref={ref}
         className={cn(
-          'auth-form-enter w-full rounded-xl border border-solid border-neutral-200/70 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04),0_6px_20px_-8px_rgba(0,0,0,0.08)]',
+          'auth-form-enter w-full rounded-xl border border-solid border-neutral-200/70 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.06)]',
           className,
         )}
       >

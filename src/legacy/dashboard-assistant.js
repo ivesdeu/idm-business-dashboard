@@ -589,6 +589,59 @@
     return readAdvisorOrgId();
   }
 
+  /**
+   * Same pattern as financial-core `bearerForTeamEdge`: GoTrue session in memory can lag;
+   * refreshSession pins a fresh access_token for Edge calls.
+   */
+  async function bearerForAdvisorEdge(supabase) {
+    try {
+      var ref = await supabase.auth.refreshSession();
+      if (ref && ref.error) return null;
+      var s = ref && ref.data && ref.data.session;
+      if (s && s.access_token) return s.access_token;
+      var g = await supabase.auth.getSession();
+      s = g && g.data && g.data.session;
+      return s && s.access_token ? s.access_token : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Avoid supabase.functions.invoke for ai-assistant: bundled client fetch can omit Authorization
+   * (gateway UNAUTHORIZED_NO_AUTH_HEADER). Raw fetch + explicit Bearer matches organization-team.
+   */
+  async function invokeAiAssistantRaw(supabase, body, accessToken) {
+    var base = (
+      (supabase && supabase.supabaseUrl ? String(supabase.supabaseUrl) : '') ||
+      (typeof window.__bizdashSupabaseUrl === 'string' ? window.__bizdashSupabaseUrl : '')
+    ).replace(/\/$/, '');
+    var anon =
+      (supabase && supabase.supabaseKey ? String(supabase.supabaseKey) : '') ||
+      (typeof window.__bizdashSupabaseAnonKey === 'string' ? window.__bizdashSupabaseAnonKey : '');
+    if (!base || !anon) {
+      return { ok: false, status: 0, data: null, errText: 'Missing Supabase URL or key on client.' };
+    }
+    var url = base + '/functions/v1/ai-assistant';
+    var res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + accessToken,
+        apikey: anon,
+      },
+      body: JSON.stringify(body || {}),
+    });
+    var text = await res.text();
+    var data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (_) {
+      data = { error: text || 'Invalid JSON from server.' };
+    }
+    return { ok: res.ok, status: res.status, data: data, errText: text };
+  }
+
   async function invokeAdvisorTask(req) {
     var supabase = window.supabaseClient;
     var user = window.currentUser;
@@ -600,18 +653,6 @@
       };
     }
     try {
-      var session = null;
-      try {
-        var sessRes = await supabase.auth.getSession();
-        session = sessRes && sessRes.data ? sessRes.data.session : null;
-      } catch (_) {}
-      if (!session || !session.access_token) {
-        return {
-          ok: false,
-          error: 'No active auth session. Sign in again to use Advisor.',
-          response: { title: 'Sign in required', bullets: ['Your session expired or demo mode is active. Sign in to use Advisor.'] },
-        };
-      }
       var oid =
         req && req.organizationId && String(req.organizationId).trim() ? String(req.organizationId).trim() : null;
       if (!oid) oid = await ensureAdvisorOrganizationId();
@@ -628,17 +669,71 @@
         };
       }
       req = Object.assign({}, req, { organizationId: oid });
-      var res = await supabase.functions.invoke('ai-assistant', {
-        body: req,
-        headers: {
-          Authorization: 'Bearer ' + session.access_token,
-        },
-      });
-      if (res.error) {
-        return { ok: false, error: res.error.message || 'Invoke failed', response: { title: 'Stub call failed', bullets: [res.error.message || 'Unknown function error'] } };
+      var token = await bearerForAdvisorEdge(supabase);
+      if (!token) {
+        return {
+          ok: false,
+          error: 'No active auth session. Sign in again to use Advisor.',
+          response: { title: 'Sign in required', bullets: ['Your session expired or demo mode is active. Sign in to use Advisor.'] },
+        };
       }
-      return { ok: true, response: res.data || { title: 'No data', bullets: [] } };
+      var raw = await invokeAiAssistantRaw(supabase, req, token);
+      if (!raw.ok && raw.status === 401) {
+        token = await bearerForAdvisorEdge(supabase);
+        if (token) raw = await invokeAiAssistantRaw(supabase, req, token);
+      }
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7914/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '65e8fd' },
+          body: JSON.stringify({
+            sessionId: '65e8fd',
+            runId: 'post-fix',
+            hypothesisId: raw.ok ? 'verify-ok' : 'verify-err',
+            location: 'dashboard-assistant.js:invokeAdvisorTask',
+            message: 'ai-assistant raw fetch result',
+            data: { httpStatus: raw.status, ok: !!raw.ok },
+            timestamp: Date.now(),
+          }),
+        }).catch(function () {});
+      } catch (_) {}
+      // #endregion
+      if (!raw.ok) {
+        var apiErr =
+          raw.data && typeof raw.data === 'object'
+            ? raw.data.error || raw.data.message || raw.data.msg
+            : null;
+        var errLine = apiErr
+          ? String(apiErr)
+          : raw.status
+            ? 'Advisor request failed (HTTP ' + String(raw.status) + ').'
+            : 'Advisor function could not be reached.';
+        return {
+          ok: false,
+          error: errLine,
+          response: { title: 'Advisor unavailable', bullets: [errLine] },
+        };
+      }
+      return { ok: true, response: raw.data || { title: 'No data', bullets: [] } };
     } catch (err) {
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7914/ingest/507d12bf-babb-4204-8816-34a6e29c9b5b', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '65e8fd' },
+          body: JSON.stringify({
+            sessionId: '65e8fd',
+            runId: 'post-fix',
+            hypothesisId: 'H-net',
+            location: 'dashboard-assistant.js:invokeAdvisorTask',
+            message: 'invokeAdvisorTask threw',
+            data: { errMessage: String(err && err.message ? err.message : err) },
+            timestamp: Date.now(),
+          }),
+        }).catch(function () {});
+      } catch (_) {}
+      // #endregion
       return { ok: false, error: String(err && err.message ? err.message : err), response: { title: 'Stub call failed', bullets: ['Advisor function could not be reached.'] } };
     }
   }
@@ -674,7 +769,7 @@
 
     function syncAdvisorComposerLayout() {
       if (!pageChat) return;
-      /* Stable layout: composer stays bottom-centered; transcript scrolls above (no docked/fixed jump). */
+      /* Empty log: CSS centers composer + greeting in viewport; once #chat-log has rows, transcript grows and composer docks to bottom. */
       pageChat.classList.add('chat-advisor-centered');
       pageChat.classList.remove('chat-compose-docked');
     }
