@@ -23,6 +23,25 @@ declare global {
     ) => Promise<boolean>;
     bizDashCrmTableRevertField?: (clientId: string, fieldKey: string, previous: string) => void;
     bizDashCrmTableOnLeaveRow?: (rowId: string) => void;
+    /** Set pill color for a CRM select option (persists `crmOptionColors`). */
+    bizDashCrmSetOptionColor?: (
+      selectKey: string,
+      label: string,
+      color: import('./lib/crm-customers-schema').CrmPillColorKey,
+    ) => Promise<boolean>;
+    /** Rename a Status option (migrates clients, projects, colors, and custom status list). */
+    bizDashCrmRenameSelectOption?: (
+      selectKey: string,
+      oldLabel: string,
+      newLabel: string,
+    ) => Promise<{ ok: boolean; error?: string }>;
+    /** Remove a custom Status from workspace (migrates clients/projects to Lead). */
+    bizDashCrmDeleteSelectOption?: (
+      selectKey: string,
+      label: string,
+    ) => Promise<{ ok: boolean; error?: string }>;
+    /** Navigate to Advisor with optional composer prefill (see financial-core.js). */
+    bizDashGoToAdvisor?: (opts?: { prefill?: string; newThread?: boolean }) => void;
   }
 }
 

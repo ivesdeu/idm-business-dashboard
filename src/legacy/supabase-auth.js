@@ -1290,7 +1290,10 @@
             owner: ownerFull,
             ownerRole: '',
             tagline: '',
-            accent: '#0a0a0a',
+            accent:
+              typeof window.BIZDASH_DEFAULT_WORKSPACE_ACCENT_HEX === 'string'
+                ? window.BIZDASH_DEFAULT_WORKSPACE_ACCENT_HEX
+                : '#2563eb',
           });
         } catch (_) {}
       }

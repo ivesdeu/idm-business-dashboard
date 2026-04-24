@@ -140,6 +140,40 @@ export function SchedulingPage () {
     return () => subscription.unsubscribe ();
   }, [demoMode]);
 
+  /**
+   * The scheduling island mounts at bootstrap; the first fetch often runs before workspace org exists,
+   * so appointments stay empty until something bumps refreshToken. Re-fetch when this page is shown
+   * and retry briefly for late org resolution.
+   */
+  useEffect (() => {
+    if (demoMode) return;
+    const page = document.getElementById ('page-scheduling');
+    if (!page) return;
+    let timerIds: number[] = [];
+    const clearTimers = () => {
+      timerIds.forEach ((id) => window.clearTimeout (id));
+      timerIds = [];
+    };
+    const bump = () => {
+      setRefreshToken ((x) => x + 1);
+    };
+    const onShow = () => {
+      clearTimers ();
+      bump ();
+      timerIds = [150, 600, 2000].map ((ms) => window.setTimeout (bump, ms));
+    };
+    const obs = new MutationObserver (() => {
+      if (page.classList.contains ('on')) onShow ();
+      else clearTimers ();
+    });
+    obs.observe (page, { attributes: true, attributeFilter: ['class'] });
+    if (page.classList.contains ('on')) onShow ();
+    return () => {
+      obs.disconnect ();
+      clearTimers ();
+    };
+  }, [demoMode]);
+
   const clientOptsForFilters = useMemo (() => clientOptions, [clientOptions]);
 
   const handleSync = useCallback (
@@ -425,18 +459,16 @@ export function SchedulingPage () {
       ) : (
         <>
           {subView === 'calendar' ? (
-            appointments.length === 0 ? (
-              <div className="card sched-empty-card" style={{ borderStyle: 'dashed' }}>
-                <p>No appointments yet</p>
-                <p className="sched-empty-sub">
-                  {demoMode
-                    ? 'Demo sample data failed to load — try leaving and re-opening View Demo.'
-                    : 'Use New appointment to add one, or connect clients under Customers first.'}
-                </p>
-              </div>
-            ) : (
+            <>
               <CalendarView appointments={appointments} onSelect={(a) => setDetail (a)} />
-            )
+              {appointments.length === 0 ? (
+                <p className="sched-empty-sub" style={{ marginTop: '12px', textAlign: 'center' }}>
+                  {demoMode
+                    ? 'No demo appointments loaded — try leaving and re-opening View Demo.'
+                    : 'No appointments yet. Use New appointment to add one, or connect clients under Customers.'}
+                </p>
+              ) : null}
+            </>
           ) : null}
           {subView === 'list' ? (
             <AppointmentsList

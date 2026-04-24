@@ -2,6 +2,7 @@
 // Standalone financial data layer: transactions are the single source of truth.
 
 import {
+  CRM_STATUS_BASE,
   CUSTOMERS_COLUMN_DEFS,
   CRM_PREF_CHANNEL_OPTS,
   CRM_COMM_STYLE_OPTS,
@@ -236,6 +237,10 @@ import {
   window.DEMO_DASHBOARD_USER_ID = DEMO_DASHBOARD_USER_ID;
   /** Used by React islands (e.g. Scheduling): mock/sample data must never key off anything else. */
   window.bizDashIsDemoUser = isDemoDashboardUser;
+
+  /** Default workspace accent (Tailwind blue-600): demo, onboarding, and orgs with no saved accent. */
+  var DEFAULT_WORKSPACE_ACCENT_HEX = '#2563eb';
+  window.BIZDASH_DEFAULT_WORKSPACE_ACCENT_HEX = DEFAULT_WORKSPACE_ACCENT_HEX;
 
   /** Active workspace (set by supabase-auth.js from URL slug + membership). */
   function getCurrentOrgId() {
@@ -3253,6 +3258,19 @@ import {
     return out;
   }
 
+  /** When cloud settings omit accent, keep UI on product default (does not overwrite an already-set picker). */
+  function applyDefaultWorkspaceAccentToDomIfUnset() {
+    var hex = typeof window.BIZDASH_DEFAULT_WORKSPACE_ACCENT_HEX === 'string' ? window.BIZDASH_DEFAULT_WORKSPACE_ACCENT_HEX : DEFAULT_WORKSPACE_ACCENT_HEX;
+    var ach = document.getElementById('setting-accent-hex');
+    var ac = document.getElementById('setting-accent');
+    var cur = ach && String(ach.value || '').trim() ? String(ach.value).trim() : ac ? String(ac.value || '').trim() : '';
+    if (cur) return;
+    if (ac) ac.value = hex;
+    if (ach) ach.value = hex;
+    syncAccentPresetSwatches(hex);
+    applyAccentBranding(hex);
+  }
+
   async function applyDashboardSettingsFromCloud(raw) {
     if (raw == null || typeof raw !== 'object') return;
     if (raw.crmOptionColors && typeof raw.crmOptionColors === 'object') {
@@ -3262,7 +3280,10 @@ import {
         crmOptionColorsStore = {};
       }
     }
-    if (!raw.business && !raw.budgets && !raw.budgetMonths && !raw.workspace) return;
+    if (!raw.business && !raw.budgets && !raw.budgetMonths && !raw.workspace) {
+      applyDefaultWorkspaceAccentToDomIfUnset();
+      return;
+    }
     var biz = raw.business;
     if (biz && typeof biz === 'object') {
       function gid(id) {
@@ -3279,19 +3300,18 @@ import {
       if (biz.phone != null) setv('setting-phone', biz.phone);
       if (biz.address != null) setv('setting-address', biz.address);
       if (biz.period != null) setv('setting-period', biz.period);
-      if (biz.accent) {
-        var accentNorm = normalizeHexColor(biz.accent, '#0a0a0a');
-        setv('setting-accent', accentNorm);
-        setv('setting-accent-hex', accentNorm);
-        syncAccentPresetSwatches(accentNorm);
-      }
+      var accentRaw = biz.accent != null && String(biz.accent).trim() ? String(biz.accent).trim() : '';
+      var accentNorm = normalizeHexColor(accentRaw || DEFAULT_WORKSPACE_ACCENT_HEX, DEFAULT_WORKSPACE_ACCENT_HEX);
+      setv('setting-accent', accentNorm);
+      setv('setting-accent-hex', accentNorm);
+      syncAccentPresetSwatches(accentNorm);
+      applyAccentBranding(accentNorm);
       if (biz.terms != null) setv('setting-terms', String(biz.terms));
       if (biz.tax != null) setv('setting-tax', String(biz.tax));
       var cur = gid('setting-currency');
       if (cur && biz.currency) cur.value = biz.currency;
       var fis = gid('setting-fiscal');
       if (fis && biz.fiscal) fis.value = biz.fiscal;
-      if (biz.accent) applyAccentBranding(normalizeHexColor(biz.accent, '#0a0a0a'));
       var lightSigned = await resolveBrandLogoStorageUrl(biz.logo_light_url || '');
       var darkSigned = await resolveBrandLogoStorageUrl(biz.logo_dark_url || '');
       applyBrandLogo(lightSigned, darkSigned);
@@ -3331,6 +3351,9 @@ import {
     }
     if (raw.workspace && typeof raw.workspace === 'object') {
       applyWorkspacePrefsToDom(raw.workspace);
+    }
+    if (!raw.business || typeof raw.business !== 'object') {
+      applyDefaultWorkspaceAccentToDomIfUnset();
     }
     refreshSettingsBudgetInputsFromState();
     await hydrateWorkspaceSettingsFields();
@@ -3503,7 +3526,7 @@ import {
   }
 
   function applyAccentBranding(accentHex) {
-    var accent = normalizeHexColor(accentHex, '#0a0a0a');
+    var accent = normalizeHexColor(accentHex, DEFAULT_WORKSPACE_ACCENT_HEX);
     var rgb = hexToRgb(accent);
     if (!rgb) return;
     var root = document.documentElement;
@@ -5060,7 +5083,7 @@ import {
       return;
     }
     var selectors =
-      '.ph, .kg .kc, .card, .ts-kpi, .bva-row, .dt tbody tr, ' +
+      '.ph, .kg .kc, .card, .ts-kpi, .bva-row, .spend-chart-wrap, .dt tbody tr, ' +
       '.eml-topbar, .eml-panel.on, .eml-learn, ' +
       /* Scheduling (React island): stagger header → subnav → body like other tabs */
       '.scheduling-root > .ph, .scheduling-root > nav, .scheduling-root > p, .scheduling-root > div:not(.pointer-events-none)';
@@ -9319,14 +9342,24 @@ var incomePowerState = {
 
     if (!campaigns.length) {
       empty.style.display = 'block';
-      empty.textContent = 'No campaigns yet. Use + New Campaign to add one.';
+      empty.innerHTML =
+        '<div style="font-size:13px;color:var(--text3);line-height:1.5;">No campaigns yet. Use + New Campaign to add one.</div>' +
+        bizdashAdvisorCtaButtonHtml(
+          'Suggest a few marketing campaigns and lead sources for my business.',
+          'Draft with Advisor',
+        );
       pipe.style.display = 'none';
       pipe.innerHTML = '';
     } else {
       empty.style.display = 'none';
       pipe.style.display = 'flex';
       if (!activePipeline.length) {
-        pipe.innerHTML = '<div style="font-size:13px;color:var(--text3);line-height:1.5;padding:8px 0;">No active pipeline. Won or lost campaigns are hidden here—edit a campaign and set status to Pipeline to show it, or add a new campaign.</div>';
+        pipe.innerHTML =
+          '<div style="font-size:13px;color:var(--text3);line-height:1.5;padding:8px 0;">No active pipeline. Won or lost campaigns are hidden here—edit a campaign and set status to Pipeline to show it, or add a new campaign.</div>' +
+          bizdashAdvisorCtaButtonHtml(
+            'Help me revive or plan pipeline campaigns based on what is in my dashboard.',
+            'Draft with Advisor',
+          );
       } else {
         pipe.innerHTML = activePipeline.slice().sort(function (a, b) {
           return (b.startDate || '').localeCompare(a.startDate || '');
@@ -15708,6 +15741,8 @@ var incomePowerState = {
         applySidebarNavVisibility();
         if (settingsRow && settingsRow.dashboard_settings) {
           await applyDashboardSettingsFromCloud(settingsRow.dashboard_settings);
+        } else if (!isDemoDashboardUser()) {
+          applyDefaultWorkspaceAccentToDomIfUnset();
         }
         await hydrateWorkspaceUiIconsFromSupabase();
         renderListsSidebar();
@@ -15940,6 +15975,13 @@ var incomePowerState = {
     if (so) so.value = 'Alex Morgan';
     var spe = $('setting-period');
     if (spe) spe.value = 'Q1 2026';
+    var demoAccent = typeof window.BIZDASH_DEFAULT_WORKSPACE_ACCENT_HEX === 'string' ? window.BIZDASH_DEFAULT_WORKSPACE_ACCENT_HEX : DEFAULT_WORKSPACE_ACCENT_HEX;
+    var sac = document.getElementById('setting-accent');
+    var sach = document.getElementById('setting-accent-hex');
+    if (sach) sach.value = demoAccent;
+    if (sac) sac.value = demoAccent;
+    syncAccentPresetSwatches(demoAccent);
+    applyAccentBranding(demoAccent);
     ['lab', 'sw', 'ads', 'oth'].forEach(function (k) {
       var el = document.getElementById('budget-input-' + k);
       if (el && budgets[k] > 0) el.value = budgets[k];
@@ -16287,13 +16329,12 @@ var incomePowerState = {
     if (ow && payload.owner != null) ow.value = String(payload.owner);
     if (orr && payload.ownerRole != null) orr.value = String(payload.ownerRole);
     if (tg && payload.tagline != null) tg.value = String(payload.tagline);
-    if (payload.accent) {
-      var hex = normalizeHexColor(payload.accent, '#0a0a0a');
-      if (ac) ac.value = hex;
-      if (ach) ach.value = hex;
-      syncAccentPresetSwatches(hex);
-      applyAccentBranding(hex);
-    }
+    var accentIn = payload.accent != null && String(payload.accent).trim() ? String(payload.accent).trim() : '';
+    var hex = normalizeHexColor(accentIn || DEFAULT_WORKSPACE_ACCENT_HEX, DEFAULT_WORKSPACE_ACCENT_HEX);
+    if (ac) ac.value = hex;
+    if (ach) ach.value = hex;
+    syncAccentPresetSwatches(hex);
+    applyAccentBranding(hex);
     var tagOut = gid('dash-brand-tagline');
     if (tagOut) {
       var tgs = payload.tagline != null ? String(payload.tagline).trim() : '';
@@ -17201,6 +17242,20 @@ var incomePowerState = {
       .replace(/"/g, '&quot;');
   }
 
+  /** Reusable “Draft with Advisor” control for static or dynamic empty states (see wireBizdashAdvisorCtasOnce). */
+  function bizdashAdvisorCtaButtonHtml(prefill, label) {
+    var lbl = label != null && String(label).trim() ? String(label).trim() : 'Draft with Advisor';
+    var pf = prefill != null ? String(prefill) : '';
+    return (
+      '<p class="bizdash-advisor-cta-wrap">' +
+      '<button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1"' +
+      (pf ? ' data-advisor-prefill="' + escList(pf) + '"' : '') +
+      '>' +
+      escList(lbl) +
+      '</button></p>'
+    );
+  }
+
   function newListId() {
     return typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
@@ -17820,6 +17875,8 @@ var incomePowerState = {
   function listsSbHideContextMenu() {
     var m = document.getElementById('listsSbContextMenu');
     if (!m) return;
+    var sub = m.querySelector('.lists-sb-ctx-sub');
+    if (sub) sub.classList.remove('lists-sb-ctx-sub--flip');
     m.classList.remove('on');
     m.setAttribute('aria-hidden', 'true');
     m.removeAttribute('data-list-id');
@@ -17848,17 +17905,48 @@ var incomePowerState = {
     }
   }
 
+  /** Place Duplicate submenu to the left when it would overflow the viewport. */
+  function listsSbUpdateDuplicateSubmenuFlip() {
+    var m = document.getElementById('listsSbContextMenu');
+    if (!m || !m.classList.contains('on')) return;
+    var sub = m.querySelector('.lists-sb-ctx-sub');
+    var wrap = m.querySelector('.lists-sb-ctx-dup-wrap');
+    if (!sub || !wrap) return;
+    var margin = 10;
+    var subW = sub.offsetWidth || 260;
+    var anchorRight = wrap.getBoundingClientRect().right;
+    if (anchorRight + subW > window.innerWidth - margin) sub.classList.add('lists-sb-ctx-sub--flip');
+    else sub.classList.remove('lists-sb-ctx-sub--flip');
+  }
+
   function listsSbPositionContextMenu(anchor) {
     var m = document.getElementById('listsSbContextMenu');
     if (!m || !anchor) return;
+    var margin = 8;
     var r = anchor.getBoundingClientRect();
-    m.style.left = Math.max(8, r.left) + 'px';
-    var top = r.bottom + 4;
     m.classList.add('on');
     m.setAttribute('aria-hidden', 'false');
+    var mw = m.offsetWidth || 280;
     var mh = m.offsetHeight || 360;
-    if (top + mh > window.innerHeight - 8) top = Math.max(8, window.innerHeight - mh - 8);
+    var left = r.left;
+    if (left + mw > window.innerWidth - margin) {
+      left = r.right - mw;
+    }
+    if (left + mw > window.innerWidth - margin) {
+      left = window.innerWidth - mw - margin;
+    }
+    if (left < margin) left = margin;
+    m.style.left = left + 'px';
+    var top = r.bottom + 4;
+    if (top + mh > window.innerHeight - margin) {
+      top = r.top - mh - 4;
+    }
+    if (top + mh > window.innerHeight - margin) {
+      top = window.innerHeight - mh - margin;
+    }
+    if (top < margin) top = margin;
     m.style.top = top + 'px';
+    listsSbUpdateDuplicateSubmenuFlip();
   }
 
   function listsSbOpenContextMenu(listId, anchorEl) {
@@ -18009,6 +18097,14 @@ var incomePowerState = {
     listsSbCtxWired = true;
     var ctx = document.getElementById('listsSbContextMenu');
     if (ctx) {
+      var dupWrap = ctx.querySelector('.lists-sb-ctx-dup-wrap');
+      if (dupWrap) {
+        dupWrap.addEventListener('mouseenter', function () {
+          window.requestAnimationFrame(function () {
+            listsSbUpdateDuplicateSubmenuFlip();
+          });
+        });
+      }
       ctx.addEventListener('click', function (ev) {
         ev.stopPropagation();
       });
@@ -18120,6 +18216,14 @@ var incomePowerState = {
         });
       },
       true,
+    );
+
+    window.addEventListener(
+      'resize',
+      function () {
+        listsSbUpdateDuplicateSubmenuFlip();
+      },
+      { passive: true },
     );
 
     var npm = document.getElementById('listNewPageModal');
@@ -18496,6 +18600,43 @@ var incomePowerState = {
     }
   };
 
+  window.bizDashGoToAdvisor = function (opts) {
+    opts = opts || {};
+    if (opts.newThread !== false && typeof window.bizDashStartNewAdvisorSidebarThread === 'function') {
+      window.bizDashStartNewAdvisorSidebarThread();
+    }
+    var navEl = document.querySelector('.ni[data-nav="chat"]');
+    if (typeof window.nav === 'function') {
+      window.nav('chat', navEl);
+    }
+    document.body.classList.remove('mobile-nav-open');
+    var prefill = opts.prefill != null ? String(opts.prefill) : '';
+    if (!String(prefill).trim()) return;
+    try {
+      window.setTimeout(function () {
+        window.dispatchEvent(
+          new CustomEvent('advisor-composer-prefill', {
+            detail: { value: prefill, focus: true },
+          }),
+        );
+      }, 0);
+    } catch (_) {}
+  };
+
+  function wireBizdashAdvisorCtasOnce() {
+    if (window.__bizdashAdvisorCtasWired) return;
+    window.__bizdashAdvisorCtasWired = true;
+    var shell = document.getElementById('app-shell');
+    if (!shell) return;
+    shell.addEventListener('click', function (ev) {
+      var btn = ev.target.closest && ev.target.closest('[data-bizdash-advisor-cta]');
+      if (!btn || !shell.contains(btn)) return;
+      ev.preventDefault();
+      var pre = btn.getAttribute('data-advisor-prefill');
+      window.bizDashGoToAdvisor({ prefill: pre != null ? pre : '', newThread: true });
+    });
+  }
+
   window.bizDashAdvisorChatOnUserMessage = function (userLine) {
     var line = String(userLine || '').trim();
     if (!line) return;
@@ -18555,11 +18696,31 @@ var incomePowerState = {
     renderChatsSidebar();
   };
 
+  function listDetailTabSortOrder(L, tabId) {
+    var v = listDetailTabToView(L, tabId);
+    if (v === 'table') return 0;
+    if (v === 'board') return 1;
+    if (v === 'calendar') return 2;
+    return 3;
+  }
+
+  /** Tabs filtered by feature flags, ordered table → board → calendar so list view is always first. */
   function listDetailEffectiveTabs(L) {
     var raw = Array.isArray(L.previewTabs) && L.previewTabs.length ? L.previewTabs : [{ id: 'all', label: 'All' }];
-    return raw.filter(function (t) {
-      if (t.id === 'cal') return !!L.supportsCalendarView;
-      return true;
+    var packed = [];
+    raw.forEach(function (t, i) {
+      if (!t || !t.id) return;
+      if (t.id === 'cal' && !L.supportsCalendarView) return;
+      packed.push({ t: t, i: i });
+    });
+    packed.sort(function (a, b) {
+      var oa = listDetailTabSortOrder(L, a.t.id);
+      var ob = listDetailTabSortOrder(L, b.t.id);
+      if (oa !== ob) return oa - ob;
+      return a.i - b.i;
+    });
+    return packed.map(function (x) {
+      return x.t;
     });
   }
 
@@ -19674,6 +19835,9 @@ var incomePowerState = {
         });
     }
     var effTabs = listDetailEffectiveTabs(L);
+    if (!L.activeTabId || !effTabs.some(function (t) { return t.id === L.activeTabId; })) {
+      L.activeTabId = effTabs[0] ? effTabs[0].id : 'all';
+    }
     if (tabsHost && L.layout !== 'notion' && effTabs.length > 1) {
       tabsHost.style.display = 'flex';
       tabsHost.innerHTML = effTabs
@@ -19839,7 +20003,12 @@ var incomePowerState = {
         '<th>Name</th><th>Type</th><th>Rows</th><th>Last edited</th><th>Created by</th>' +
         '<th class="lists-lib-th-more" aria-hidden="true"></th>' +
         '</tr></thead>' +
-        '<tbody><tr><td class="lists-lib-empty" colspan="7">No lists match this filter.</td></tr></tbody>' +
+        '<tbody><tr><td class="lists-lib-empty" colspan="7"><div>No lists match this filter.</div>' +
+        bizdashAdvisorCtaButtonHtml(
+          'Help me organize my workspace lists and suggest what to track next.',
+          'Draft with Advisor',
+        ) +
+        '</td></tr></tbody>' +
         '</table></div>';
       updateListsLibSelectionBar();
       listsLibSyncSelectAllCheckbox();
@@ -20043,8 +20212,8 @@ var incomePowerState = {
       '</div>';
     inner.innerHTML =
       '<div class="list-cust-phdr">' +
-      escList(tpl.emoji || '📋') +
-      ' <strong>' +
+      listTemplateCardIconMarkup(tpl) +
+      '<strong>' +
       escList(tpl.title) +
       '</strong></div>' +
       tabBar +
@@ -20069,12 +20238,90 @@ var incomePowerState = {
     return 'list-tmpl-accent-operations';
   }
 
+  /** Stroke icons for template cards (matches chip row style); iconKey set in workspace-list-templates.js */
+  function listTplIconSvg(iconKey) {
+    var k = String(iconKey || 'document');
+    var body = '';
+    switch (k) {
+      case 'tasks':
+        body =
+          '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>';
+        break;
+      case 'kanban':
+        body =
+          '<rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="15" rx="1"/>';
+        break;
+      case 'document':
+        body =
+          '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>';
+        break;
+      case 'ideas':
+        body =
+          '<circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>';
+        break;
+      case 'deals':
+        body = '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>';
+        break;
+      case 'meeting':
+      case 'calendar':
+        body =
+          '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>';
+        break;
+      case 'goals':
+        body =
+          '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>';
+        break;
+      case 'campaign':
+        body =
+          '<path d="M3 11v3a1 1 0 0 0 1 1h3l7 4V6l-7 4H4a1 1 0 0 0-1 1z"/><path d="M16 8a5 5 0 0 1 0 8"/><line x1="21" y1="12" x2="21" y2="12"/>';
+        break;
+      case 'event':
+        body =
+          '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2"/>';
+        break;
+      case 'accounts':
+        body =
+          '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>';
+        break;
+      case 'creative':
+        body =
+          '<path d="m12 3-1.9 5.8L4 10.9l5.9 1.9L12 21l2-6 6.1-2-6.1-2L12 3z"/><path d="M19 3v4M21 5h-4"/>';
+        break;
+      case 'inventory':
+        body =
+          '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>';
+        break;
+      case 'social':
+        body =
+          '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>';
+        break;
+      case 'company':
+        body =
+          '<path d="M3 21h18"/><path d="M5 21V8l8-4v17"/><path d="M19 21V11l-5-3"/><path d="M9 9h.01M9 12h.01M9 15h.01M9 18h.01"/>';
+        break;
+      default:
+        body =
+          '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>';
+    }
+    return '<svg class="list-tmpl-svg" viewBox="0 0 24 24" aria-hidden="true">' + body + '</svg>';
+  }
+
+  function listTemplateCardIconMarkup(t) {
+    var key =
+      (t && t.iconKey) ||
+      ((t && t.previewKind) === 'board' ? 'kanban' : (t && t.previewKind) === 'calendar' ? 'calendar' : 'document');
+    return '<span class="list-tmpl-card-ico" aria-hidden="true">' + listTplIconSvg(key) + '</span>';
+  }
+
   function listTemplateMiniPreviewHtml(t) {
+    var chrome =
+      '<div class="list-tmpl-mini-chrome" aria-hidden="true"><span></span><span></span><span></span></div>';
     var kind =
       (t && t.previewKind) ||
       (t && t.boardGroupColumnId ? 'board' : 'table');
     if (kind === 'calendar') {
       return (
+        chrome +
         '<div class="list-tmpl-mini list-tmpl-mini-cal" aria-hidden="true">' +
         '<div class="list-tmpl-mini-cal-hd"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>' +
         '<div class="list-tmpl-mini-cal-grid">' +
@@ -20086,19 +20333,24 @@ var incomePowerState = {
     }
     if (kind === 'board') {
       return (
+        chrome +
         '<div class="list-tmpl-mini list-tmpl-mini-board">' +
+        '<div class="list-tmpl-mini-board-h" aria-hidden="true"><span>To do</span><span>Doing</span><span>Done</span></div>' +
+        '<div class="list-tmpl-mini-board-cols">' +
         '<div class="list-tmpl-mini-col"><div class="list-tmpl-mini-card"></div><div class="list-tmpl-mini-card sm"></div></div>' +
         '<div class="list-tmpl-mini-col"><div class="list-tmpl-mini-card med"></div><div class="list-tmpl-mini-card sm"></div></div>' +
         '<div class="list-tmpl-mini-col"><div class="list-tmpl-mini-card sm"></div></div>' +
-        '</div>'
+        '</div></div>'
       );
     }
     return (
+      chrome +
       '<div class="list-tmpl-mini list-tmpl-mini-table">' +
-      '<div class="list-tmpl-mini-thead"><span></span><span></span><span></span></div>' +
-      '<div class="list-tmpl-mini-row"><span class="cw"></span><span class="cx"></span><span class="cp p1"></span></div>' +
-      '<div class="list-tmpl-mini-row"><span class="cw"></span><span class="cx short"></span><span class="cp p2"></span></div>' +
-      '<div class="list-tmpl-mini-row"><span class="cw"></span><span class="cx"></span><span class="cp p3"></span></div>' +
+      '<div class="list-tmpl-mini-thead"><span></span><span></span><span></span><span></span></div>' +
+      '<div class="list-tmpl-mini-row"><span class="cw"></span><span class="cx"></span><span class="cp p1"></span><span class="ck"></span></div>' +
+      '<div class="list-tmpl-mini-row"><span class="cw"></span><span class="cx short"></span><span class="cp p2"></span><span class="ck"></span></div>' +
+      '<div class="list-tmpl-mini-row"><span class="cw"></span><span class="cx"></span><span class="cp p3"></span><span class="ck"></span></div>' +
+      '<div class="list-tmpl-mini-row list-tmpl-mini-row--dim"><span class="cw"></span><span class="cx short"></span><span class="cp p3"></span><span class="ck ck-off"></span></div>' +
       '</div>'
     );
   }
@@ -20124,9 +20376,9 @@ var incomePowerState = {
       escList(t.id) +
       '"><div class="list-tmpl-preview-canvas" aria-hidden="true">' +
       mini +
-      '</div><div class="list-tmpl-card-body"><div class="list-tmpl-card-title"><span class="list-tmpl-emoji">' +
-      escList(t.emoji || '📋') +
-      '</span><span class="list-tmpl-card-title-t">' +
+      '</div><div class="list-tmpl-card-body"><div class="list-tmpl-card-title">' +
+      listTemplateCardIconMarkup(t) +
+      '<span class="list-tmpl-card-title-t">' +
       escList(t.title) +
       '</span></div><p class="list-tmpl-desc">' +
       escList(t.desc) +
@@ -20192,7 +20444,9 @@ var incomePowerState = {
     if (!host) return;
     var arr = filteredListTemplates();
     if (!arr.length) {
-      host.innerHTML = '<p style="font-size:13px;color:#94a3b8;padding:12px;">No templates in this category.</p>';
+      host.innerHTML =
+        '<p style="font-size:13px;color:#94a3b8;padding:12px;">No templates in this category.</p>' +
+        bizdashAdvisorCtaButtonHtml('Suggest a list template structure for my use case.', 'Draft with Advisor');
       return;
     }
     host.innerHTML = arr
@@ -21575,6 +21829,7 @@ var incomePowerState = {
     consumeStripeSettingsReturnFromUrl();
     consumeOAuthReturnFromUrl();
     consumeListIdFromUrl();
+    wireBizdashAdvisorCtasOnce();
 
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape') document.body.classList.remove('mobile-nav-open');
@@ -21599,6 +21854,167 @@ var incomePowerState = {
   window.bizDashCrmCustomersTableBuildPayload = crmBuildCustomersTableSyncPayload;
   /** Re-apply thead/tbody column visibility after React commits CRM rows (avoids nth-child / display:none drift). */
   window.bizDashApplyCustomersColumnVisibility = applyCustomersColumnVisibility;
+
+  function crmFieldKeyForSelectKey(selectKey) {
+    if (selectKey === 'status') return 'status';
+    if (selectKey === 'priority') return 'priority';
+    if (selectKey === 'preferred') return 'preferredChannel';
+    if (selectKey === 'style') return 'communicationStyle';
+    return null;
+  }
+
+  window.bizDashCrmSetOptionColor = async function (selectKey, label, colorKey) {
+    var allowed = { gray: 1, red: 1, orange: 1, yellow: 1, green: 1, blue: 1, purple: 1, pink: 1 };
+    if (!selectKey || !label || !allowed[colorKey]) return false;
+    if (!crmOptionColorsStore[selectKey] || typeof crmOptionColorsStore[selectKey] !== 'object') {
+      crmOptionColorsStore[selectKey] = {};
+    }
+    crmOptionColorsStore[selectKey][String(label)] = colorKey;
+    schedulePersistCrmOptionColorsToSupabase();
+    if (typeof window.bizDashSyncCrmCustomersTable === 'function') window.bizDashSyncCrmCustomersTable();
+    return true;
+  };
+
+  window.bizDashCrmRenameSelectOption = async function (selectKey, oldLabel, newLabel) {
+    if (selectKey !== 'status') {
+      return { ok: false, error: 'Renaming is only supported for Status options.' };
+    }
+    oldLabel = String(oldLabel || '').trim();
+    newLabel = String(newLabel || '').trim();
+    if (!oldLabel || !newLabel) return { ok: false, error: 'Enter a name.' };
+    if (oldLabel === newLabel) return { ok: true };
+    var def = CUSTOMERS_COLUMN_DEFS.find(function (d) {
+      return d.selectKey === selectKey;
+    });
+    if (!def) return { ok: false, error: 'Unknown column.' };
+    var optsBefore = selectOptionsForColumn(def, projectStatuses || []);
+    if (optsBefore.indexOf(newLabel) >= 0) {
+      return { ok: false, error: 'An option with that name already exists.' };
+    }
+    var fk = crmFieldKeyForSelectKey(selectKey);
+    if (!fk) return { ok: false, error: 'Unknown field.' };
+
+    var changedClients = [];
+    for (var i = 0; i < clients.length; i++) {
+      if (String(clients[i][fk] || '').trim() === oldLabel) {
+        clients[i][fk] = newLabel;
+        changedClients.push(clients[i]);
+      }
+    }
+
+    var psIdx = projectStatuses.indexOf(oldLabel);
+    if (psIdx >= 0) {
+      projectStatuses[psIdx] = newLabel;
+    } else {
+      projectStatuses.push(newLabel);
+    }
+    saveStatuses(projectStatuses);
+
+    var pjChanged = false;
+    for (var j = 0; j < projects.length; j++) {
+      if (String(projects[j].status || '') === oldLabel) {
+        projects[j].status = newLabel;
+        pjChanged = true;
+      }
+    }
+    if (pjChanged) saveProjects(projects);
+
+    if (!crmOptionColorsStore[selectKey] || typeof crmOptionColorsStore[selectKey] !== 'object') {
+      crmOptionColorsStore[selectKey] = {};
+    }
+    var colMap = crmOptionColorsStore[selectKey];
+    var preserved = colMap[oldLabel] || defaultPillColorForOption(selectKey, newLabel);
+    delete colMap[oldLabel];
+    colMap[newLabel] = preserved;
+
+    saveClients(clients);
+    renderClients();
+    if (pjChanged) renderProjects();
+    await persistCrmOptionColorsToSupabaseOnly();
+    await persistAppSettingsToSupabase({ includeDashboard: false });
+
+    if (!isDemoDashboardUser()) {
+      for (var c = 0; c < changedClients.length; c++) {
+        var cl = changedClients[c];
+        if (!cl || cl._crmDraft) continue;
+        var res = await persistClientToSupabase(cl, 'update');
+        if (!(res === 'ok' || res === 'skipped')) {
+          return { ok: false, error: persistClientLastError || 'Could not save client changes.' };
+        }
+      }
+      if (pjChanged) {
+        for (var p = 0; p < projects.length; p++) {
+          if (projects[p]) persistProjectToSupabase(projects[p]);
+        }
+      }
+    }
+
+    if (typeof window.bizDashSyncCrmCustomersTable === 'function') window.bizDashSyncCrmCustomersTable();
+    return { ok: true };
+  };
+
+  window.bizDashCrmDeleteSelectOption = async function (selectKey, label) {
+    if (selectKey !== 'status') {
+      return { ok: false, error: 'Only Status options can be removed here.' };
+    }
+    label = String(label || '').trim();
+    if (!label) return { ok: false, error: 'Invalid option.' };
+    var idx = projectStatuses.indexOf(label);
+    if (idx < 0) {
+      return { ok: false, error: 'Built-in statuses cannot be removed. Remove custom statuses from the list only.' };
+    }
+    var fallback = CRM_STATUS_BASE[0] || 'Lead';
+    var fk = crmFieldKeyForSelectKey(selectKey);
+    if (!fk) return { ok: false, error: 'Unknown field.' };
+
+    var changedClients = [];
+    for (var i = 0; i < clients.length; i++) {
+      if (String(clients[i][fk] || '').trim() === label) {
+        clients[i][fk] = fallback;
+        changedClients.push(clients[i]);
+      }
+    }
+    projectStatuses.splice(idx, 1);
+    saveStatuses(projectStatuses);
+
+    var pjChanged = false;
+    for (var j = 0; j < projects.length; j++) {
+      if (String(projects[j].status || '') === label) {
+        projects[j].status = fallback;
+        pjChanged = true;
+      }
+    }
+    if (pjChanged) saveProjects(projects);
+
+    if (crmOptionColorsStore[selectKey] && typeof crmOptionColorsStore[selectKey] === 'object') {
+      delete crmOptionColorsStore[selectKey][label];
+    }
+
+    saveClients(clients);
+    renderClients();
+    if (pjChanged) renderProjects();
+    await persistCrmOptionColorsToSupabaseOnly();
+    await persistAppSettingsToSupabase({ includeDashboard: false });
+
+    if (!isDemoDashboardUser()) {
+      for (var c = 0; c < changedClients.length; c++) {
+        var cl = changedClients[c];
+        if (!cl || cl._crmDraft) continue;
+        var res = await persistClientToSupabase(cl, 'update');
+        if (!(res === 'ok' || res === 'skipped')) {
+          return { ok: false, error: persistClientLastError || 'Could not update a client.' };
+        }
+      }
+      if (pjChanged) {
+        for (var p = 0; p < projects.length; p++) {
+          if (projects[p]) persistProjectToSupabase(projects[p]);
+        }
+      }
+    }
+
+    if (typeof window.bizDashSyncCrmCustomersTable === 'function') window.bizDashSyncCrmCustomersTable();
+    return { ok: true };
+  };
 
   window.bizDashCrmTablePatchField = async function (clientId, fieldKey, val, colId) {
     var idx = crmFindClientIndex(clientId);

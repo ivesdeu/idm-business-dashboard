@@ -43,12 +43,13 @@ export const CRM_COMM_STYLE_OPTS = ['Concise', 'Detailed', 'Formal', 'Casual', '
 
 export const CRM_PRIORITY_OPTS = ['Low', 'Medium', 'High'] as const;
 
-const STATUS_BASE = ['Lead', 'Active', 'Inactive', 'Churned'] as const;
+/** Built-in CRM client statuses (always shown; not stored in `project_statuses`). */
+export const CRM_STATUS_BASE = ['Lead', 'Active', 'Inactive', 'Churned'] as const;
 
 export function crmStatusSelectOptionsFromProjects(projectStatuses: string[]): string[] {
   const seen: Record<string, true> = {};
   const out: string[] = [];
-  for (const s of STATUS_BASE) {
+  for (const s of CRM_STATUS_BASE) {
     if (s && !seen[s]) {
       seen[s] = true;
       out.push(s);

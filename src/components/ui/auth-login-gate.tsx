@@ -261,7 +261,7 @@ export function AuthLoginGate() {
                 id={googlePrimary.id}
                 variant={googlePrimary.variant ?? 'default'}
                 className={cn(
-                  'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-[14px] font-medium text-white shadow-none hover:bg-neutral-800',
+                  'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border-0 bg-neutral-950 text-[14px] font-medium text-white shadow-none hover:bg-neutral-800',
                   googlePrimary.className,
                 )}
               >
@@ -369,7 +369,7 @@ export function AuthLoginGate() {
               type="button"
               id="gate-signin"
               variant="default"
-              className="h-11 w-full rounded-lg bg-neutral-950 text-[14px] font-medium text-white shadow-none hover:bg-neutral-800"
+              className="h-11 w-full rounded-lg border-0 bg-neutral-950 text-[14px] font-medium text-white shadow-none hover:bg-neutral-800"
             >
               {recoveryMode ? 'Update password' : 'Sign in'}
             </Button>
@@ -562,7 +562,8 @@ export function AuthLoginGate() {
                 </Button>
                 <Button
                   type="submit"
-                  className="h-10 rounded-lg bg-neutral-950 font-medium text-white shadow-none hover:bg-neutral-800"
+                  id="gate-signup-submit"
+                  className="h-10 rounded-lg border-0 bg-neutral-950 font-medium text-white shadow-none hover:bg-neutral-800"
                   disabled={signupSubmitting}
                 >
                   {signupSubmitting ? 'Creating account…' : 'Create account'}

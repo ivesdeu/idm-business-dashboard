@@ -197,9 +197,27 @@ export function AppointmentsList ({
         </table>
       </div>
       {sorted.length === 0 ? (
-        <p style={{ fontSize: '13px', color: 'var(--text3)', padding: '28px 8px', textAlign: 'center', margin: 0 }}>
-          No appointments match these filters.
-        </p>
+        <div style={{ fontSize: '13px', color: 'var(--text3)', padding: '28px 8px', textAlign: 'center' }}>
+          <p style={{ margin: 0 }}>No appointments match these filters.</p>
+          <p style={{ margin: '14px 0 0' }}>
+            <button
+              type="button"
+              className="btn bizdash-advisor-cta"
+              onClick={() => {
+                const go = (window as unknown as { bizDashGoToAdvisor?: (o: { prefill: string }) => void })
+                  .bizDashGoToAdvisor;
+                if (typeof go === 'function') {
+                  go ({
+                    prefill:
+                      'Help me narrow down which appointments or clients I should focus on this week based on my calendar filters.',
+                  });
+                }
+              }}
+            >
+              Draft with Advisor
+            </button>
+          </p>
+        </div>
       ) : null}
     </div>
   );

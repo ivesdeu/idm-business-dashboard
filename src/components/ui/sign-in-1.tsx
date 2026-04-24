@@ -99,7 +99,7 @@ export const AuthForm = React.forwardRef<HTMLDivElement, AuthFormProps>(
               id={primaryAction.id}
               variant={primaryAction.variant ?? 'default'}
               className={cn(
-                'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-[14px] font-medium text-white shadow-none hover:bg-neutral-800',
+                'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border-0 bg-neutral-950 text-[14px] font-medium text-white shadow-none hover:bg-neutral-800',
                 primaryAction.className,
               )}
               onClick={primaryAction.onClick}

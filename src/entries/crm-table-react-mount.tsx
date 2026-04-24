@@ -1,10 +1,12 @@
 import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import '../crm-island.css';
 import {
   CrmCustomersTable,
   type CrmCustomersTablePayload,
   type CrmTableFocusRequest,
 } from '@/components/crm/CrmCustomersTable';
+import type { CrmPillColorKey } from '@/lib/crm-customers-schema';
 
 let root: Root | null = null;
 
@@ -33,6 +35,36 @@ function CrmTableHost() {
   const onLeaveRow = useCallback((rowId: string) => {
     const fn = window.bizDashCrmTableOnLeaveRow as ((id: string) => void) | undefined;
     if (fn) fn(rowId);
+  }, []);
+
+  const onCrmSetOptionColor = useCallback(
+    async (selectKey: string, label: string, color: CrmPillColorKey) => {
+      const fn = window.bizDashCrmSetOptionColor as
+        | ((a: string, b: string, c: CrmPillColorKey) => Promise<boolean>)
+        | undefined;
+      if (!fn) return false;
+      return fn(selectKey, label, color);
+    },
+    [],
+  );
+
+  const onCrmRenameSelectOption = useCallback(
+    async (selectKey: string, oldLabel: string, newLabel: string) => {
+      const fn = window.bizDashCrmRenameSelectOption as
+        | ((a: string, b: string, c: string) => Promise<{ ok: boolean; error?: string }>)
+        | undefined;
+      if (!fn) return { ok: false, error: 'Rename is not available.' };
+      return fn(selectKey, oldLabel, newLabel);
+    },
+    [],
+  );
+
+  const onCrmDeleteSelectOption = useCallback(async (selectKey: string, label: string) => {
+    const fn = window.bizDashCrmDeleteSelectOption as
+      | ((a: string, b: string) => Promise<{ ok: boolean; error?: string }>)
+      | undefined;
+    if (!fn) return { ok: false, error: 'Delete is not available.' };
+    return fn(selectKey, label);
   }, []);
 
   useEffect(() => {
@@ -66,6 +98,9 @@ function CrmTableHost() {
       onPatchField={onPatchField}
       onRevertField={onRevertField}
       onLeaveRow={onLeaveRow}
+      onCrmSetOptionColor={onCrmSetOptionColor}
+      onCrmRenameSelectOption={onCrmRenameSelectOption}
+      onCrmDeleteSelectOption={onCrmDeleteSelectOption}
     />
   );
 }

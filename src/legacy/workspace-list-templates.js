@@ -464,4 +464,26 @@
       ],
     },
   ];
+
+  /** Lucide-style keys for template picker cards (SVG in financial-core); emoji kept for sidebar / legacy. */
+  var LIST_TPL_ICON_BY_ID = {
+    'tpl-tasks-tracker': 'tasks',
+    'tpl-projects': 'kanban',
+    'tpl-document-hub': 'document',
+    'tpl-brainstorm-session': 'ideas',
+    'tpl-pipeline-tracking': 'deals',
+    'tpl-meeting-notes': 'meeting',
+    'tpl-goals-tracker': 'goals',
+    'tpl-campaign-management': 'campaign',
+    'tpl-content-calendar': 'calendar',
+    'tpl-event-management': 'event',
+    'tpl-account-management': 'accounts',
+    'tpl-creative-projects': 'creative',
+    'tpl-inventory-management': 'inventory',
+    'tpl-social-media-planner': 'social',
+    'tpl-company-tracker': 'company',
+  };
+  window.__BIZDASH_LIST_TEMPLATES__.forEach(function (t) {
+    if (t && t.id && LIST_TPL_ICON_BY_ID[t.id]) t.iconKey = LIST_TPL_ICON_BY_ID[t.id];
+  });
 })();

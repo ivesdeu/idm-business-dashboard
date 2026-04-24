@@ -111,8 +111,7 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
   return (
     <form
       onSubmit={(e) => void handleSubmit (e)}
-      className="card"
-      style={{ maxWidth: '36rem' }}
+      className="card mx-auto w-full max-w-xl"
     >
       {initial ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' }}>

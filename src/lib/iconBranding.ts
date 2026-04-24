@@ -9,7 +9,7 @@ export const DEFAULT_ICON_STYLE: IconStyle = 'filled';
 export type IconStyle = 'filled' | 'outlined';
 
 /** Normalize hex like financial-core `normalizeHexColor` (minimal subset). */
-export function normalizeAccentHex(raw: string | null | undefined, fallback = '#0a0a0a'): string {
+export function normalizeAccentHex(raw: string | null | undefined, fallback = '#2563eb'): string {
   let s = String(raw || '').trim();
   if (!s) return fallback;
   if (!s.startsWith('#')) s = '#' + s;
@@ -22,7 +22,7 @@ export function normalizeAccentHex(raw: string | null | undefined, fallback = '#
 
 /** Map stored workspace accent hex to resolver input. */
 export function brandingColorTokenFromAccentHex(accentHex: string | null | undefined): string {
-  const n = normalizeAccentHex(accentHex, '#0a0a0a');
+  const n = normalizeAccentHex(accentHex, '#2563eb');
   if (n === '#0a0a0a') return BLACK_WHITE_TOKEN;
   return n;
 }

@@ -534,6 +534,7 @@
     flex: 1;
     min-height: 0;
     box-sizing: border-box;
+    overflow: hidden;
   }
   .settings-nav {
     flex: 0 0 212px;
@@ -633,9 +634,12 @@
   .settings-main {
     flex: 1;
     min-width: 0;
+    min-height: 0;
     padding: 28px 36px 40px;
     box-sizing: border-box;
     overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .settings-main-head {
     display: flex;
@@ -1872,9 +1876,9 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: #ffffff;
+    background: var(--bg);
   }
-  /* Chat — ChatGPT-style: flat white column, centered transcript + docked composer (no in-page sidebar). */
+  /* Chat — ChatGPT-style: flat column, centered transcript + docked composer (no in-page sidebar). */
   #page-chat.pg.on {
     display: flex;
     flex-direction: column;
@@ -1884,7 +1888,7 @@
     padding: 0 0 max(0px, env(safe-area-inset-bottom, 0px));
     min-height: calc(100dvh - 72px);
     box-sizing: border-box;
-    background: #ffffff;
+    background: var(--bg2);
   }
   #page-chat.pg.on > .chat-shell {
     flex: 1 1 auto;
@@ -1893,7 +1897,7 @@
     flex-direction: column;
     width: 100%;
     max-width: 100%;
-    background: #ffffff;
+    background: var(--bg2);
     border: none;
     border-radius: 0;
     box-shadow: none;
@@ -1905,13 +1909,13 @@
     justify-content: center;
     min-height: 48px;
     padding: 10px 16px;
-    border-bottom: 1px solid #ececec;
-    background: #ffffff;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
   }
   .chat-top-bar-title {
     font-size: 14px;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--text);
     letter-spacing: -0.01em;
   }
   .chat-composer-dock {
@@ -1922,8 +1926,8 @@
     width: 100%;
     box-sizing: border-box;
     padding: 12px 16px 16px;
-    background: #ffffff;
-    border-top: 1px solid #ececec;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
   }
   .chat-composer-inner {
     width: 100%;
@@ -1981,7 +1985,7 @@
     flex-direction: column;
     min-height: 0;
     max-height: none;
-    background: #ffffff;
+    background: var(--bg2);
     border: none;
     border-radius: 0;
     box-shadow: none;
@@ -1991,11 +1995,11 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: #ffffff;
+    background: var(--bg2);
     overflow: hidden;
   }
   #page-chat.pg.on .chat-transcript {
-    background: #ffffff;
+    background: var(--bg2);
     border: none;
     border-radius: 0;
     box-shadow: none;
@@ -2022,21 +2026,25 @@
     box-sizing: border-box;
   }
   .chat-log::-webkit-scrollbar { width: 6px; }
-  .chat-log::-webkit-scrollbar-thumb { background: #e4e4e7; border-radius: 3px; }
+  .chat-log::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
   .chat-msg {
     max-width: min(92%, 34rem);
     padding: 10px 14px;
     border-radius: 18px;
     font-size: 0.9375rem;
     line-height: 1.5;
-    color: #1a1a1a;
+    color: var(--text);
   }
   .chat-msg.user {
     align-self: flex-end;
-    background: #e8f2fe;
-    border: 1px solid #c5dcf5;
-    color: #0f172a;
+    background: rgba(37, 99, 235, 0.12);
+    border: 1px solid rgba(37, 99, 235, 0.28);
+    color: var(--text);
     font-weight: 500;
+  }
+  html[data-color-scheme="dark"] .chat-msg.user {
+    background: rgba(96, 165, 250, 0.16);
+    border-color: rgba(147, 197, 253, 0.38);
   }
   .chat-msg.asst {
     align-self: stretch;
@@ -2047,19 +2055,19 @@
     border: none;
     white-space: pre-wrap;
     word-break: break-word;
-    color: #1a1a1a;
+    color: var(--text);
   }
   .chat-msg.asst .chat-asst-title {
     font-weight: 600;
     font-size: 0.8125rem;
     margin-bottom: 6px;
-    color: #111827;
+    color: var(--text);
   }
   .chat-msg.asst ul {
     margin: 0 0 8px 1.1rem;
     padding: 0;
     list-style: disc;
-    color: #27272a;
+    color: var(--text2);
     font-size: 0.9375rem;
     line-height: 1.55;
   }
@@ -2083,7 +2091,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.8125rem;
     line-height: 1.45;
-    color: #3f3f46;
+    color: var(--text2);
     max-height: min(40vh, 320px);
     overflow-y: auto;
   }
@@ -2096,17 +2104,17 @@
   .chat-feedback-btn {
     padding: 6px 12px;
     border-radius: 8px;
-    border: 1px solid #e5e5e5;
-    background: #ffffff;
-    color: #52525b;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    color: var(--text2);
     font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
   }
   .chat-feedback-btn:hover:not(:disabled) {
-    background: #f4f4f5;
-    border-color: #d4d4d8;
+    background: var(--bg3);
+    border-color: var(--border2);
   }
   .chat-feedback-btn:disabled {
     cursor: default;
@@ -2184,7 +2192,7 @@
     height: 22px;
     border-radius: 999px;
     border: none;
-    background: rgba(255, 255, 255, 0.85);
+    background: color-mix(in srgb, var(--bg2) 88%, transparent);
     color: var(--text);
     cursor: pointer;
     display: flex;
@@ -2192,7 +2200,10 @@
     justify-content: center;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   }
-  .chat-image-preview-remove:hover { background: #f4f4f5; }
+  html[data-color-scheme="dark"] .chat-image-preview-remove {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  }
+  .chat-image-preview-remove:hover { background: var(--bg3); }
   .chat-lightbox {
     position: fixed;
     inset: 0;
@@ -2537,7 +2548,7 @@
   }
   /* Emails hub (drafts / outbox / templates) — accent follows global --coral / --coral2 (branding). */
   #page-emails.emails-hub {
-    background: #ffffff;
+    background: var(--bg2);
     max-width: none;
     margin: 0;
     padding: 0;
@@ -2558,7 +2569,7 @@
     gap: 16px;
     flex-wrap: wrap;
     padding-bottom: 4px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--border);
     margin-bottom: 0;
   }
   #page-emails.emails-hub .eml-tabs {
@@ -2577,18 +2588,18 @@
     font-family: inherit;
     font-size: 14px;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--text2);
     cursor: pointer;
     border-radius: 8px 8px 0 0;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
   }
   #page-emails.emails-hub .eml-tab:hover {
-    color: #111827;
-    background: rgba(0, 0, 0, 0.03);
+    color: var(--text);
+    background: var(--bg3);
   }
   #page-emails.emails-hub .eml-tab.on {
-    color: #111827;
+    color: var(--text);
     font-weight: 600;
     border-bottom-color: var(--coral);
   }
@@ -2600,11 +2611,11 @@
   }
   #page-emails.emails-hub .eml-tab-count {
     font-weight: 500;
-    color: #9ca3af;
+    color: var(--text3);
     font-size: 13px;
   }
   #page-emails.emails-hub .eml-tab.on .eml-tab-count {
-    color: #6b7280;
+    color: var(--text2);
   }
   #page-emails.emails-hub .eml-topbar-right {
     display: flex;
@@ -2621,18 +2632,18 @@
     font-family: inherit;
     font-size: 14px;
     font-weight: 500;
-    color: #4b5563;
+    color: var(--text2);
     cursor: pointer;
     border-radius: 6px;
   }
   #page-emails.emails-hub .eml-help:hover {
-    background: rgba(0, 0, 0, 0.04);
-    color: #111827;
+    background: var(--bg3);
+    color: var(--text);
   }
   #page-emails.emails-hub .eml-help svg {
     width: 18px;
     height: 18px;
-    color: #9ca3af;
+    color: var(--text3);
   }
   #page-emails.emails-hub .eml-btn-compose {
     display: inline-flex;
@@ -2693,20 +2704,20 @@
   #page-emails.emails-hub .eml-empty-illus {
     width: 88px;
     height: 88px;
-    color: #9ca3af;
+    color: var(--text3);
   }
   #page-emails.emails-hub .eml-empty-title {
     margin: 0 0 10px;
     font-size: 1.375rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--text);
     letter-spacing: -0.02em;
   }
   #page-emails.emails-hub .eml-empty-sub {
     margin: 0 0 24px;
     font-size: 15px;
     line-height: 1.5;
-    color: #6b7280;
+    color: var(--text2);
   }
   #page-emails.emails-hub .eml-learn {
     margin-top: auto;
@@ -2717,7 +2728,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #9ca3af;
+    color: var(--text3);
     margin-bottom: 10px;
   }
   #page-emails.emails-hub .eml-learn-card {
@@ -2725,24 +2736,24 @@
     align-items: flex-start;
     gap: 14px;
     padding: 16px 18px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--border);
     border-radius: 10px;
-    background: #fafafa;
+    background: var(--bg3);
     font-size: 14px;
     line-height: 1.5;
-    color: #4b5563;
+    color: var(--text2);
   }
   #page-emails.emails-hub .eml-learn-ic {
     width: 40px;
     height: 40px;
     flex-shrink: 0;
     border-radius: 8px;
-    border: 1px solid #e5e7eb;
-    background: #fff;
+    border: 1px solid var(--border);
+    background: var(--bg2);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #9ca3af;
+    color: var(--text3);
   }
   #page-emails.emails-hub .eml-learn-ic svg {
     width: 20px;
@@ -2771,7 +2782,7 @@
   }
   .eml-compose-err {
     font-size: 12px;
-    color: #b91c1c;
+    color: var(--red);
     margin: 0 0 10px;
     line-height: 1.45;
   }
@@ -4098,6 +4109,17 @@
     background: linear-gradient(135deg, #ede9fe 0%, #fce7f3 100%);
     color: #7c3aed;
   }
+  .list-tmpl-chip-svg {
+    display: block;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
   .list-tmpl-chip-text {
     display: flex;
     flex-direction: column;
@@ -4183,159 +4205,245 @@
       grid-template-columns: repeat(3, 1fr);
     }
   }
-  .list-tmpl-preview-canvas {
+  /* Template card mini-previews: neutral white “screen”, high-contrast chrome + labels */
+  .list-tmpl-mo .list-tmpl-card-rich .list-tmpl-preview-canvas {
     position: relative;
-    height: 100px;
-    padding: 10px 12px 8px;
-    border-radius: 0;
-    overflow: hidden;
-  }
-  .list-tmpl-card-rich--compact .list-tmpl-preview-canvas {
-    height: 84px;
-    padding: 8px 10px 6px;
-  }
-  .list-tmpl-accent-operations .list-tmpl-preview-canvas {
-    background: linear-gradient(150deg, #ecfdf5 0%, #a7f3d0 55%, #6ee7b7 100%);
-  }
-  .list-tmpl-accent-content .list-tmpl-preview-canvas {
-    background: linear-gradient(150deg, #fff7ed 0%, #fed7aa 50%, #fdba74 100%);
-  }
-  .list-tmpl-accent-sales .list-tmpl-preview-canvas {
-    background: linear-gradient(150deg, #eff6ff 0%, #bfdbfe 55%, #93c5fd 100%);
-  }
-  .list-tmpl-mini {
     width: 100%;
-    height: 100%;
-    pointer-events: none;
-  }
-  .list-tmpl-mini-table {
+    align-self: stretch;
+    height: 118px;
+    padding: 10px 12px 10px;
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+    background: #fafbfc;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.95);
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    height: 100%;
+    align-items: stretch;
+  }
+  .list-tmpl-mo .list-tmpl-card-rich .list-tmpl-preview-canvas::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle at 10% 6%, rgba(148, 163, 184, 0.12) 0%, transparent 40%),
+      radial-gradient(circle at 92% 8%, rgba(148, 163, 184, 0.08) 0%, transparent 38%);
+    opacity: 0.9;
+  }
+  .list-tmpl-mo .list-tmpl-card-rich .list-tmpl-preview-canvas > * {
+    position: relative;
+    z-index: 1;
+  }
+  .list-tmpl-mo .list-tmpl-card-rich--compact .list-tmpl-preview-canvas {
+    height: 100px;
+    padding: 8px 10px 8px;
+  }
+  .list-tmpl-mo .list-tmpl-card-rich .list-tmpl-preview-canvas > .list-tmpl-mini {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini {
+    width: 100%;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
     justify-content: center;
+    min-height: 0;
   }
-  .list-tmpl-mini-thead {
-    display: grid;
-    grid-template-columns: 1.35fr 1fr 0.85fr;
-    gap: 4px;
-    margin-bottom: 1px;
-    opacity: 0.4;
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-chrome {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 5px;
+    flex-shrink: 0;
   }
-  .list-tmpl-mini-thead span {
-    height: 4px;
-    border-radius: 2px;
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-chrome span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
     background: rgba(15, 23, 42, 0.28);
   }
-  .list-tmpl-mini-row {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-chrome span:nth-child(2) {
+    opacity: 0.88;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-chrome span:nth-child(3) {
+    opacity: 0.62;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-table {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-height: 0;
+    justify-content: center;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-thead {
     display: grid;
-    grid-template-columns: 1.35fr 1fr 0.85fr;
+    grid-template-columns: 1.15fr 1fr 0.68fr 0.38fr;
+    gap: 4px;
+    margin-bottom: 2px;
+    opacity: 1;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-thead span {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(15, 23, 42, 0.22);
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr 0.68fr 0.38fr;
     gap: 4px;
     align-items: center;
   }
-  .list-tmpl-mini-row .cw {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row--dim {
+    opacity: 0.62;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .cw {
     height: 6px;
     border-radius: 3px;
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    background: #e2e8f0;
   }
-  .list-tmpl-mini-row .cx {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .cx {
     height: 5px;
     border-radius: 2px;
-    background: rgba(255, 255, 255, 0.55);
+    background: #cbd5e1;
   }
-  .list-tmpl-mini-row .cx.short {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .cx.short {
     width: 58%;
   }
-  .list-tmpl-mini-row .cp {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .cp {
     height: 13px;
     border-radius: 999px;
     justify-self: start;
     width: 70%;
     max-width: 100%;
   }
-  .list-tmpl-mini-row .cp.p1 {
-    background: rgba(16, 185, 129, 0.55);
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .cp.p1 {
+    background: #94a3b8;
   }
-  .list-tmpl-mini-row .cp.p2 {
-    background: rgba(251, 191, 36, 0.7);
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .cp.p2 {
+    background: #64748b;
   }
-  .list-tmpl-mini-row .cp.p3 {
-    background: rgba(148, 163, 184, 0.65);
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .cp.p3 {
+    background: #cbd5e1;
   }
-  .list-tmpl-mini-board {
-    display: flex;
-    gap: 6px;
-    height: 100%;
-    align-items: stretch;
-    justify-content: center;
-    padding: 2px 0;
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .ck {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    border: 1px solid rgba(15, 23, 42, 0.2);
+    background: #fff;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+    justify-self: end;
   }
-  .list-tmpl-mini-col {
-    flex: 1;
-    max-width: 30%;
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-row .ck.ck-off {
+    background: #f1f5f9;
+    border-style: dashed;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-board {
     display: flex;
     flex-direction: column;
     gap: 5px;
-    background: rgba(255, 255, 255, 0.38);
-    border-radius: 6px;
-    padding: 5px 4px;
-    border: 1px solid rgba(255, 255, 255, 0.55);
+    flex: 1;
+    min-height: 0;
+    justify-content: center;
+    padding: 0;
   }
-  .list-tmpl-mini-card {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-board-h {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+    font-size: 7.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(15, 23, 42, 0.88);
+    flex-shrink: 0;
+    padding: 0 1px;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-board-h span {
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-board-cols {
+    display: flex;
+    gap: 5px;
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+    justify-content: center;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-board-cols .list-tmpl-mini-col {
+    flex: 1;
+    max-width: 32%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: #f1f5f9;
+    border-radius: 7px;
+    padding: 5px 4px 6px;
+    border: 1px solid #e2e8f0;
+  }
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-card {
     border-radius: 5px;
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
     min-height: 18px;
   }
-  .list-tmpl-mini-card.sm {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-card.sm {
     min-height: 13px;
-    opacity: 0.92;
+    opacity: 0.95;
   }
-  .list-tmpl-mini-card.med {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-card.med {
     min-height: 22px;
-    border-left: 3px solid rgba(59, 130, 246, 0.45);
+    border-left: 3px solid #64748b;
   }
-  .list-tmpl-mini-cal {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-cal {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     justify-content: center;
     padding: 0 2px;
   }
-  .list-tmpl-mini-cal-hd {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-cal-hd {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 3px;
-    opacity: 0.45;
+    opacity: 1;
   }
-  .list-tmpl-mini-cal-hd span {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-cal-hd span {
     height: 3px;
     border-radius: 2px;
-    background: rgba(15, 23, 42, 0.25);
+    background: rgba(15, 23, 42, 0.2);
   }
-  .list-tmpl-mini-cal-grid {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-cal-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 3px;
   }
-  .list-tmpl-mini-cal-grid > span {
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-cal-grid > span {
     aspect-ratio: 1;
     max-height: 14px;
     border-radius: 3px;
-    background: rgba(255, 255, 255, 0.45);
+    background: #e8ecf1;
   }
-  .list-tmpl-mini-cal-grid span.dot {
-    background: rgba(59, 130, 246, 0.55);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-cal-grid span.dot {
+    background: #475569;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
   }
-  .list-tmpl-mini-cal-grid span.dot.alt {
-    background: rgba(16, 185, 129, 0.5);
+  .list-tmpl-mo .list-tmpl-preview-canvas .list-tmpl-mini-cal-grid span.dot.alt {
+    background: #334155;
   }
   .list-tmpl-mo .list-tmpl-card.list-tmpl-card-rich {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     padding: 0;
     overflow: hidden;
     border-radius: 12px;
@@ -4648,6 +4756,11 @@
     box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
     z-index: 2;
   }
+  /* Open duplicate submenu to the left when the main menu is near the viewport edge. */
+  .lists-sb-ctx-sub.lists-sb-ctx-sub--flip {
+    left: auto;
+    right: calc(100% - 2px);
+  }
   .lists-sb-ctx-sub .lists-sb-ctx-item {
     justify-content: flex-start;
   }
@@ -4840,6 +4953,26 @@
     color: var(--text3);
     font-size: 13px;
   }
+  .bizdash-advisor-cta-wrap {
+    margin: 10px 0 0;
+  }
+  .eml-empty .bizdash-advisor-cta-wrap {
+    margin-top: 14px;
+  }
+  .btn.bizdash-advisor-cta {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--text);
+  }
+  .btn.bizdash-advisor-cta:hover {
+    background: var(--bg2);
+    border-color: var(--text3);
+    color: var(--text);
+  }
 
   /* New list page modal (Notion-style) */
   .list-page-mo {
@@ -5027,6 +5160,16 @@
     background: var(--bg3);
     color: var(--text);
     border-color: var(--text3);
+  }
+  .lists-detail-sh > div:first-child {
+    min-width: 0;
+    flex: 1;
+  }
+  #lists-view-detail #lists-detail-title {
+    font-size: clamp(1rem, 2.4vw, 1.2rem);
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   /* List rows — add (toolbar) + per-row delete */
@@ -5477,7 +5620,8 @@
   .list-cust-md {
     width: min(1000px, 98vw);
     max-height: 92vh;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     border-radius: 14px;
@@ -5485,6 +5629,7 @@
     border: 1px solid #e2e8f0;
     position: relative;
     padding: 12px 12px 16px;
+    -webkit-overflow-scrolling: touch;
   }
   .list-cust-back {
     position: absolute;
@@ -6031,6 +6176,19 @@
     width:100%;
     box-shadow:none;
   }
+  /* CRM pill “Done” lives in a portal on body — match flat primary chrome (auth gate pattern). */
+  #crm-pill-edit-done {
+    border-style: solid !important;
+    border-width: 0 !important;
+    box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    filter: none !important;
+    --tw-shadow: 0 0 #0000 !important;
+    --tw-shadow-colored: 0 0 #0000 !important;
+    --tw-ring-shadow: 0 0 #0000 !important;
+    --tw-ring-offset-shadow: 0 0 #0000 !important;
+    --tw-ring-offset-width: 0px !important;
+  }
   #app-shell {
     display:none;
     flex:1;
@@ -6518,8 +6676,8 @@
     .spend-kpi-row { grid-template-columns: 1fr; }
   }
 </style>
-  <script type="module" crossorigin src="/assets/index-D-45g9Yf.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-C7_4eCnw.css">
+  <script type="module" crossorigin src="/assets/index-CbTRMfrW.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CSpLWntA.css">
 </head>
 <body>
 
@@ -6729,7 +6887,10 @@
     <div class="g2">
       <div class="card">
         <div class="sh"><div class="st">Accounts Receivable</div><button type="button" class="btn" onclick="nav('revenue')">View all →</button></div>
-        <div id="dash-ar-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No receivables yet.</div>
+        <div id="dash-ar-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
+          <div>No receivables yet.</div>
+          <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me understand who owes money and how to follow up on receivables.">Draft with Advisor</button></p>
+        </div>
         <table class="dt" id="dash-ar-table" style="display:none;">
           <thead><tr><th>Client</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead>
           <tbody id="dash-ar-body"></tbody>
@@ -6775,7 +6936,10 @@
           <button type="button" class="btn" id="btn-undo-last-import" disabled title="Remove the last CSV import from this workspace">Undo last import</button>
         </div>
       </div>
-      <div id="transaction-log-empty" style="font-size:13px;color:var(--text3);padding:4px 0 8px;">No transactions yet. Use “Add transaction” to record income or expenses.</div>
+      <div id="transaction-log-empty" style="font-size:13px;color:var(--text3);padding:4px 0 8px;">
+        <div>No transactions yet. Use “Add transaction” to record income or expenses.</div>
+        <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me categorize transactions and suggest a simple bookkeeping rhythm for this workspace.">Draft with Advisor</button></p>
+      </div>
       <table class="dt" id="transaction-log-table" style="display:none;">
         <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Note</th><th style="width:88px;"></th></tr></thead>
         <tbody id="transaction-log-body"></tbody>
@@ -6792,7 +6956,10 @@
       <div class="kc"><div class="kl">Avg. revenue / client</div><div class="kv" id="cust-kpi-3">$0</div><div class="kb bn" id="cust-kpi-3b">—</div></div>
     </div>
     <div class="card">
-      <div id="customers-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No customers yet.</div>
+      <div id="customers-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
+        <div>No customers yet.</div>
+        <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me define my first client record and pipeline stages for this CRM.">Draft with Advisor</button></p>
+      </div>
       <div class="customers-table-scroll">
         <table class="dt" id="customers-table" style="display:none;">
           <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Preferred</th><th>Style</th><th>Status</th><th>Priority</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th>Updated</th><th style="width:140px;">Actions</th></tr></thead>
@@ -6854,6 +7021,7 @@
             <h2 class="eml-empty-title">Email drafts</h2>
             <p class="eml-empty-sub">No emails yet! Create your first email to get started.</p>
             <button type="button" class="eml-btn-compose" data-eml-compose>Compose email</button>
+            <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Draft a concise client email for follow-up or a proposal outline.">Draft with Advisor</button></p>
           </div>
         </div>
         <div class="eml-panel" data-eml-panel="outbox" role="tabpanel">
@@ -6868,6 +7036,7 @@
             <h2 class="eml-empty-title">Outbox</h2>
             <p class="eml-empty-sub">Nothing in your outbox yet. Sent messages will appear here.</p>
             <button type="button" class="eml-btn-compose" data-eml-compose>Compose email</button>
+            <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Suggest subject lines and a short email I can send after a meeting.">Draft with Advisor</button></p>
           </div>
         </div>
         <div class="eml-panel" data-eml-panel="templates" role="tabpanel">
@@ -6881,6 +7050,7 @@
             <h2 class="eml-empty-title">Templates</h2>
             <p class="eml-empty-sub">No templates yet. Save a draft as a template to reuse it.</p>
             <button type="button" class="eml-btn-compose" data-eml-compose>Compose email</button>
+            <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Draft reusable email templates for onboarding, invoicing, and check-ins.">Draft with Advisor</button></p>
           </div>
         </div>
       </div>
@@ -6982,7 +7152,10 @@
         <div class="power-cols-grid" id="income-power-columns-grid"></div>
       </div>
       <div id="income-power-filters" class="power-filters"></div>
-      <div id="income-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No income recorded yet.</div>
+      <div id="income-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
+        <div>No income recorded yet.</div>
+        <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me plan income categories and what to track each month.">Draft with Advisor</button></p>
+      </div>
       <table class="dt" id="income-table" style="display:none;">
         <thead id="income-thead"></thead>
         <tbody id="income-tbody"></tbody>
@@ -7088,7 +7261,10 @@
     </div>
 
     <div class="card">
-      <div id="expenses-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No expenses yet.</div>
+      <div id="expenses-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
+        <div>No expenses yet.</div>
+        <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Suggest an expense policy and categories that fit a small agency.">Draft with Advisor</button></p>
+      </div>
       <table class="dt" id="expenses-table" style="display:none;">
         <thead><tr>
           <th class="th-sort" data-exp-sort="date" role="columnheader" scope="col" tabindex="0">Date <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
@@ -7176,7 +7352,10 @@
     </div>
     <div class="card mb">
       <div class="sh"><div class="st">Hours by employee</div><div class="ss" id="ts-sub-by-emp">Based on the Account field · selected week</div></div>
-      <div id="timesheet-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No time logged yet.</div>
+      <div id="timesheet-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
+        <div>No time logged yet.</div>
+        <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me set up time tracking habits and billable vs non-billable rules.">Draft with Advisor</button></p>
+      </div>
       <table class="dt" id="timesheet-table" style="display:none;">
         <thead><tr><th>Employee (Account)</th><th>Total</th><th>Billable</th><th>Non-Billable</th><th>Entries</th><th>Utilization</th></tr></thead>
         <tbody id="timesheet-tbody"></tbody>
@@ -7184,7 +7363,10 @@
     </div>
     <div class="card">
       <div class="sh"><div class="st">Recent entries</div><div class="ss" id="ts-sub-log">Newest first · selected week</div></div>
-      <div id="timesheet-log-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No entries yet.</div>
+      <div id="timesheet-log-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
+        <div>No entries yet.</div>
+        <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Suggest how to describe time entries for clearer client invoices.">Draft with Advisor</button></p>
+      </div>
       <table class="dt" id="timesheet-log-table" style="display:none;">
         <thead><tr><th>Date</th><th>Employee</th><th>Project</th><th>Task</th><th>Activity</th><th>Hours</th><th>Type</th><th>Notes</th><th style="width:110px;">Actions</th></tr></thead>
         <tbody id="timesheet-log-tbody"></tbody>
@@ -7207,7 +7389,10 @@
     </div>
     <div class="card">
       <div class="sh"><div class="st">Active Projects</div></div>
-      <div id="projects-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No projects yet.</div>
+      <div id="projects-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
+        <div>No projects yet.</div>
+        <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me outline a project plan with milestones and status labels.">Draft with Advisor</button></p>
+      </div>
       <table class="dt" id="projects-table" style="display:none;">
         <thead><tr><th>Project</th><th>Client</th><th>Type</th><th>Description</th><th>Due</th><th>Value</th><th>Status</th><th style="min-width:120px;">Case study</th><th style="width:160px;">Actions</th></tr></thead>
         <tbody id="projects-tbody"></tbody>
@@ -7227,7 +7412,10 @@
       <div class="card"><div class="sh"><div class="st">Retention Trend</div></div><div class="cw"><canvas id="cRet"></canvas></div></div>
       <div class="card">
         <div class="sh"><div class="st">Retainer Clients</div></div>
-        <div id="retainers-empty" style="font-size:13px;color:var(--text3);padding:12px 0;">No retainer clients yet.</div>
+        <div id="retainers-empty" style="font-size:13px;color:var(--text3);padding:12px 0;">
+          <div>No retainer clients yet.</div>
+          <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Explain retainer pricing options and how to track them in this dashboard.">Draft with Advisor</button></p>
+        </div>
         <div id="retainers-list" style="display:none;flex-direction:column;"></div>
       </div>
     </div>
@@ -7295,7 +7483,10 @@
     <!-- Client performance table -->
     <div class="card mb">
       <div class="sh"><div class="st">Client Performance</div><div class="ss">all-time revenue from transactions</div></div>
-      <div id="ins-clients-empty" style="font-size:13px;color:var(--text3);padding:8px 0;display:none;">No client data yet.</div>
+      <div id="ins-clients-empty" style="font-size:13px;color:var(--text3);padding:8px 0;display:none;">
+        <div>No client data yet.</div>
+        <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Summarize client performance and what I should watch on this Insights page.">Draft with Advisor</button></p>
+      </div>
       <table class="dt" id="ins-clients-table" style="display:none;">
         <thead><tr><th>Client</th><th>Revenue</th><th>Projects</th><th>Retainer</th><th>Last Activity</th><th>Status</th></tr></thead>
         <tbody id="ins-clients-tbody"></tbody>
@@ -7323,7 +7514,8 @@
     </div>
     <div id="lists-view-main">
       <div id="lists-empty-hint" class="card" style="padding:24px;font-size:14px;color:var(--text2);line-height:1.55;">
-        No lists yet. Use <strong>+ New list</strong> in the sidebar or here to pick a template or start from scratch.
+        <p style="margin:0 0 12px;">No lists yet. Use <strong>+ New list</strong> in the sidebar or here to pick a template or start from scratch.</p>
+        <p class="bizdash-advisor-cta-wrap" style="margin-top:0;"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Describe a workspace list I should create from a short summary of what I track.">Draft with Advisor</button></p>
       </div>
       <div id="lists-lib-chrome" class="lists-lib-chrome" style="display:none;">
         <div id="lists-lib-filter" class="lists-lib-filter" role="tablist" aria-label="List views">
@@ -7368,13 +7560,16 @@
       <div class="card"><div class="sh"><div class="st">Lead Sources</div></div><div class="cw" style="height:200px;"><canvas id="cLead"></canvas></div></div>
       <div class="card">
         <div class="sh"><div class="st">Active Pipeline</div></div>
-        <div id="campaigns-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">No campaigns yet. Use + New Campaign to add one.</div>
+        <div id="campaigns-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
+          <div>No campaigns yet. Use + New Campaign to add one.</div>
+          <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Suggest a few marketing campaigns and lead sources for my business.">Draft with Advisor</button></p>
+        </div>
         <div id="marketing-pipeline" style="display:none;flex-direction:column;gap:10px;"></div>
       </div>
     </div>
     </div>
     <div class="ui-internal-facing ph" style="margin-bottom:0;"><div><div class="pt">Marketing</div><div class="ps">Campaigns, leads, and pipeline</div></div></div>
-    <div class="ui-internal-facing card"><div style="font-size:13px;color:var(--text2);line-height:1.55;">No marketing data yet. Use Dashboard and Revenue for operational numbers.</div></div>
+    <div class="ui-internal-facing card"><div style="font-size:13px;color:var(--text2);line-height:1.55;">No marketing data yet. Use Dashboard and Revenue for operational numbers.</div><p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me interpret marketing KPIs once I have campaign data in this workspace.">Draft with Advisor</button></p></div>
   </div>
 
   <!-- CHAT: React composer + transcript; image attach/lightbox for legacy assistant flow -->
@@ -8990,14 +9185,14 @@
     <div class="list-tmpl-body list-tmpl-body-stack">
       <div class="list-tmpl-quick-row">
         <button type="button" class="list-tmpl-chip-action" id="list-tmpl-empty-db">
-          <span class="list-tmpl-chip-ico" aria-hidden="true">▦</span>
+          <span class="list-tmpl-chip-ico" aria-hidden="true"><svg class="list-tmpl-chip-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 11v6c0 1.66 4 3 9 3s9-1.34 9-3v-6"/></svg></span>
           <span class="list-tmpl-chip-text">
             <strong>Empty database</strong>
             <span class="list-tmpl-chip-d">Blank Notion-style table</span>
           </span>
         </button>
         <button type="button" class="list-tmpl-chip-action list-tmpl-chip-action-ai" id="list-tmpl-ai-build">
-          <span class="list-tmpl-chip-ico" aria-hidden="true">✦</span>
+          <span class="list-tmpl-chip-ico" aria-hidden="true"><svg class="list-tmpl-chip-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M3 8h4"/></svg></span>
           <span class="list-tmpl-chip-text">
             <strong>Build with AI</strong>
             <span class="list-tmpl-chip-d">Describe it in Advisor, apply the draft</span>

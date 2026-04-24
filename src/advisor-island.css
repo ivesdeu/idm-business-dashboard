@@ -21,6 +21,20 @@
   --radius: 0.625rem;
 }
 
+/* Match dashboard `html[data-color-scheme="dark"]` (app theme, not OS media). */
+html[data-color-scheme='dark'] #advisor-react-composer-root,
+html[data-color-scheme='dark'] [data-radix-popper-content-wrapper] {
+  --background: 240 6% 10%;
+  --foreground: 0 0% 98%;
+  --popover: 240 6% 10%;
+  --popover-foreground: 0 0% 98%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 217 19% 17%;
+  --accent-foreground: 0 0% 98%;
+  --border: 217 19% 24%;
+  --ring: 215 20% 65%;
+}
+
 #advisor-react-composer-root {
   width: 100%;
 }

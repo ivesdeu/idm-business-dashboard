@@ -36,14 +36,22 @@
 }
 
 /*
- * Flat UI: kill OS/beveled chrome and any residual box-shadow.
- * Merged classNames often drop the literal "shadow-sm" substring, so the old
- * attribute-substring rule missed many buttons.
+ * Flat UI: kill OS 3D button chrome (outset border reads as a hard “shadow”),
+ * Tailwind ring layers (shadow-none still references --tw-ring-* vars), and
+ * any real box-shadow / filter.
  */
 .auth-gate-tw button {
   appearance: none;
   -webkit-appearance: none;
+  border-style: solid;
+  --tw-shadow: 0 0 #0000 !important;
+  --tw-shadow-colored: 0 0 #0000 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-width: 0px !important;
   box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  filter: none !important;
 }
 
 .auth-gate-tw input:not([type='checkbox']):not([type='radio']) {
