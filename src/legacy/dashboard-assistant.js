@@ -1156,7 +1156,13 @@
 
     function appendWorkspaceListProposalControls(messageEl, usageMeta, listProposal) {
       var prop = listProposal && typeof listProposal === 'object' ? listProposal : null;
-      if (!prop || !String(prop.title || '').trim() || !messageEl || !usageMeta || !usageMeta.usageEventId) return;
+      if (!prop || !messageEl || !usageMeta || !usageMeta.usageEventId) return;
+      var mode = String(prop.mode || prop.action || '').toLowerCase();
+      if (mode === 'edit' || mode === 'update') {
+        appendWorkspaceListEditProposalControls(messageEl, usageMeta, prop);
+        return;
+      }
+      if (!String(prop.title || '').trim()) return;
       var wrap = document.createElement('div');
       wrap.className = 'advisor-crm-proposal-actions';
       wrap.style.marginTop = '10px';
@@ -1201,6 +1207,108 @@
       });
       wrap.appendChild(summary);
       row.appendChild(addBtn);
+      wrap.appendChild(row);
+      messageEl.appendChild(wrap);
+    }
+
+    function appendWorkspaceListEditProposalControls(messageEl, usageMeta, listEditProposal) {
+      var prop = listEditProposal && typeof listEditProposal === 'object' ? listEditProposal : null;
+      if (!prop || !messageEl || !usageMeta || !usageMeta.usageEventId) return;
+      var listLabel = String(prop.listName || prop.list_name || prop.listTitle || prop.list_title || prop.targetList || '').trim();
+      var ops = Array.isArray(prop.operations)
+        ? prop.operations
+        : Array.isArray(prop.ops)
+          ? prop.ops
+          : [];
+      var addCols = Array.isArray(prop.addColumns)
+        ? prop.addColumns
+        : Array.isArray(prop.add_columns)
+          ? prop.add_columns
+          : [];
+      if (prop.addColumn != null) addCols = addCols.concat([prop.addColumn]);
+      var addLabels = addCols
+        .map(function (x) {
+          return x && typeof x === 'object' ? String(x.name != null ? x.name : x.title != null ? x.title : '').trim() : String(x || '').trim();
+        })
+        .filter(Boolean);
+      var opLabels = ops
+        .map(function (op) {
+          if (!op || typeof op !== 'object') return '';
+          var a = String(op.action || op.op || '').trim();
+          if (!a) return '';
+          if (a === 'addField') return 'add field: ' + String(op.name || '').trim();
+          if (a === 'renameField') return 'rename field: ' + String(op.fieldId || '') + ' -> ' + String(op.name || '').trim();
+          if (a === 'reorderField') return 'reorder field: ' + String(op.fieldId || '') + ' -> #' + String(op.toIndex != null ? op.toIndex : '');
+          if (a === 'setFieldOptions') return 'set options: ' + String(op.fieldId || '');
+          if (a === 'setFieldVisibility') return String(op.hidden ? 'hide field: ' : 'show field: ') + String(op.fieldId || '');
+          if (a === 'setViews') return 'update views';
+          return a;
+        })
+        .filter(Boolean);
+      if (!listLabel && !addLabels.length && !opLabels.length) return;
+      var wrap = document.createElement('div');
+      wrap.className = 'advisor-crm-proposal-actions';
+      wrap.style.marginTop = '10px';
+      var summary = document.createElement('div');
+      summary.style.fontSize = '12px';
+      summary.style.color = 'var(--text2)';
+      summary.style.marginBottom = '8px';
+      summary.style.lineHeight = '1.45';
+      summary.textContent =
+        (listLabel ? 'List: ' + listLabel : 'Existing workspace list') +
+        (addLabels.length ? ' · add columns: ' + addLabels.join(', ') : '') +
+        (opLabels.length ? ' · ops: ' + opLabels.join(' | ') : '');
+      var row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.gap = '6px';
+      row.style.flexWrap = 'wrap';
+      var applyBtn = document.createElement('button');
+      applyBtn.type = 'button';
+      applyBtn.className = 'btn btn-p';
+      applyBtn.textContent = 'Apply list edit';
+      applyBtn.addEventListener('click', async function () {
+        if (typeof window.bizDashEditWorkspaceListFromAdvisor !== 'function') return;
+        if (!window.confirm('Apply this list edit in your workspace Lists tab?')) return;
+        applyBtn.disabled = true;
+        try {
+          var res = window.bizDashEditWorkspaceListFromAdvisor(prop);
+          await logAdvisorActionOutcome({
+            id: mkUuid(),
+            user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+            organization_id: typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null,
+            usage_event_id: usageMeta.usageEventId,
+            task: usageMeta.task,
+            action_id: 'advisor-edit-list',
+            action_label: 'Apply list edit',
+            outcome: res && res.ok ? 'applied' : 'error',
+            details: { error: res && res.error ? res.error : null, listId: res && res.listId ? res.listId : null },
+            created_at: new Date().toISOString(),
+          });
+          if (!res || !res.ok) window.alert((res && res.error) || 'Could not edit list.');
+          else if (res && Array.isArray(res.applied) && res.applied.length) {
+            window.alert('Applied list edits: ' + res.applied.map(function (x) { return x.action; }).join(', '));
+          }
+        } finally {
+          applyBtn.disabled = false;
+        }
+      });
+      var rollbackBtn = document.createElement('button');
+      rollbackBtn.type = 'button';
+      rollbackBtn.className = 'btn';
+      rollbackBtn.textContent = 'Rollback last edit';
+      rollbackBtn.addEventListener('click', function () {
+        if (typeof window.bizDashRollbackWorkspaceListAdvisorEdit !== 'function') return;
+        var listId = String(prop.listId || prop.list_id || '').trim();
+        if (!listId) {
+          window.alert('Rollback needs a list id in proposal.');
+          return;
+        }
+        var rr = window.bizDashRollbackWorkspaceListAdvisorEdit(listId);
+        if (!rr || !rr.ok) window.alert((rr && rr.error) || 'No rollback snapshot found.');
+      });
+      wrap.appendChild(summary);
+      row.appendChild(applyBtn);
+      row.appendChild(rollbackBtn);
       wrap.appendChild(row);
       messageEl.appendChild(wrap);
     }
@@ -1347,6 +1455,8 @@
           typeof window.bizDashGetAdvisorContactContext === 'function' ? window.bizDashGetAdvisorContactContext() : null;
         var clientsDigest =
           typeof window.bizDashGetClientsDigestForAdvisor === 'function' ? window.bizDashGetClientsDigestForAdvisor() : [];
+        var workspaceListsDigest =
+          typeof window.bizDashGetWorkspaceListsDigestForAdvisor === 'function' ? window.bizDashGetWorkspaceListsDigestForAdvisor() : [];
         var orgId = typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null;
         if (!orgId && window.currentOrganizationId) orgId = String(window.currentOrganizationId).trim() || null;
         if (!orgId) orgId = await ensureAdvisorOrganizationId();
@@ -1360,6 +1470,7 @@
             selectedTool: selectedTool || null,
             contactRequest: contactSnapshot,
             clientsDigest: clientsDigest,
+            workspaceListsDigest: workspaceListsDigest,
           },
           constraints: { maxBullets: 5, tone: 'concise' },
         };
@@ -1411,6 +1522,9 @@
       }
       if (out && out.response && out.response.workspaceListProposal && usageMeta) {
         appendWorkspaceListProposalControls(thinkingEl, usageMeta, out.response.workspaceListProposal);
+      }
+      if (out && out.response && out.response.workspaceListEditProposal && usageMeta) {
+        appendWorkspaceListEditProposalControls(thinkingEl, usageMeta, out.response.workspaceListEditProposal);
       }
       if (out && out.response && Array.isArray(out.response.actions) && usageMeta) {
         appendActionButtons(thinkingEl, usageMeta, out.response.actions);

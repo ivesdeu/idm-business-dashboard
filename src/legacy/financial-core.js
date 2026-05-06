@@ -280,7 +280,7 @@ import {
   var userUiPrefsPersistTimer = null;
 
   function defaultUserUiPayload() {
-    return { v: 1, preferences: undefined, orgs: {}, sidebarHiddenPages: [] };
+    return { v: 1, preferences: undefined, orgs: {}, sidebarHiddenPages: [], sidebarPageOrder: [] };
   }
 
   function ensureUserUiPrefsCache() {
@@ -297,6 +297,11 @@ import {
       userUiPrefsCache.sidebarHiddenPages = [];
     } else {
       userUiPrefsCache.sidebarHiddenPages = sanitizeSidebarHiddenPages(userUiPrefsCache.sidebarHiddenPages);
+    }
+    if (!Array.isArray(userUiPrefsCache.sidebarPageOrder)) {
+      userUiPrefsCache.sidebarPageOrder = [];
+    } else {
+      userUiPrefsCache.sidebarPageOrder = sanitizeSidebarPageOrder(userUiPrefsCache.sidebarPageOrder);
     }
     return userUiPrefsCache;
   }
@@ -450,6 +455,8 @@ import {
 
   var SIDEBAR_NAV_PAGE_DEFS = [
     { id: 'customers', label: 'Customers' },
+    { id: 'scheduling', label: 'Scheduling' },
+    { id: 'meeting-notes', label: 'Meeting Notes' },
     { id: 'emails', label: 'Emails' },
     { id: 'revenue', label: 'Income' },
     { id: 'expenses', label: 'Expenses' },
@@ -477,6 +484,19 @@ import {
     return out;
   }
 
+  function sanitizeSidebarPageOrder(arr) {
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    arr.forEach(function (id) {
+      id = String(id || '').trim();
+      if (id && SIDEBAR_PAGE_ID_SET[id] && out.indexOf(id) < 0) out.push(id);
+    });
+    SIDEBAR_NAV_PAGE_DEFS.forEach(function (def) {
+      if (out.indexOf(def.id) < 0) out.push(def.id);
+    });
+    return out;
+  }
+
   function normalizeUserUiPayload(raw) {
     var out = defaultUserUiPayload();
     if (!raw || typeof raw !== 'object') {
@@ -490,6 +510,7 @@ import {
       out.orgs = raw.orgs;
     }
     out.sidebarHiddenPages = sanitizeSidebarHiddenPages(raw.sidebarHiddenPages);
+    out.sidebarPageOrder = sanitizeSidebarPageOrder(raw.sidebarPageOrder);
     return out;
   }
 
@@ -5217,7 +5238,9 @@ import {
       '.ph, .kg .kc, .card, .ts-kpi, .bva-row, .spend-chart-wrap, .dt tbody tr, ' +
       '.eml-topbar, .eml-panel.on, .eml-learn, ' +
       /* Scheduling (React island): stagger header → subnav → body like other tabs */
-      '.scheduling-root > .ph, .scheduling-root > nav, .scheduling-root > p, .scheduling-root > div:not(.pointer-events-none)';
+      '.scheduling-root > .ph, .scheduling-root > nav, .scheduling-root > p, .scheduling-root > div:not(.pointer-events-none), ' +
+      /* Meeting Notes (React island): animate top-level blocks like other tabs */
+      '.meeting-notes-root > *';
     var nodes = container.querySelectorAll(selectors);
     var cap = Math.min(nodes.length, 22);
     for (var i = 0; i < cap; i += 1) {
@@ -5480,6 +5503,55 @@ var incomePowerState = {
     el.style.display = hidden ? 'none' : '';
   }
 
+  function getSidebarOrderedPageIds() {
+    return sanitizeSidebarPageOrder(ensureUserUiPrefsCache().sidebarPageOrder);
+  }
+
+  function getSidebarOrderIndexMap() {
+    var ids = getSidebarOrderedPageIds();
+    var map = {};
+    ids.forEach(function (id, idx) {
+      map[id] = idx;
+    });
+    return map;
+  }
+
+  function applySidebarNavOrder(sb) {
+    if (!sb) return;
+    var orderMap = getSidebarOrderIndexMap();
+    function setOrder(el, n) {
+      if (!el) return;
+      el.style.order = String(n);
+    }
+    SIDEBAR_NAV_PAGE_DEFS.forEach(function (def) {
+      var idx = orderMap[def.id];
+      if (typeof idx !== 'number') idx = 999;
+      var base = 100 + idx * 10;
+      if (def.id === 'lists') {
+        setOrder(document.getElementById('nav-lbl-lists'), base);
+        setOrder(document.getElementById('lists-sb-wrap'), base + 1);
+        return;
+      }
+      if (def.id === 'chat') {
+        setOrder(document.getElementById('nav-lbl-chats'), base);
+        setOrder(document.getElementById('chats-sb-wrap'), base + 1);
+        setOrder(sb.querySelector('.ni[data-nav="chat"]'), base + 2);
+        return;
+      }
+      setOrder(sb.querySelector('.ni[data-nav="' + def.id + '"]'), base);
+    });
+    var analyticsIds = ['performance', 'retention', 'insights', 'marketing'];
+    var minAnalytics = 999;
+    analyticsIds.forEach(function (id) {
+      var x = orderMap[id];
+      if (typeof x === 'number' && x < minAnalytics) minAnalytics = x;
+    });
+    setOrder(document.getElementById('nav-lbl-overview'), 0);
+    setOrder(document.getElementById('nav-lbl-analytics'), 100 + minAnalytics * 10 - 1);
+    setOrder(sb.querySelector('.ni[data-nav="dashboard"]'), 1);
+    setOrder(sb.querySelector('.ni[data-nav="settings"]'), 10000);
+  }
+
   function applySidebarNavVisibility() {
     var hidden = getSidebarHiddenPageSet();
     var sb = document.querySelector('.sb-nav');
@@ -5504,6 +5576,7 @@ var incomePowerState = {
     var showAnalyticsLabel =
       !isH('performance') || !isH('retention') || !isH('insights') || !isH('marketing');
     setSbNavDisplay(document.getElementById('nav-lbl-analytics'), !showAnalyticsLabel);
+    applySidebarNavOrder(sb);
   }
 
   function setSidebarPageHidden(navId, hidden) {
@@ -5523,6 +5596,30 @@ var incomePowerState = {
       if (supabase && currentUser && !isDemoDashboardUser()) {
         void persistUserUiPreferencesFromCache();
       }
+    }
+    renderSettingsPagesPanel();
+  }
+
+  function moveSidebarPageOrder(dragId, targetId, placeBefore) {
+    dragId = String(dragId || '').trim();
+    targetId = String(targetId || '').trim();
+    if (!dragId || !targetId || !SIDEBAR_PAGE_ID_SET[dragId] || !SIDEBAR_PAGE_ID_SET[targetId]) return;
+    var c = ensureUserUiPrefsCache();
+    var arr = sanitizeSidebarPageOrder(c.sidebarPageOrder);
+    var di = arr.indexOf(dragId);
+    var ti = arr.indexOf(targetId);
+    if (di < 0 || ti < 0 || di === ti) return;
+    arr.splice(di, 1);
+    if (di < ti) ti -= 1;
+    arr.splice(placeBefore ? ti : ti + 1, 0, dragId);
+    c.sidebarPageOrder = arr;
+    applySidebarNavVisibility();
+    if (getCurrentOrgId()) {
+      schedulePersistUserUiPreferences();
+    } else {
+      supabase = window.supabaseClient || supabase;
+      currentUser = window.currentUser || currentUser;
+      if (supabase && currentUser && !isDemoDashboardUser()) void persistUserUiPreferencesFromCache();
     }
     renderSettingsPagesPanel();
   }
@@ -5551,8 +5648,17 @@ var incomePowerState = {
     var emptyHint = document.getElementById('settings-pages-add-empty');
     if (!listEl || !sel) return;
     var hidden = getSidebarHiddenPageSet();
-    var visibleRows = [];
+    var orderIds = getSidebarOrderedPageIds();
+    var defsById = {};
     SIDEBAR_NAV_PAGE_DEFS.forEach(function (def) {
+      defsById[def.id] = def;
+    });
+    var orderedDefs = [];
+    orderIds.forEach(function (id) {
+      if (defsById[id]) orderedDefs.push(defsById[id]);
+    });
+    var visibleRows = [];
+    orderedDefs.forEach(function (def) {
       if (!hidden[def.id]) visibleRows.push(def);
     });
     listEl.innerHTML = visibleRows.length
@@ -5560,8 +5666,15 @@ var incomePowerState = {
           .map(function (def) {
             var ic = getSidebarNavPageIconSvg(def.id);
             return (
-              '<div class="settings-pages-row">' +
+              '<div class="settings-pages-row" draggable="true" data-settings-page-id="' +
+              def.id +
+              '">' +
               '<span class="settings-pages-row-label settings-pages-row-label-with-ico">' +
+              '<button type="button" class="btn btn-ghost settings-pages-row-handle" data-settings-page-handle="' +
+              def.id +
+              '" title="Drag to reorder sidebar tabs" aria-label="Drag to reorder ' +
+              String(def.label || 'page').replace(/"/g, '&quot;') +
+              '">☰</button>' +
               (ic ? '<span class="settings-pages-row-ico" aria-hidden="true">' + ic + '</span>' : '') +
               '<span class="settings-pages-row-txt">' +
               def.label +
@@ -5596,6 +5709,13 @@ var incomePowerState = {
     var panel = document.getElementById('settings-panel-pages');
     if (!panel || panel.getAttribute('data-pages-wired') === '1') return;
     panel.setAttribute('data-pages-wired', '1');
+    function clearDropIndicators() {
+      var rows = panel.querySelectorAll('.settings-pages-row.drop-before, .settings-pages-row.drop-after');
+      rows.forEach(function (r) {
+        r.classList.remove('drop-before');
+        r.classList.remove('drop-after');
+      });
+    }
     panel.addEventListener('click', function (ev) {
       var t = ev.target;
       if (!t || !t.getAttribute) return;
@@ -5604,6 +5724,60 @@ var incomePowerState = {
         ev.preventDefault();
         setSidebarPageHidden(rm, true);
       }
+    });
+    var draggingPageId = '';
+    panel.addEventListener('dragstart', function (ev) {
+      var row = ev.target && ev.target.closest ? ev.target.closest('.settings-pages-row[data-settings-page-id]') : null;
+      if (!row) return;
+      draggingPageId = String(row.getAttribute('data-settings-page-id') || '');
+      if (!draggingPageId) return;
+      row.classList.add('is-dragging');
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = 'move';
+        try {
+          ev.dataTransfer.setData('text/plain', draggingPageId);
+        } catch (_) {}
+      }
+    });
+    panel.addEventListener('dragend', function () {
+      var dragEl = panel.querySelector('.settings-pages-row.is-dragging');
+      if (dragEl) dragEl.classList.remove('is-dragging');
+      clearDropIndicators();
+      draggingPageId = '';
+    });
+    panel.addEventListener('dragover', function (ev) {
+      var row = ev.target && ev.target.closest ? ev.target.closest('.settings-pages-row[data-settings-page-id]') : null;
+      if (!row || !draggingPageId) return;
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+      var rowId = String(row.getAttribute('data-settings-page-id') || '');
+      if (rowId === draggingPageId) {
+        row.classList.remove('drop-before');
+        row.classList.remove('drop-after');
+        return;
+      }
+      clearDropIndicators();
+      var rc = row.getBoundingClientRect();
+      var before = ev.clientY < rc.top + rc.height / 2;
+      row.classList.add(before ? 'drop-before' : 'drop-after');
+    });
+    panel.addEventListener('dragleave', function (ev) {
+      var row = ev.target && ev.target.closest ? ev.target.closest('.settings-pages-row[data-settings-page-id]') : null;
+      if (!row) return;
+      row.classList.remove('drop-before');
+      row.classList.remove('drop-after');
+    });
+    panel.addEventListener('drop', function (ev) {
+      var row = ev.target && ev.target.closest ? ev.target.closest('.settings-pages-row[data-settings-page-id]') : null;
+      if (!row || !draggingPageId) return;
+      ev.preventDefault();
+      clearDropIndicators();
+      var targetId = String(row.getAttribute('data-settings-page-id') || '');
+      if (!targetId || targetId === draggingPageId) return;
+      var r = row.getBoundingClientRect();
+      var before = ev.clientY < r.top + r.height / 2;
+      moveSidebarPageOrder(draggingPageId, targetId, before);
+      draggingPageId = '';
     });
     var addBtn = document.getElementById('settings-pages-add-btn');
     if (addBtn && addBtn.getAttribute('data-pages-add-wired') !== '1') {
@@ -17370,6 +17544,8 @@ var incomePowerState = {
   /** @type {Record<string, true>} */
   var listsLibSelected = {};
   var listsPageFilter = 'all';
+  var listsLibSearchQuery = '';
+  var listsDetailSearchByListId = {};
   var listsLibUiWired = false;
   var listsUi = { selectedTplId: null, activeCat: 'content', search: '' };
   var workspaceUiIconsCache = {};
@@ -17397,7 +17573,24 @@ var incomePowerState = {
     try {
       var raw = localStorage.getItem(listsStorageKey());
       var arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
+      if (!Array.isArray(arr)) return [];
+      var dirty = false;
+      arr.forEach(function (L) {
+        if (!L || typeof L !== 'object') return;
+        var snapCols = JSON.stringify(L.columns || []);
+        var snapTabs = JSON.stringify(L.previewTabs || []);
+        var snapBoard = L.boardGroupColumnId != null ? String(L.boardGroupColumnId) : '';
+        normalizeListForUi(L);
+        if (
+          snapCols !== JSON.stringify(L.columns || []) ||
+          snapTabs !== JSON.stringify(L.previewTabs || []) ||
+          snapBoard !== (L.boardGroupColumnId != null ? String(L.boardGroupColumnId) : '')
+        ) {
+          dirty = true;
+        }
+      });
+      if (dirty) saveWorkspaceLists(arr);
+      return arr;
     } catch (_) {
       return [];
     }
@@ -17437,6 +17630,147 @@ var incomePowerState = {
       : 'L' + Date.now() + Math.random().toString(36).slice(2, 9);
   }
 
+  var LIST_SCHEMA_VERSION = 2;
+  var LIST_FIELD_TYPES = {
+    text: true,
+    number: true,
+    currency: true,
+    date: true,
+    select: true,
+    multiselect: true,
+    checkbox: true,
+    url: true,
+    email: true,
+    phone: true,
+    person: true,
+    status: true,
+  };
+
+  function toListFieldType(raw, fallback) {
+    var t = String(raw || '').trim().toLowerCase();
+    if (LIST_FIELD_TYPES[t]) return t;
+    return fallback || 'text';
+  }
+
+  function isRecordLike(v) {
+    return !!v && typeof v === 'object' && !Array.isArray(v);
+  }
+
+  function inferListFieldTypeFromFeature(col) {
+    if (!col) return 'text';
+    var fid = String(col.featureId || '').trim().toLowerCase();
+    if (fid === 'status' || fid === 'stage' || fid === 'state') return 'status';
+    if (fid === 'date' || fid === 'due' || fid === 'expected_close' || fid === 'last_contact' || fid === 'created_time' || fid === 'last_updated') return 'date';
+    if (fid === 'deal_value' || fid === 'budget' || fid === 'arr') return 'currency';
+    if (fid === 'progress' || fid === 'effort' || fid === 'upvote' || fid === 'days_since' || fid === 'days_until' || fid === 'capacity') return 'number';
+    if (fid === 'email') return 'email';
+    if (fid === 'phone') return 'phone';
+    if (fid === 'url' || fid === 'post_url') return 'url';
+    if (fid === 'owner' || fid === 'assignee' || fid === 'account_owner' || fid === 'decision_maker' || fid === 'created_by' || fid === 'last_edited' || fid === 'reviewers' || fid === 'attendees') return 'person';
+    if (fid === 'priority' || fid === 'category' || fid === 'team' || fid === 'task_type' || fid === 'lead_source' || fid === 'platform' || fid === 'ctype' || fid === 'channels' || fid === 'audiences' || fid === 'format' || fid === 'venue' || fid === 'markets' || fid === 'quarter' || fid === 'accounts') return 'select';
+    var nm = String(col.name || '').trim().toLowerCase();
+    if (/\b(status|stage|state|health)\b/.test(nm)) return 'status';
+    if (/\b(date|due|deadline|start|end|updated|created|close)\b/.test(nm)) return 'date';
+    if (/\b(amount|arr|budget|value|price|cost|revenue)\b/.test(nm)) return 'currency';
+    if (/\b(progress|score|count|days|votes|capacity|effort)\b/.test(nm)) return 'number';
+    if (/\bemail\b/.test(nm)) return 'email';
+    if (/\bphone|mobile|tel\b/.test(nm)) return 'phone';
+    if (/\burl|link|website\b/.test(nm)) return 'url';
+    if (/\b(owner|assignee|created by|edited by|reviewer|attendee)\b/.test(nm)) return 'person';
+    if (/\b(priority|category|team|type|source|platform|format|status)\b/.test(nm)) return 'select';
+    return 'text';
+  }
+
+  function normalizeListFieldOptions(col) {
+    var type = toListFieldType(col.type, inferListFieldTypeFromFeature(col));
+    var options = Array.isArray(col.options) ? col.options : [];
+    var clean = [];
+    var seen = {};
+    for (var i = 0; i < options.length; i++) {
+      var raw = options[i];
+      var lbl = raw && typeof raw === 'object' ? String(raw.label != null ? raw.label : raw.value != null ? raw.value : '').trim() : String(raw || '').trim();
+      if (!lbl) continue;
+      var key = lbl.toLowerCase();
+      if (seen[key]) continue;
+      seen[key] = true;
+      clean.push({ value: lbl, label: lbl });
+    }
+    if (!clean.length && type === 'status') {
+      clean = [
+        { value: 'Not started', label: 'Not started' },
+        { value: 'In progress', label: 'In progress' },
+        { value: 'Done', label: 'Done' },
+      ];
+    }
+    return clean;
+  }
+
+  function listOptionsLookLikeStatusDefaults(options) {
+    if (!Array.isArray(options) || options.length !== 3) return false;
+    var vals = options
+      .map(function (o) {
+        return String((o && (o.value || o.label)) || '')
+          .trim()
+          .toLowerCase();
+      })
+      .sort();
+    return vals.join('|') === 'done|in progress|not started';
+  }
+
+  function normalizeListColumnSchema(col, idx) {
+    var c = col && typeof col === 'object' ? col : {};
+    var id = String(c.id || ('c' + (idx + 1))).trim() || ('c' + (idx + 1));
+    var name = String(c.name || ('Column ' + (idx + 1))).trim() || ('Column ' + (idx + 1));
+    var type = toListFieldType(c.type, inferListFieldTypeFromFeature(c));
+    var out = Object.assign({}, c, {
+      id: id,
+      name: name,
+      type: type,
+      required: !!c.required,
+      hidden: !!c.hidden,
+      aiEditable: c.aiEditable !== false,
+      iconStyle: c.iconStyle || 'filled',
+    });
+    out.options = normalizeListFieldOptions(out);
+    if (out.type === 'select' && String(out.featureId || '').toLowerCase() !== 'status' && listOptionsLookLikeStatusDefaults(out.options)) {
+      out.options = [];
+    }
+    if (out.defaultValue == null) out.defaultValue = '';
+    if (out.format == null) out.format = type === 'currency' ? 'currency' : type === 'number' ? 'number' : type === 'date' ? 'date' : 'plain';
+    return out;
+  }
+
+  function normalizeListRowsForSchema(L) {
+    var cols = Array.isArray(L.columns) ? L.columns : [];
+    var rows = Array.isArray(L.rows) ? L.rows : [];
+    var ids = cols.map(function (c) {
+      return String(c && c.id != null ? c.id : '');
+    });
+    L.rows = rows.map(function (row) {
+      var src = row && typeof row === 'object' ? row : {};
+      var out = {};
+      ids.forEach(function (cid) {
+        if (!cid) return;
+        out[cid] = Object.prototype.hasOwnProperty.call(src, cid) ? src[cid] : '';
+      });
+      return out;
+    });
+  }
+
+  function normalizeListSchemaV2(L) {
+    if (!L || typeof L !== 'object') return;
+    L.schemaVersion = LIST_SCHEMA_VERSION;
+    if (!Array.isArray(L.columns) || !L.columns.length) L.columns = [{ id: 'c1', name: 'Name', type: 'text' }];
+    L.columns = L.columns.map(function (c, idx) {
+      return normalizeListColumnSchema(c, idx);
+    });
+    if (!L.listDefaults || typeof L.listDefaults !== 'object') L.listDefaults = {};
+    if (!L.listDefaults.views || typeof L.listDefaults.views !== 'object') L.listDefaults.views = {};
+    if (!Array.isArray(L.listDefaults.filters)) L.listDefaults.filters = [];
+    if (!L.listDefaults.sort || typeof L.listDefaults.sort !== 'object') L.listDefaults.sort = { colId: '', dir: 'asc' };
+    normalizeListRowsForSchema(L);
+  }
+
   function findListTemplate(id) {
     var tid = String(id || '');
     for (var i = 0; i < LIST_TEMPLATES.length; i++) {
@@ -17459,8 +17793,29 @@ var incomePowerState = {
   function tplColumnsForEnabled(tpl, enabledMap) {
     var cols = [];
     (tpl.columnDefs || []).forEach(function (d) {
-      if (d.required) cols.push({ id: d.id, name: d.name, icon: null, iconStyle: 'filled' });
-      else if (d.featureId && enabledMap[d.featureId]) cols.push({ id: d.id, name: d.name, icon: null, iconStyle: 'filled' });
+      if (d.required) cols.push({
+        id: d.id,
+        name: d.name,
+        icon: null,
+        iconStyle: 'filled',
+        type: toListFieldType(d.type, inferListFieldTypeFromFeature(d)),
+        options: Array.isArray(d.options) ? JSON.parse(JSON.stringify(d.options)) : [],
+        required: !!d.required,
+        defaultValue: d.defaultValue != null ? d.defaultValue : '',
+        aiEditable: d.aiEditable !== false,
+      });
+      else if (d.featureId && enabledMap[d.featureId]) cols.push({
+        id: d.id,
+        name: d.name,
+        icon: null,
+        iconStyle: 'filled',
+        featureId: d.featureId || null,
+        type: toListFieldType(d.type, inferListFieldTypeFromFeature(d)),
+        options: Array.isArray(d.options) ? JSON.parse(JSON.stringify(d.options)) : [],
+        required: !!d.required,
+        defaultValue: d.defaultValue != null ? d.defaultValue : '',
+        aiEditable: d.aiEditable !== false,
+      });
     });
     return cols;
   }
@@ -17485,6 +17840,7 @@ var incomePowerState = {
     if (tpl.previewKind === 'board') av = 'board';
     else if (tpl.previewKind === 'calendar') av = 'calendar';
     return {
+      schemaVersion: LIST_SCHEMA_VERSION,
       id: newListId(),
       title: tpl.title,
       templateId: tpl.id,
@@ -17503,6 +17859,11 @@ var incomePowerState = {
       updatedAt: new Date().toISOString(),
       icon: tpl && tpl.emoji ? String(tpl.emoji) : null,
       iconStyle: 'filled',
+      listDefaults: {
+        sort: tpl.defaultSort || { colId: '', dir: 'asc' },
+        filters: Array.isArray(tpl.defaultFilters) ? JSON.parse(JSON.stringify(tpl.defaultFilters)) : [],
+        views: tpl.defaultViews && typeof tpl.defaultViews === 'object' ? JSON.parse(JSON.stringify(tpl.defaultViews)) : {},
+      },
     };
   }
 
@@ -17512,19 +17873,21 @@ var incomePowerState = {
 
   function blankNotionWorkspaceList() {
     return {
+      schemaVersion: LIST_SCHEMA_VERSION,
       id: newListId(),
       title: 'New database',
       templateId: null,
       category: 'operations',
       dataType: 'Table',
       layout: 'notion',
-      columns: [{ id: 'c1', name: 'Name' }],
+      columns: [{ id: 'c1', name: 'Name', type: 'text', options: [], required: true, defaultValue: '', aiEditable: true }],
       rows: [],
       supportsCalendarView: false,
       activeView: 'table',
       updatedAt: new Date().toISOString(),
       icon: null,
       iconStyle: 'filled',
+      listDefaults: { sort: { colId: '', dir: 'asc' }, filters: [], views: {} },
     };
   }
 
@@ -17944,12 +18307,22 @@ var incomePowerState = {
     var title = String(p.title).trim();
     var colsIn = Array.isArray(p.columns) ? p.columns : [];
     var cols = [];
-    for (var i = 0; i < Math.min(colsIn.length, 12); i++) {
-      var nm = colsIn[i] && String(colsIn[i].name != null ? colsIn[i].name : colsIn[i]).trim();
+    for (var i = 0; i < Math.min(colsIn.length, 24); i++) {
+      var rawCol = colsIn[i];
+      var nm = rawCol && String(rawCol.name != null ? rawCol.name : rawCol.title != null ? rawCol.title : rawCol).trim();
       if (!nm) continue;
-      cols.push({ id: 'c' + (cols.length + 1), name: nm });
+      var t = rawCol && typeof rawCol === 'object' ? toListFieldType(rawCol.type, inferListFieldTypeFromFeature(rawCol)) : inferListFieldTypeFromFeature({ name: nm });
+      cols.push({
+        id: 'c' + (cols.length + 1),
+        name: nm,
+        type: t,
+        options: rawCol && typeof rawCol === 'object' && Array.isArray(rawCol.options) ? normalizeListFieldOptions(rawCol) : normalizeListFieldOptions({ type: t, name: nm }),
+        required: !!(rawCol && typeof rawCol === 'object' && rawCol.required),
+        defaultValue: rawCol && typeof rawCol === 'object' && rawCol.defaultValue != null ? rawCol.defaultValue : '',
+        aiEditable: !(rawCol && typeof rawCol === 'object' && rawCol.aiEditable === false),
+      });
     }
-    if (!cols.length) cols.push({ id: 'c1', name: 'Name' });
+    if (!cols.length) cols.push({ id: 'c1', name: 'Name', type: 'text', options: [], required: true, defaultValue: '', aiEditable: true });
     var colIds = cols.map(function (c) {
       return c.id;
     });
@@ -17978,6 +18351,7 @@ var incomePowerState = {
       rows.push(empty);
     }
     var L = {
+      schemaVersion: LIST_SCHEMA_VERSION,
       id: newListId(),
       title: title,
       templateId: null,
@@ -17995,6 +18369,11 @@ var incomePowerState = {
       updatedAt: new Date().toISOString(),
       icon: null,
       iconStyle: 'filled',
+      listDefaults: {
+        sort: isRecordLike(p.defaultSort) ? JSON.parse(JSON.stringify(p.defaultSort)) : { colId: '', dir: 'asc' },
+        filters: Array.isArray(p.defaultFilters) ? JSON.parse(JSON.stringify(p.defaultFilters)) : [],
+        views: isRecordLike(p.defaultViews) ? JSON.parse(JSON.stringify(p.defaultViews)) : {},
+      },
     };
     if (L.supportsCalendarView && !L.calendarDateColumnId) {
       L.calendarDateColumnId = colIds.length > 1 ? colIds[1] : colIds[0];
@@ -18003,6 +18382,304 @@ var incomePowerState = {
     window.nav('lists', document.getElementById('lists-sb-browse'));
     openListDetailView(L.id);
     return { ok: true, listId: L.id };
+  };
+
+  function listColNameNorm(s) {
+    return String(s || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+
+  var listsAdvisorSnapshotsByListId = {};
+
+  function listsTakeSchemaSnapshot(L) {
+    return {
+      title: String(L && L.title != null ? L.title : ''),
+      columns: JSON.parse(JSON.stringify((L && L.columns) || [])),
+      rows: JSON.parse(JSON.stringify((L && L.rows) || [])),
+      boardGroupColumnId: L && L.boardGroupColumnId != null ? String(L.boardGroupColumnId) : null,
+      calendarDateColumnId: L && L.calendarDateColumnId != null ? String(L.calendarDateColumnId) : null,
+      supportsCalendarView: !!(L && L.supportsCalendarView),
+      previewTabs: JSON.parse(JSON.stringify((L && L.previewTabs) || [])),
+      listDefaults: JSON.parse(JSON.stringify((L && L.listDefaults) || {})),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  function listsStoreAdvisorSnapshot(listId, snap) {
+    if (!listId || !snap) return;
+    var lid = String(listId);
+    if (!Array.isArray(listsAdvisorSnapshotsByListId[lid])) listsAdvisorSnapshotsByListId[lid] = [];
+    listsAdvisorSnapshotsByListId[lid].push(snap);
+    if (listsAdvisorSnapshotsByListId[lid].length > 20) listsAdvisorSnapshotsByListId[lid].shift();
+  }
+
+  function applyListMutationOps(L, ops) {
+    var operations = Array.isArray(ops) ? ops : [];
+    if (!operations.length) return { applied: [], skipped: [] };
+    normalizeListForUi(L);
+    var applied = [];
+    var skipped = [];
+    function fieldById(fid) {
+      return (L.columns || []).find(function (c) {
+        return c && String(c.id) === String(fid);
+      });
+    }
+    function fieldIndexById(fid) {
+      var cols = L.columns || [];
+      for (var i = 0; i < cols.length; i++) {
+        if (cols[i] && String(cols[i].id) === String(fid)) return i;
+      }
+      return -1;
+    }
+    operations.forEach(function (op) {
+      var rec = op && typeof op === 'object' ? op : null;
+      var action = rec ? String(rec.action || rec.op || '').trim().toLowerCase() : '';
+      if (!action) return;
+      if (action === 'addfield') {
+        var nm = String(rec.name || rec.label || '').trim();
+        if (!nm) {
+          skipped.push({ action: action, reason: 'missing name' });
+          return;
+        }
+        var norm = listColNameNorm(nm);
+        if ((L.columns || []).some(function (c) { return listColNameNorm(c && c.name) === norm; })) {
+          skipped.push({ action: action, reason: 'already exists', name: nm });
+          return;
+        }
+        var cid = buildNextListColumnId(L);
+        var ctype = toListFieldType(rec.type, inferListFieldTypeFromFeature({ name: nm, featureId: rec.featureId }));
+        var col = normalizeListColumnSchema({
+          id: cid,
+          name: nm,
+          type: ctype,
+          featureId: rec.featureId || null,
+          options: rec.options,
+          required: !!rec.required,
+          hidden: !!rec.hidden,
+          defaultValue: rec.defaultValue != null ? rec.defaultValue : '',
+          aiEditable: rec.aiEditable !== false,
+        }, L.columns.length);
+        L.columns.push(col);
+        (L.rows || []).forEach(function (r) {
+          if (r && typeof r === 'object' && r[cid] == null) r[cid] = col.defaultValue != null ? col.defaultValue : '';
+        });
+        applied.push({ action: action, fieldId: cid, name: nm });
+        return;
+      }
+      if (action === 'renamefield') {
+        var fid = String(rec.fieldId || rec.id || '').trim();
+        var nextName = String(rec.name || rec.to || '').trim();
+        if (!fid || !nextName) {
+          skipped.push({ action: action, reason: 'missing fieldId/name' });
+          return;
+        }
+        var col2 = fieldById(fid);
+        if (!col2) {
+          skipped.push({ action: action, reason: 'field not found', fieldId: fid });
+          return;
+        }
+        col2.name = nextName;
+        applied.push({ action: action, fieldId: fid, name: nextName });
+        return;
+      }
+      if (action === 'reorderfield') {
+        var rid = String(rec.fieldId || rec.id || '').trim();
+        var toIndex = parseInt(rec.toIndex, 10);
+        var fromIndex = fieldIndexById(rid);
+        if (fromIndex < 0 || isNaN(toIndex)) {
+          skipped.push({ action: action, reason: 'invalid reorder payload', fieldId: rid });
+          return;
+        }
+        if (toIndex < 0) toIndex = 0;
+        if (toIndex >= L.columns.length) toIndex = L.columns.length - 1;
+        if (toIndex === fromIndex) return;
+        var moved = L.columns.splice(fromIndex, 1)[0];
+        L.columns.splice(toIndex, 0, moved);
+        applied.push({ action: action, fieldId: rid, toIndex: toIndex });
+        return;
+      }
+      if (action === 'setfieldoptions') {
+        var oid = String(rec.fieldId || rec.id || '').trim();
+        var c3 = fieldById(oid);
+        if (!c3) {
+          skipped.push({ action: action, reason: 'field not found', fieldId: oid });
+          return;
+        }
+        c3.options = normalizeListFieldOptions({ type: c3.type, options: rec.options });
+        applied.push({ action: action, fieldId: oid, optionsCount: c3.options.length });
+        return;
+      }
+      if (action === 'setfieldvisibility') {
+        var vid = String(rec.fieldId || rec.id || '').trim();
+        var c4 = fieldById(vid);
+        if (!c4) {
+          skipped.push({ action: action, reason: 'field not found', fieldId: vid });
+          return;
+        }
+        c4.hidden = !!rec.hidden;
+        applied.push({ action: action, fieldId: vid, hidden: c4.hidden });
+        return;
+      }
+      if (action === 'setviews') {
+        if (isRecordLike(rec.views)) {
+          if (!L.listDefaults || typeof L.listDefaults !== 'object') L.listDefaults = {};
+          L.listDefaults.views = JSON.parse(JSON.stringify(rec.views));
+          applied.push({ action: action });
+        }
+        return;
+      }
+      skipped.push({ action: action, reason: 'unsupported op' });
+    });
+    normalizeListForUi(L);
+    return { applied: applied, skipped: skipped };
+  }
+
+  window.bizDashRollbackWorkspaceListAdvisorEdit = function (listId) {
+    var lid = String(listId || '').trim();
+    if (!lid) return { ok: false, error: 'Missing list id.' };
+    var stack = listsAdvisorSnapshotsByListId[lid];
+    if (!Array.isArray(stack) || !stack.length) return { ok: false, error: 'No advisor edit snapshot available.' };
+    var snap = stack.pop();
+    updateWorkspaceListById(lid, function (X) {
+      X.title = String(snap.title || X.title || '');
+      X.columns = JSON.parse(JSON.stringify(snap.columns || []));
+      X.rows = JSON.parse(JSON.stringify(snap.rows || []));
+      X.boardGroupColumnId = snap.boardGroupColumnId || null;
+      X.calendarDateColumnId = snap.calendarDateColumnId || null;
+      X.supportsCalendarView = !!snap.supportsCalendarView;
+      X.previewTabs = JSON.parse(JSON.stringify(snap.previewTabs || []));
+      X.listDefaults = JSON.parse(JSON.stringify(snap.listDefaults || {}));
+      normalizeListForUi(X);
+    });
+    return { ok: true, listId: lid };
+  };
+
+  function buildNextListColumnId(L) {
+    var cols = (L && L.columns) || [];
+    var used = {};
+    var maxN = 0;
+    cols.forEach(function (c) {
+      var id = String(c && c.id != null ? c.id : '');
+      if (!id) return;
+      used[id] = true;
+      var m = id.match(/^c(\d+)$/i);
+      if (m) {
+        var n = parseInt(m[1], 10);
+        if (!isNaN(n) && n > maxN) maxN = n;
+      }
+    });
+    var next = maxN > 0 ? 'c' + (maxN + 1) : 'c1';
+    if (!used[next]) return next;
+    var i = 2;
+    while (used['col_' + i]) i += 1;
+    return 'col_' + i;
+  }
+
+  function findWorkspaceListForAdvisorEdit(draft) {
+    var d = draft || {};
+    var lists = loadWorkspaceLists();
+    var byId = String(d.listId || d.list_id || '').trim();
+    if (byId) {
+      for (var i = 0; i < lists.length; i++) {
+        if (String(lists[i].id) === byId) return lists[i];
+      }
+    }
+    var byName = String(d.listName || d.list_name || d.listTitle || d.list_title || d.targetList || '').trim();
+    if (!byName) return null;
+    var q = byName.toLowerCase();
+    var exact = lists.find(function (L) {
+      return String(L && L.title ? L.title : '').trim().toLowerCase() === q;
+    });
+    if (exact) return exact;
+    return (
+      lists.find(function (L) {
+        return String(L && L.title ? L.title : '')
+          .toLowerCase()
+          .indexOf(q) >= 0;
+      }) || null
+    );
+  }
+
+  window.bizDashEditWorkspaceListFromAdvisor = function (draft) {
+    var d = draft && typeof draft === 'object' ? draft : null;
+    if (!d) return { ok: false, error: 'Invalid list edit proposal.' };
+    var target = findWorkspaceListForAdvisorEdit(d);
+    if (!target) {
+      return {
+        ok: false,
+        error: 'Could not find that list in this workspace.',
+      };
+    }
+    var ops = [];
+    if (Array.isArray(d.operations)) ops = ops.concat(d.operations);
+    if (Array.isArray(d.ops)) ops = ops.concat(d.ops);
+    var requested = [];
+    if (Array.isArray(d.addColumns)) requested = requested.concat(d.addColumns);
+    if (d.addColumn != null) requested.push(d.addColumn);
+    if (Array.isArray(d.add_columns)) requested = requested.concat(d.add_columns);
+    requested.forEach(function (it) {
+      var asObj = it && typeof it === 'object' ? it : { name: String(it || '') };
+      ops.push({
+        action: 'addField',
+        name: asObj.name != null ? asObj.name : asObj.title,
+        type: asObj.type,
+        featureId: asObj.featureId || null,
+        options: asObj.options,
+        required: !!asObj.required,
+      });
+    });
+    if (!ops.length) return { ok: false, error: 'No safe edit operations provided.' };
+    var snap = listsTakeSchemaSnapshot(target);
+    listsStoreAdvisorSnapshot(target.id, snap);
+    var opResult = { applied: [], skipped: [] };
+    updateWorkspaceListById(target.id, function (X) {
+      opResult = applyListMutationOps(X, ops);
+    });
+    if (!opResult.applied.length) {
+      return { ok: false, error: 'No applicable safe edits found.', skipped: opResult.skipped };
+    }
+    return {
+      ok: true,
+      listId: target.id,
+      listTitle: target.title || '',
+      applied: opResult.applied,
+      skipped: opResult.skipped,
+    };
+  };
+
+  window.bizDashGetWorkspaceListsDigestForAdvisor = function () {
+    var lists = loadWorkspaceLists();
+    var out = [];
+    for (var i = 0; i < lists.length && out.length < 40; i++) {
+      var L = lists[i];
+      if (!L) continue;
+      out.push({
+        id: L.id,
+        title: String(L.title || '').slice(0, 120),
+        schemaVersion: L.schemaVersion || 1,
+        columns: (L.columns || [])
+          .map(function (c) {
+            return {
+              id: c && c.id != null ? String(c.id) : '',
+              name: String(c && c.name != null ? c.name : '').slice(0, 80),
+              type: String(c && c.type != null ? c.type : inferListFieldTypeFromFeature(c)).slice(0, 24),
+              options: (c && Array.isArray(c.options) ? c.options : []).slice(0, 10),
+              hidden: !!(c && c.hidden),
+            };
+          })
+          .filter(function (c) { return !!c.id && !!c.name; })
+          .slice(0, 32),
+        views: {
+          supportsCalendarView: !!L.supportsCalendarView,
+          calendarDateColumnId: L.calendarDateColumnId || null,
+          boardGroupColumnId: L.boardGroupColumnId || null,
+          previewTabs: Array.isArray(L.previewTabs) ? L.previewTabs.slice(0, 8) : [],
+        },
+      });
+    }
+    return out;
   };
 
   function pushWorkspaceList(L) {
@@ -18466,6 +19143,7 @@ var incomePowerState = {
           '<button type="button" class="lists-sb-title" data-list-open="' +
           escList(L.id) +
           '">' +
+          (L.favorite ? '<span class="lists-fav-star" aria-label="Favorite" title="Favorite">★</span>' : '') +
           escList(L.title) +
           '</button>' +
           '<span class="lists-sb-acts">' +
@@ -19717,7 +20395,16 @@ var incomePowerState = {
         }
         var cleaned = listsColsDraft
           .map(function (r) {
-            return { id: String(r.id || ''), name: String(r.name || '').trim() };
+            return {
+              id: String(r.id || ''),
+              name: String(r.name || '').trim(),
+              type: toListFieldType(r.type, inferListFieldTypeFromFeature(r)),
+              options: Array.isArray(r.options) ? JSON.parse(JSON.stringify(r.options)) : [],
+              required: !!r.required,
+              hidden: !!r.hidden,
+              defaultValue: r.defaultValue != null ? r.defaultValue : '',
+              aiEditable: r.aiEditable !== false,
+            };
           })
           .filter(function (r) {
             return !!r.name;
@@ -19751,10 +20438,39 @@ var incomePowerState = {
               maxN += 1;
               finalId = 'c' + maxN;
             }
-            if (base) nextCols.push(Object.assign({}, base, { name: r.name }));
-            else nextCols.push({ id: finalId, name: r.name });
+            if (base) nextCols.push(
+              normalizeListColumnSchema(
+                Object.assign({}, base, {
+                  id: finalId,
+                  name: r.name,
+                  type: r.type,
+                  options: r.options,
+                  required: r.required,
+                  hidden: r.hidden,
+                  defaultValue: r.defaultValue,
+                  aiEditable: r.aiEditable,
+                }),
+                nextCols.length,
+              ),
+            );
+            else
+              nextCols.push(
+                normalizeListColumnSchema(
+                  {
+                    id: finalId,
+                    name: r.name,
+                    type: r.type,
+                    options: r.options,
+                    required: r.required,
+                    hidden: r.hidden,
+                    defaultValue: r.defaultValue,
+                    aiEditable: r.aiEditable,
+                  },
+                  nextCols.length,
+                ),
+              );
           });
-          if (!nextCols.length) nextCols = [{ id: 'c1', name: 'Name' }];
+          if (!nextCols.length) nextCols = [normalizeListColumnSchema({ id: 'c1', name: 'Name', type: 'text' }, 0)];
           var nextRows = (Array.isArray(X.rows) ? X.rows : []).map(function (row) {
             var out = {};
             nextCols.forEach(function (c) {
@@ -19773,6 +20489,7 @@ var incomePowerState = {
             return String(c.id) === String(X.calendarDateColumnId || '');
           });
           if (!hasCal) X.calendarDateColumnId = nextCols[1] ? nextCols[1].id : nextCols[0].id;
+          normalizeListForUi(X);
         });
         m.classList.remove('on');
       });
@@ -19788,6 +20505,12 @@ var incomePowerState = {
       return {
         id: c && c.id != null ? String(c.id) : '__new__' + (++listsColsTempSeq),
         name: String(c && c.name != null ? c.name : ''),
+        type: toListFieldType(c && c.type, inferListFieldTypeFromFeature(c)),
+        options: Array.isArray(c && c.options) ? JSON.parse(JSON.stringify(c.options)) : [],
+        required: !!(c && c.required),
+        hidden: !!(c && c.hidden),
+        defaultValue: c && c.defaultValue != null ? c.defaultValue : '',
+        aiEditable: !(c && c.aiEditable === false),
       };
     });
     var m = listsColsEnsureModal();
@@ -19826,6 +20549,15 @@ var incomePowerState = {
       if (delBtn) {
         if (window.confirm('Delete this list?')) deleteWorkspaceList(listId);
       }
+    });
+    actions.addEventListener('input', function (ev) {
+      var t = ev.target;
+      if (!t || !t.matches || !t.matches('input[data-list-detail-search]')) return;
+      var listId = t.getAttribute('data-list-detail-search');
+      if (!listId) return;
+      listsDetailSearchByListId[String(listId)] = String(t.value || '');
+      var L = listsSbGetListById(listId);
+      if (L) listRenderDetailBody(L);
     });
   }
 
@@ -20025,26 +20757,41 @@ var incomePowerState = {
 
   function listsTableHtml(L) {
     var cols = L.columns || [];
+    var rowEntries = listsDetailFilteredRowEntries(L);
+    var currentSort = L && L.tableSort && L.tableSort.colId ? { colId: String(L.tableSort.colId), dir: L.tableSort.dir === 'desc' ? 'desc' : 'asc' } : null;
+    var sortedRows = listsTableSortedRows(L, cols, currentSort, rowEntries);
     var thead =
       '<tr>' +
       cols
         .map(function (c) {
+          var isActiveSort = !!currentSort && String(currentSort.colId) === String(c.id);
+          var sortDir = isActiveSort ? currentSort.dir : '';
+          var ariaSort = isActiveSort ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
+          var sortGlyph = isActiveSort ? (sortDir === 'asc' ? '↑' : '↓') : '';
           return (
-            '<th class="lists-th-cell">' +
+            '<th class="lists-th-cell" data-list-sort-col="' +
+            escList(c.id) +
+            '" tabindex="0" role="button" aria-sort="' +
+            ariaSort +
+            '">' +
             '<span class="lists-th-ico-hit" data-col-icon-id="' +
             escList(c.id) +
             '" role="button" tabindex="0" aria-label="Column icon"></span>' +
             '<span class="lists-th-txt">' +
             escList(c.name) +
+            '</span>' +
+            '<span class="lists-th-sort-ind" aria-hidden="true">' +
+            sortGlyph +
             '</span></th>'
           );
         })
         .join('') +
       '<th class="lists-th-cell lists-th-rowact" aria-label="Row actions"></th></tr>';
-    var rows = L.rows || [];
     var lid = L.id;
-    var tb = rows
-      .map(function (r, rowIdx) {
+    var tb = sortedRows
+      .map(function (entry) {
+        var r = entry.row;
+        var rowIdx = entry.rowIdx;
         return (
           '<tr>' +
           cols
@@ -20059,6 +20806,114 @@ var incomePowerState = {
       })
       .join('');
     return '<div class="lists-dt-wrap"><table class="dt lists-dt"><thead>' + thead + '</thead><tbody>' + tb + '</tbody></table></div>';
+  }
+
+  function listsTableValueType(val, colType) {
+    var declared = toListFieldType(colType, '');
+    if (declared === 'date') return String(val != null ? val : '').trim() ? 'date' : 'empty';
+    if (declared === 'number' || declared === 'currency') return String(val != null ? val : '').trim() ? 'number' : 'empty';
+    if (declared === 'checkbox') return 'number';
+    if (declared === 'select' || declared === 'status' || declared === 'multiselect' || declared === 'person' || declared === 'url' || declared === 'email' || declared === 'phone' || declared === 'text') {
+      return String(val != null ? val : '').trim() ? 'text' : 'empty';
+    }
+    var raw = String(val != null ? val : '').trim();
+    if (!raw) return 'empty';
+    var parsedYmd = listsParseYmd(raw);
+    if (parsedYmd) return 'date';
+    var compact = raw.replace(/[\$,]/g, '').replace(/%$/, '');
+    if (/^-?\d+(\.\d+)?$/.test(compact)) return 'number';
+    return 'text';
+  }
+
+  function listsTableColumnDefaultSortDir(L, colId) {
+    var rows = (L && L.rows) || [];
+    var col = ((L && L.columns) || []).find(function (c) {
+      return c && String(c.id) === String(colId);
+    });
+    var colType = col && col.type;
+    for (var i = 0; i < rows.length; i++) {
+      var v = rows[i] ? rows[i][colId] : '';
+      var t = listsTableValueType(v, colType);
+      if (t === 'date' || t === 'number') return 'desc';
+      if (t === 'text') return 'asc';
+    }
+    return 'asc';
+  }
+
+  function listsTableSortedRows(L, cols, currentSort, rowEntries) {
+    var mapped = Array.isArray(rowEntries)
+      ? rowEntries.slice()
+      : ((L && L.rows) || []).map(function (row, rowIdx) {
+          return { row: row || {}, rowIdx: rowIdx };
+        });
+    if (!currentSort || !currentSort.colId) return mapped;
+    var colId = String(currentSort.colId);
+    var col = (Array.isArray(cols) ? cols : []).find(function (c) {
+      return c && String(c.id) === colId;
+    });
+    var colType = col && col.type;
+    var dirSign = currentSort.dir === 'desc' ? -1 : 1;
+    mapped.sort(function (a, b) {
+      var av = a.row[colId];
+      var bv = b.row[colId];
+      var at = listsTableValueType(av, colType);
+      var bt = listsTableValueType(bv, colType);
+      if (at === 'empty' && bt !== 'empty') return 1;
+      if (bt === 'empty' && at !== 'empty') return -1;
+      if (at === 'date' && bt === 'date') {
+        var ad = listsParseYmd(String(av || ''));
+        var bd = listsParseYmd(String(bv || ''));
+        var ac = ad ? ad.y * 10000 + ad.mo * 100 + ad.d : -1;
+        var bc = bd ? bd.y * 10000 + bd.mo * 100 + bd.d : -1;
+        if (ac !== bc) return ac > bc ? dirSign : -dirSign;
+      } else if (at === 'number' && bt === 'number') {
+        var an = Number(String(av != null ? av : '').replace(/[\$,]/g, '').replace(/%$/, ''));
+        var bn = Number(String(bv != null ? bv : '').replace(/[\$,]/g, '').replace(/%$/, ''));
+        if (an !== bn) return an > bn ? dirSign : -dirSign;
+      } else {
+        var as = String(av != null ? av : '');
+        var bs = String(bv != null ? bv : '');
+        var cmp = as.localeCompare(bs, undefined, { sensitivity: 'base', numeric: true });
+        if (cmp !== 0) return cmp > 0 ? dirSign : -dirSign;
+      }
+      return a.rowIdx - b.rowIdx;
+    });
+    return mapped;
+  }
+
+  function listsDetailSearchQueryForList(listId) {
+    if (!listId) return '';
+    return String(listsDetailSearchByListId[String(listId)] || '').trim();
+  }
+
+  function listsRowMatchesSearch(L, row, queryLower) {
+    if (!queryLower) return true;
+    if (!row || typeof row !== 'object') return false;
+    var cols = Array.isArray(L.columns) ? L.columns : [];
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i];
+      if (!c) continue;
+      var cn = String(c.name != null ? c.name : '').toLowerCase();
+      if (cn.indexOf(queryLower) >= 0) return true;
+      var val = row[c.id];
+      if (val == null) continue;
+      var raw = typeof val === 'string' ? val : JSON.stringify(val);
+      if (String(raw).toLowerCase().indexOf(queryLower) >= 0) return true;
+    }
+    return false;
+  }
+
+  function listsDetailFilteredRowEntries(L) {
+    var rows = (L && L.rows) || [];
+    var entries = rows.map(function (row, rowIdx) {
+      return { row: row || {}, rowIdx: rowIdx };
+    });
+    var q = listsDetailSearchQueryForList(L && L.id);
+    if (!q) return entries;
+    var ql = q.toLowerCase();
+    return entries.filter(function (e) {
+      return listsRowMatchesSearch(L, e.row, ql);
+    });
   }
 
   function listsBoardStageSortRank(stageKey) {
@@ -20093,10 +20948,12 @@ var incomePowerState = {
     });
     var hdrRole = (gCol && listsColumnSelectRole(gCol)) || 'status';
     var buckets = {};
-    (L.rows || []).forEach(function (r) {
+    var entries = listsDetailFilteredRowEntries(L);
+    entries.forEach(function (entry) {
+      var r = entry.row;
       var k = String(r[gid] != null ? r[gid] : '').trim() || '—';
       if (!buckets[k]) buckets[k] = [];
-      buckets[k].push(r);
+      buckets[k].push(entry);
     });
     var order = listsBoardSortedStages(Object.keys(buckets));
     var colHtml = order
@@ -20108,9 +20965,9 @@ var incomePowerState = {
           hdrRole === 'status' && gCol ? listsStatusToneMapForColumn(L, gCol.id) : null,
         );
         var cards = buckets[stage]
-          .map(function (r) {
-            var rowIdx = (L.rows || []).indexOf(r);
-            if (rowIdx < 0) rowIdx = 0;
+          .map(function (entry) {
+            var r = entry.row;
+            var rowIdx = entry.rowIdx;
             var titleCol = cols[0] ? cols[0].id : 'c1';
             var title = String(r[titleCol] != null ? r[titleCol] : '').trim() || 'Item';
             var meta = cols
@@ -20182,6 +21039,7 @@ var incomePowerState = {
     }
     var dateCol = L.calendarDateColumnId || (L.columns && L.columns[1] ? L.columns[1].id : 'c2');
     var titleCol = L.columns && L.columns[0] ? L.columns[0].id : 'c1';
+    var entries = listsDetailFilteredRowEntries(L);
     var ref = new Date();
     var y = L.calendarViewYear != null ? parseInt(L.calendarViewYear, 10) : ref.getFullYear();
     var mo = L.calendarViewMonth != null ? parseInt(L.calendarViewMonth, 10) : ref.getMonth() + 1;
@@ -20196,7 +21054,9 @@ var incomePowerState = {
     for (i = 0; i < startPad; i++) cells.push('<div class="lists-cal-cell lists-cal-muted"></div>');
     for (i = 1; i <= daysInMo; i++) {
       var items = [];
-      (L.rows || []).forEach(function (r, ri) {
+      entries.forEach(function (entry) {
+        var r = entry.row;
+        var ri = entry.rowIdx;
         var p = listsParseYmd(r[dateCol]);
         if (p && p.y === y && p.mo === mo && p.d === i) {
           items.push(
@@ -20375,8 +21235,107 @@ var incomePowerState = {
     return null;
   }
 
+  function ensureListStatusColumnAndTabs(L) {
+    if (!L || L.layout === 'notion') return;
+    if (!Array.isArray(L.columns)) L.columns = [];
+    if (!Array.isArray(L.rows)) L.rows = [];
+    var statusCol = null;
+    for (var i = 0; i < L.columns.length; i++) {
+      var c = L.columns[i];
+      if (!c) continue;
+      var fid = String(c.featureId || '').toLowerCase();
+      var nm = String(c.name || '').trim().toLowerCase();
+      if (fid === 'status' || nm === 'status' || nm === 'stage' || nm === 'state') {
+        statusCol = c;
+        break;
+      }
+    }
+    if (!statusCol) {
+      var base = 'status';
+      var n = 1;
+      var exists = {};
+      L.columns.forEach(function (c2) {
+        if (c2 && c2.id != null) exists[String(c2.id)] = true;
+      });
+      var nextId = base;
+      while (exists[nextId]) {
+        n += 1;
+        nextId = base + '_' + n;
+      }
+      statusCol = { id: nextId, name: 'Status', featureId: 'status', iconStyle: 'filled' };
+      statusCol.type = 'status';
+      statusCol.options = [
+        { value: 'Not started', label: 'Not started' },
+        { value: 'In progress', label: 'In progress' },
+        { value: 'Done', label: 'Done' },
+      ];
+      statusCol.defaultValue = '';
+      statusCol.aiEditable = true;
+      L.columns.push(statusCol);
+      L.rows.forEach(function (r) {
+        if (r && typeof r === 'object' && r[nextId] == null) r[nextId] = '';
+      });
+    } else {
+      if (!statusCol.featureId) statusCol.featureId = 'status';
+      if (!statusCol.type) statusCol.type = 'status';
+      if (!Array.isArray(statusCol.options)) statusCol.options = normalizeListFieldOptions(statusCol);
+    }
+    if (!L.boardGroupColumnId || String(L.boardGroupColumnId) !== String(statusCol.id)) {
+      L.boardGroupColumnId = statusCol.id;
+    }
+    var existingTabs = Array.isArray(L.previewTabs) ? L.previewTabs.slice() : [];
+    var hasAll = existingTabs.some(function (t) {
+      return t && t.id === 'all';
+    });
+    var hasStatus = existingTabs.some(function (t) {
+      return t && (t.id === 'status' || t.id === 'byStage' || t.id === 'board');
+    });
+    if (!hasAll) existingTabs.unshift({ id: 'all', label: 'All' });
+    if (!hasStatus) existingTabs.push({ id: 'status', label: 'By status' });
+    L.previewTabs = existingTabs;
+  }
+
+  function listColumnLooksDate(c) {
+    if (!c) return false;
+    var type = toListFieldType(c.type, '');
+    if (type === 'date') return true;
+    var fid = String(c.featureId || '').toLowerCase();
+    if (fid === 'date') return true;
+    var nm = String(c.name || '').trim().toLowerCase();
+    return /\b(date|due|deadline|start|end)\b/.test(nm);
+  }
+
+  function ensureListCalendarViewForDateColumn(L) {
+    if (!L || L.layout === 'notion') return;
+    var cols = Array.isArray(L.columns) ? L.columns : [];
+    if (!cols.length) return;
+    var dateCol = null;
+    for (var i = 0; i < cols.length; i++) {
+      if (listColumnLooksDate(cols[i])) {
+        dateCol = cols[i];
+        break;
+      }
+    }
+    if (!dateCol) return;
+    L.supportsCalendarView = true;
+    var dateColId = String(dateCol.id || '');
+    var hasCurrentDateCol = cols.some(function (c) {
+      return c && String(c.id) === String(L.calendarDateColumnId || '');
+    });
+    if (!L.calendarDateColumnId || !hasCurrentDateCol) {
+      L.calendarDateColumnId = dateColId;
+    }
+    var existingTabs = Array.isArray(L.previewTabs) ? L.previewTabs.slice() : [];
+    var hasCal = existingTabs.some(function (t) {
+      return t && t.id === 'cal';
+    });
+    if (!hasCal) existingTabs.push({ id: 'cal', label: 'Calendar' });
+    L.previewTabs = existingTabs;
+  }
+
   function normalizeListForUi(L) {
     if (!L) return;
+    normalizeListSchemaV2(L);
     if (!L.iconStyle) L.iconStyle = 'filled';
     if (!L.statusOptionColors || typeof L.statusOptionColors !== 'object') L.statusOptionColors = {};
     (L.columns || []).forEach(function (c) {
@@ -20409,6 +21368,11 @@ var incomePowerState = {
                 icon: null,
                 iconStyle: 'filled',
                 featureId: dAdd.featureId || null,
+                type: toListFieldType(dAdd.type, inferListFieldTypeFromFeature(dAdd)),
+                options: Array.isArray(dAdd.options) ? JSON.parse(JSON.stringify(dAdd.options)) : [],
+                required: !!dAdd.required,
+                defaultValue: dAdd.defaultValue != null ? dAdd.defaultValue : '',
+                aiEditable: dAdd.aiEditable !== false,
               });
               (L.rows || []).forEach(function (r) {
                 if (r[tplBoardId] == null) r[tplBoardId] = '';
@@ -20448,6 +21412,8 @@ var incomePowerState = {
       var inferred = inferBoardGroupColumnId(L);
       if (inferred) L.boardGroupColumnId = inferred;
     }
+    ensureListStatusColumnAndTabs(L);
+    ensureListCalendarViewForDateColumn(L);
     if (L.supportsCalendarView) {
       var ref = new Date();
       if (L.calendarViewYear == null || L.calendarViewMonth == null || L.calendarViewMonth < 1 || L.calendarViewMonth > 12) {
@@ -20517,6 +21483,11 @@ var incomePowerState = {
     if (actions) {
       wireListDetailActionsOnce();
       actions.innerHTML =
+        '<input type="search" class="fi" data-list-detail-search="' +
+        escList(L.id) +
+        '" placeholder="Search this list…" value="' +
+        escList(listsDetailSearchQueryForList(L.id)) +
+        '" aria-label="Search this list" style="width:220px;max-width:38vw;" />' +
         '<button type="button" class="btn" data-list-cols-settings="' +
         escList(L.id) +
         '" aria-label="Column settings" title="Column settings" style="font-size:18px;line-height:1;padding-left:10px;padding-right:10px;">⚙</button>' +
@@ -20585,7 +21556,34 @@ var incomePowerState = {
         return tb - ta;
       });
     }
-    return lists;
+    if (!listsLibSearchQuery) return lists;
+    var q = String(listsLibSearchQuery).trim().toLowerCase();
+    if (!q) return lists;
+    return lists.filter(function (L) {
+      if (!L) return false;
+      var title = String(L.title || '').toLowerCase();
+      if (title.indexOf(q) >= 0) return true;
+      var typeLabel = String(listsLibTypeLabel(L) || '').toLowerCase();
+      if (typeLabel.indexOf(q) >= 0) return true;
+      var cols = Array.isArray(L.columns) ? L.columns : [];
+      for (var i = 0; i < cols.length; i++) {
+        var colName = String(cols[i] && cols[i].name != null ? cols[i].name : '').toLowerCase();
+        if (colName.indexOf(q) >= 0) return true;
+      }
+      var rows = Array.isArray(L.rows) ? L.rows : [];
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        if (!row || typeof row !== 'object') continue;
+        var keys = Object.keys(row);
+        for (var k = 0; k < keys.length; k++) {
+          var cell = row[keys[k]];
+          if (cell == null) continue;
+          var raw = typeof cell === 'string' ? cell : JSON.stringify(cell);
+          if (String(raw).toLowerCase().indexOf(q) >= 0) return true;
+        }
+      }
+      return false;
+    });
   }
 
   function listsLibVisibleIdSet(filtered) {
@@ -20684,6 +21682,8 @@ var incomePowerState = {
         b.setAttribute('aria-selected', on ? 'true' : 'false');
       });
     }
+    var searchInput = document.getElementById('lists-lib-search');
+    if (searchInput && searchInput.value !== listsLibSearchQuery) searchInput.value = listsLibSearchQuery;
 
     var whoCell = listsLibCurrentWho();
 
@@ -20727,6 +21727,7 @@ var incomePowerState = {
           '<td><button type="button" class="lists-lib-name-btn" data-list-open="' +
           escList(lid) +
           '">' +
+          (L.favorite ? '<span class="lists-fav-star" aria-label="Favorite" title="Favorite">★</span>' : '') +
           escList(L.title || 'Untitled') +
           '</button></td>' +
           '<td class="lists-lib-muted">' +
@@ -20789,6 +21790,14 @@ var incomePowerState = {
     if (modal) {
       modal.classList.add('on');
       modal.setAttribute('aria-hidden', 'false');
+      var card = modal.querySelector('.list-tmpl-md');
+      if (card) {
+        card.classList.remove('list-tmpl-enter');
+        try {
+          void card.offsetWidth;
+        } catch (_) {}
+        card.classList.add('list-tmpl-enter');
+      }
     }
     renderListTemplateSuggested();
     renderListTemplateCategories();
@@ -21294,6 +22303,30 @@ var incomePowerState = {
         if (!listId || !cid) return;
         openListColumnIconPicker(listId, cid, hit);
       });
+      lTableWrap.addEventListener('click', function (e) {
+        var th = e.target.closest && e.target.closest('th[data-list-sort-col]');
+        if (!th) return;
+        if (e.target.closest && e.target.closest('.lists-th-ico-hit')) return;
+        var det = document.getElementById('lists-view-detail');
+        var listId = det && det.getAttribute('data-active-list');
+        var colId = th.getAttribute('data-list-sort-col');
+        if (!listId || !colId) return;
+        e.preventDefault();
+        updateWorkspaceListById(listId, function (X) {
+          if (!X.tableSort || String(X.tableSort.colId) !== String(colId)) {
+            X.tableSort = { colId: String(colId), dir: listsTableColumnDefaultSortDir(X, colId) };
+            return;
+          }
+          X.tableSort.dir = X.tableSort.dir === 'asc' ? 'desc' : 'asc';
+        });
+      });
+      lTableWrap.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var th = e.target.closest && e.target.closest('th[data-list-sort-col]');
+        if (!th) return;
+        e.preventDefault();
+        th.click();
+      });
     }
 
     var search = document.getElementById('list-tmpl-search');
@@ -21395,6 +22428,14 @@ var incomePowerState = {
           ev.preventDefault();
           openListDetailView(nameBtn.getAttribute('data-list-open'));
         }
+      });
+
+      listsMain.addEventListener('input', function (ev) {
+        var t = ev.target;
+        if (!t || t.id !== 'lists-lib-search') return;
+        listsLibSearchQuery = String(t.value || '');
+        listsLibSelected = {};
+        renderListsPageGrid();
       });
 
       listsMain.addEventListener('change', function (ev) {
@@ -21734,6 +22775,8 @@ var incomePowerState = {
       },
       { id: 'go-dash', label: 'Go to Dashboard', keys: '', kw: 'home performance kpi', run: function () { qaGo('dashboard'); } },
       { id: 'go-cust', label: 'Go to Customers', keys: '', kw: 'clients pipeline', run: function () { qaGo('customers'); } },
+      { id: 'go-sch', label: 'Go to Scheduling', keys: '', kw: 'calendar meetings availability', run: function () { qaGo('scheduling'); } },
+      { id: 'go-mn', label: 'Go to Meeting Notes', keys: '', kw: 'transcription notes recording ai meeting', run: function () { qaGo('meeting-notes'); } },
       { id: 'go-eml', label: 'Go to Emails', keys: '', kw: 'mail inbox drafts gmail compose', run: function () { qaGo('emails'); } },
       { id: 'go-inc', label: 'Go to Income', keys: '', kw: 'revenue invoices ar', run: function () { qaGo('revenue'); } },
       { id: 'go-exp', label: 'Go to Expenses', keys: '', kw: 'spend budget vendors', run: function () { qaGo('expenses'); } },
@@ -22494,6 +23537,7 @@ var incomePowerState = {
           dashboard: 'Business Performance',
           customers: 'Customers',
           scheduling: 'Scheduling',
+          'meeting-notes': 'Meeting Notes',
           emails: 'Emails',
           revenue: 'Income',
           expenses: 'Expenses',

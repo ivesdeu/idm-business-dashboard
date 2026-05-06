@@ -16,6 +16,7 @@ import '../legacy/supabase-auth.js';
 import '../legacy/dashboard-assistant.js';
 import { mountAdvisorReactComposer } from './advisor-react-mount.tsx';
 import { mountSchedulingApp } from './scheduling-react-mount.tsx';
+import { mountMeetingNotesPage } from './meeting-notes-react-mount.tsx';
 import { mountCrmCustomersTable } from './crm-table-react-mount.tsx';
 
 mountAuthLoginGate();
@@ -62,6 +63,23 @@ if (typeof requestAnimationFrame !== 'undefined') {
   requestAnimationFrame(mountSchedulingWhenReady);
 } else {
   setTimeout(mountSchedulingWhenReady, 0);
+}
+
+function mountMeetingNotesWhenReady() {
+  if (!document.getElementById('meeting-notes-react-root')) {
+    if (typeof requestAnimationFrame !== 'undefined') {
+      requestAnimationFrame(mountMeetingNotesWhenReady);
+    } else {
+      setTimeout(mountMeetingNotesWhenReady, 0);
+    }
+    return;
+  }
+  mountMeetingNotesPage();
+}
+if (typeof requestAnimationFrame !== 'undefined') {
+  requestAnimationFrame(mountMeetingNotesWhenReady);
+} else {
+  setTimeout(mountMeetingNotesWhenReady, 0);
 }
 
 function mountCrmTableWhenReady() {

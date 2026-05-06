@@ -483,7 +483,99 @@
     'tpl-social-media-planner': 'social',
     'tpl-company-tracker': 'company',
   };
+  var FIELD_TYPE_BY_FEATURE = {
+    status: 'status',
+    stage: 'status',
+    state: 'status',
+    due: 'date',
+    expected_close: 'date',
+    date: 'date',
+    dates: 'date',
+    created_time: 'date',
+    last_updated: 'date',
+    updated_at: 'date',
+    deal_value: 'currency',
+    budget: 'currency',
+    arr: 'currency',
+    progress: 'number',
+    effort: 'number',
+    upvote: 'number',
+    days_since: 'number',
+    days_until: 'number',
+    capacity: 'number',
+    email: 'email',
+    phone: 'phone',
+    url: 'url',
+    owner: 'person',
+    assignee: 'person',
+    account_owner: 'person',
+    created_by: 'person',
+    decision_maker: 'person',
+    last_edited: 'person',
+    reviewers: 'person',
+    attendees: 'person',
+    priority: 'select',
+    team: 'select',
+    category: 'select',
+    ctype: 'select',
+    task_type: 'select',
+    channels: 'select',
+    format: 'select',
+    platform: 'select',
+    lead_source: 'select',
+    quarter: 'select',
+    venue: 'select',
+    markets: 'select',
+    audiences: 'select',
+    accounts: 'select',
+  };
+
+  function inferTypeFromDef(def) {
+    if (!def) return 'text';
+    var explicit = String(def.type || '').trim().toLowerCase();
+    if (explicit) return explicit;
+    var fid = String(def.featureId || '').trim().toLowerCase();
+    if (FIELD_TYPE_BY_FEATURE[fid]) return FIELD_TYPE_BY_FEATURE[fid];
+    var nm = String(def.name || '').trim().toLowerCase();
+    if (/\b(status|stage|state|health)\b/.test(nm)) return 'status';
+    if (/\b(date|due|deadline|start|end|updated|created|close)\b/.test(nm)) return 'date';
+    if (/\b(amount|arr|budget|value|price|cost|revenue)\b/.test(nm)) return 'currency';
+    if (/\b(progress|score|count|days|votes|capacity|effort)\b/.test(nm)) return 'number';
+    if (/\bemail\b/.test(nm)) return 'email';
+    if (/\bphone|mobile|tel\b/.test(nm)) return 'phone';
+    if (/\burl|link|website\b/.test(nm)) return 'url';
+    if (/\b(owner|assignee|created by|edited by|reviewer|attendee)\b/.test(nm)) return 'person';
+    if (/\b(priority|category|team|type|source|platform|format)\b/.test(nm)) return 'select';
+    return 'text';
+  }
+
+  function defaultOptionsForType(type) {
+    if (type === 'status') {
+      return [
+        { value: 'Not started', label: 'Not started' },
+        { value: 'In progress', label: 'In progress' },
+        { value: 'Done', label: 'Done' },
+      ];
+    }
+    return [];
+  }
+
   window.__BIZDASH_LIST_TEMPLATES__.forEach(function (t) {
     if (t && t.id && LIST_TPL_ICON_BY_ID[t.id]) t.iconKey = LIST_TPL_ICON_BY_ID[t.id];
+    if (!t || !Array.isArray(t.columnDefs)) return;
+    t.schemaVersion = 2;
+    if (!t.defaultViews || typeof t.defaultViews !== 'object') t.defaultViews = {};
+    if (!Array.isArray(t.defaultFilters)) t.defaultFilters = [];
+    if (!t.defaultSort || typeof t.defaultSort !== 'object') t.defaultSort = { colId: '', dir: 'asc' };
+    t.columnDefs = t.columnDefs.map(function (d) {
+      var out = Object.assign({}, d);
+      out.type = inferTypeFromDef(out);
+      if (out.required == null) out.required = false;
+      if (out.defaultValue == null) out.defaultValue = '';
+      if (out.aiEditable == null) out.aiEditable = true;
+      if (out.hidden == null) out.hidden = false;
+      if (!Array.isArray(out.options) || !out.options.length) out.options = defaultOptionsForType(out.type);
+      return out;
+    });
   });
 })();
