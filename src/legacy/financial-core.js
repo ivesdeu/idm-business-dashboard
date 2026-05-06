@@ -15990,6 +15990,17 @@ var incomePowerState = {
       normalizeLocalIdsForSupabase();
 
       if (supabase && currentUser && getCurrentOrgId() && !isDemoDashboardUser()) {
+        var remoteLists = await fetchWorkspaceListsFromSupabase();
+        var localListsForBackfill = loadWorkspaceLists();
+        if (!isScreenshotNoCloudUpload() && (!remoteLists || !remoteLists.length) && localListsForBackfill.length) {
+          await persistWorkspaceListsToSupabase(localListsForBackfill);
+          remoteLists = await fetchWorkspaceListsFromSupabase();
+        }
+        if (Array.isArray(remoteLists) && remoteLists.length) {
+          saveWorkspaceLists(remoteLists);
+          listsRemoteHydratedKey = currentWorkspaceListsHydrationKey();
+        }
+
         var remoteTxs = await fetchTransactionsFromSupabase();
         var remoteClients = await fetchClientsFromSupabase();
 
@@ -17548,6 +17559,8 @@ var incomePowerState = {
   var listsDetailSearchByListId = {};
   var listsLibUiWired = false;
   var listsUi = { selectedTplId: null, activeCat: 'content', search: '' };
+  var listsPersistTimer = null;
+  var listsRemoteHydratedKey = '';
   var workspaceUiIconsCache = {};
   var brandedNavIconsWired = false;
   var listsSbIconClickWired = false;
@@ -17596,10 +17609,94 @@ var incomePowerState = {
     }
   }
 
+  function currentWorkspaceListsHydrationKey() {
+    var org = getCurrentOrgId();
+    var uid = currentUser && currentUser.id ? String(currentUser.id) : '';
+    return org ? String(org) + '|' + uid : '';
+  }
+
+  async function fetchWorkspaceListsFromSupabase() {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
+    var orgId = getCurrentOrgId();
+    if (!supabase || !currentUser || !orgId || isDemoDashboardUser()) return null;
+    try {
+      var res = await supabase
+        .from('workspace_lists')
+        .select('list_id,payload,updated_at')
+        .eq('organization_id', orgId)
+        .order('updated_at', { ascending: false })
+        .limit(500);
+      if (res.error) {
+        var em = String(res.error.message || '').toLowerCase();
+        if (em.indexOf('workspace_lists') !== -1 || em.indexOf('could not find') !== -1 || em.indexOf('relation') !== -1) return null;
+        return null;
+      }
+      var out = [];
+      (res.data || []).forEach(function (row) {
+        if (!row || !row.payload || typeof row.payload !== 'object') return;
+        var p = JSON.parse(JSON.stringify(row.payload));
+        if (!p.id && row.list_id) p.id = String(row.list_id);
+        normalizeListForUi(p);
+        out.push(p);
+      });
+      return out;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function persistWorkspaceListsToSupabase(arr) {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
+    var orgId = getCurrentOrgId();
+    if (!supabase || !currentUser || !orgId || isDemoDashboardUser()) return;
+    var safe = Array.isArray(arr) ? arr : [];
+    try {
+      var rows = safe.map(function (L) {
+        var payload = JSON.parse(JSON.stringify(L || {}));
+        normalizeListForUi(payload);
+        return {
+          organization_id: orgId,
+          list_id: String(payload.id || ''),
+          title: String(payload.title || ''),
+          data_type: payload.dataType != null ? String(payload.dataType) : null,
+          layout: payload.layout != null ? String(payload.layout) : null,
+          payload: payload,
+          created_by: currentUser && currentUser.id ? String(currentUser.id) : null,
+          updated_at: payload.updatedAt || new Date().toISOString(),
+        };
+      }).filter(function (r) { return !!r.list_id; });
+      if (rows.length) {
+        var up = await supabase.from('workspace_lists').upsert(rows, {
+          onConflict: 'organization_id,list_id',
+        });
+        if (up.error) throw up.error;
+      }
+      var existingRes = await supabase
+        .from('workspace_lists')
+        .select('list_id')
+        .eq('organization_id', orgId)
+        .limit(1000);
+      if (!existingRes.error) {
+        var keep = {};
+        rows.forEach(function (r) { keep[r.list_id] = true; });
+        var drop = (existingRes.data || []).map(function (r) { return String(r.list_id || ''); }).filter(function (id) { return id && !keep[id]; });
+        if (drop.length) {
+          await supabase.from('workspace_lists').delete().eq('organization_id', orgId).in('list_id', drop);
+        }
+      }
+    } catch (_) {}
+  }
+
   function saveWorkspaceLists(arr) {
     try {
       localStorage.setItem(listsStorageKey(), JSON.stringify(arr || []));
     } catch (_) {}
+    if (listsPersistTimer) clearTimeout(listsPersistTimer);
+    listsPersistTimer = setTimeout(function () {
+      void persistWorkspaceListsToSupabase(arr || []);
+    }, 250);
   }
 
   function escList(s) {
@@ -22171,6 +22268,18 @@ var incomePowerState = {
   function wireListsFeature() {
     if (listsFeatureWired) return;
     listsFeatureWired = true;
+    var hydrateKey = currentWorkspaceListsHydrationKey();
+    if (hydrateKey && hydrateKey !== listsRemoteHydratedKey) {
+      void (async function () {
+        var remote = await fetchWorkspaceListsFromSupabase();
+        if (Array.isArray(remote) && remote.length) {
+          saveWorkspaceLists(remote);
+          listsRemoteHydratedKey = hydrateKey;
+          renderListsSidebar();
+          renderListsPageGrid();
+        }
+      })();
+    }
 
     var wrap = document.getElementById('lists-sb-wrap');
     var toggle = document.getElementById('lists-sb-toggle');
