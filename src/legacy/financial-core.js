@@ -10555,14 +10555,29 @@ var incomePowerState = {
     return projects.filter(function (p) { return p.clientId === clientId; }).length;
   }
 
+  function clientStatusCountsTowardAvgRevenue(c) {
+    var s = String((c && c.status) || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+    if (!s) return false;
+    return (
+      s === 'active' ||
+      s === 'inactive' ||
+      s === 'churned' ||
+      s === 'complete' ||
+      s === 'completed' ||
+      s === 'in process' ||
+      s === 'in progress' ||
+      s === 'in-process' ||
+      s === 'in-progress'
+    );
+  }
+
   function computeClientKpis() {
     var total = clients.length;
     var activeRetainers = clients.filter(clientIsRetainer).length;
-    function isClientActiveOrComplete(c) {
-      var s = String((c && c.status) || '').trim().toLowerCase();
-      return s === 'active' || s === 'complete' || s === 'completed';
-    }
-    var eligibleClients = clients.filter(isClientActiveOrComplete);
+    var eligibleClients = clients.filter(clientStatusCountsTowardAvgRevenue);
     var totalRevenue = eligibleClients.reduce(function (sum, c) {
       return sum + effectiveClientRevenue(c);
     }, 0);
@@ -15990,16 +16005,7 @@ var incomePowerState = {
       normalizeLocalIdsForSupabase();
 
       if (supabase && currentUser && getCurrentOrgId() && !isDemoDashboardUser()) {
-        var remoteLists = await fetchWorkspaceListsFromSupabase();
-        var localListsForBackfill = loadWorkspaceLists();
-        if (!isScreenshotNoCloudUpload() && (!remoteLists || !remoteLists.length) && localListsForBackfill.length) {
-          await persistWorkspaceListsToSupabase(localListsForBackfill);
-          remoteLists = await fetchWorkspaceListsFromSupabase();
-        }
-        if (Array.isArray(remoteLists) && remoteLists.length) {
-          saveWorkspaceLists(remoteLists);
-          listsRemoteHydratedKey = currentWorkspaceListsHydrationKey();
-        }
+        await hydrateWorkspaceListsFromRemote();
 
         var remoteTxs = await fetchTransactionsFromSupabase();
         var remoteClients = await fetchClientsFromSupabase();
@@ -16471,6 +16477,8 @@ var incomePowerState = {
     closeListTemplatesModal();
     closeListPreviewModal();
     closeListDetailView();
+    workspaceListsCache = null;
+    listsRemoteHydratedKey = '';
     if (listsFeatureWired) {
       renderListsSidebar();
       renderListsPageGrid();
@@ -17548,7 +17556,7 @@ var incomePowerState = {
     updateWorkspaceIconAdminUi();
   }
 
-  // ---------- Workspace lists (sidebar + templates modals; localStorage test) ----------
+  // ---------- Workspace lists (sidebar + templates modals; Supabase-backed) ----------
   var listsFeatureWired = false;
   var listsSbNewPageTargetId = null;
   var listsSbCtxWired = false;
@@ -17561,6 +17569,8 @@ var incomePowerState = {
   var listsUi = { selectedTplId: null, activeCat: 'content', search: '' };
   var listsPersistTimer = null;
   var listsRemoteHydratedKey = '';
+  var listsBackfillDoneByKey = {};
+  var workspaceListsCache = null;
   var workspaceUiIconsCache = {};
   var brandedNavIconsWired = false;
   var listsSbIconClickWired = false;
@@ -17576,37 +17586,34 @@ var incomePowerState = {
       ? window.__BIZDASH_LIST_TEMPLATES__
       : [];
 
-  function listsStorageKey() {
+  function legacyWorkspaceListsStorageKey() {
     var u = window.currentUser && window.currentUser.id ? String(window.currentUser.id) : 'guest';
     var o = window.currentOrganizationId ? String(window.currentOrganizationId) : 'noorg';
     return 'bizdash:' + u + ':' + o + ':workspace-lists:v1';
   }
 
-  function loadWorkspaceLists() {
+  function readLegacyWorkspaceListsFromLocalStorage() {
     try {
-      var raw = localStorage.getItem(listsStorageKey());
+      var raw = localStorage.getItem(legacyWorkspaceListsStorageKey());
       var arr = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(arr)) return [];
-      var dirty = false;
       arr.forEach(function (L) {
-        if (!L || typeof L !== 'object') return;
-        var snapCols = JSON.stringify(L.columns || []);
-        var snapTabs = JSON.stringify(L.previewTabs || []);
-        var snapBoard = L.boardGroupColumnId != null ? String(L.boardGroupColumnId) : '';
-        normalizeListForUi(L);
-        if (
-          snapCols !== JSON.stringify(L.columns || []) ||
-          snapTabs !== JSON.stringify(L.previewTabs || []) ||
-          snapBoard !== (L.boardGroupColumnId != null ? String(L.boardGroupColumnId) : '')
-        ) {
-          dirty = true;
-        }
+        if (L && typeof L === 'object') normalizeListForUi(L);
       });
-      if (dirty) saveWorkspaceLists(arr);
       return arr;
     } catch (_) {
       return [];
     }
+  }
+
+  function clearLegacyWorkspaceListsLocalStorage() {
+    try {
+      localStorage.removeItem(legacyWorkspaceListsStorageKey());
+    } catch (_) {}
+  }
+
+  function loadWorkspaceLists() {
+    return workspaceListsCache == null ? [] : workspaceListsCache;
   }
 
   function currentWorkspaceListsHydrationKey() {
@@ -17650,7 +17657,7 @@ var incomePowerState = {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
     var orgId = getCurrentOrgId();
-    if (!supabase || !currentUser || !orgId || isDemoDashboardUser()) return;
+    if (!supabase || !currentUser || !orgId || isDemoDashboardUser()) return false;
     var safe = Array.isArray(arr) ? arr : [];
     try {
       var rows = safe.map(function (L) {
@@ -17683,19 +17690,113 @@ var incomePowerState = {
         rows.forEach(function (r) { keep[r.list_id] = true; });
         var drop = (existingRes.data || []).map(function (r) { return String(r.list_id || ''); }).filter(function (id) { return id && !keep[id]; });
         if (drop.length) {
-          await supabase.from('workspace_lists').delete().eq('organization_id', orgId).in('list_id', drop);
+          var del = await supabase.from('workspace_lists').delete().eq('organization_id', orgId).in('list_id', drop);
+          if (del.error) throw del.error;
         }
       }
-    } catch (_) {}
+      return true;
+    } catch (err) {
+      console.error('bizdash: workspace_lists persist failed', err);
+      return false;
+    }
+  }
+
+  async function hydrateWorkspaceListsFromRemote() {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
+    var orgId = getCurrentOrgId();
+    var hydrateKey = currentWorkspaceListsHydrationKey();
+    if (!supabase || !currentUser || !orgId || isDemoDashboardUser()) {
+      if (isDemoDashboardUser() && workspaceListsCache == null) {
+        workspaceListsCache = readLegacyWorkspaceListsFromLocalStorage();
+      } else if (workspaceListsCache == null) {
+        workspaceListsCache = [];
+      }
+      listsRemoteHydratedKey = hydrateKey;
+      return workspaceListsCache || [];
+    }
+
+    var legacyLocal = readLegacyWorkspaceListsFromLocalStorage();
+    var remoteLists = await fetchWorkspaceListsFromSupabase();
+    if (remoteLists === null) {
+      console.warn(
+        'bizdash: workspace lists are not synced; apply migration supabase/migrations/20260506154000_workspace_lists.sql'
+      );
+      if (workspaceListsCache == null) {
+        workspaceListsCache = legacyLocal;
+      }
+      return workspaceListsCache || [];
+    }
+
+    var merged = mergeWorkspaceListsById(legacyLocal, remoteLists);
+    workspaceListsCache = merged;
+    listsRemoteHydratedKey = hydrateKey;
+
+    var shouldBackfill =
+      !isScreenshotNoCloudUpload() &&
+      legacyLocal.length &&
+      !listsBackfillDoneByKey[hydrateKey];
+    if (shouldBackfill) {
+      var ok = await persistWorkspaceListsToSupabase(merged);
+      listsBackfillDoneByKey[hydrateKey] = true;
+      if (ok) {
+        clearLegacyWorkspaceListsLocalStorage();
+        var remoteAfter = await fetchWorkspaceListsFromSupabase();
+        if (Array.isArray(remoteAfter)) workspaceListsCache = remoteAfter;
+      }
+    } else if (legacyLocal.length) {
+      clearLegacyWorkspaceListsLocalStorage();
+    }
+
+    return workspaceListsCache;
+  }
+
+  function mergeWorkspaceListsById(localLists, remoteLists) {
+    var out = [];
+    var byId = {};
+    (remoteLists || []).forEach(function (L) {
+      if (!L || !L.id) return;
+      var clone = JSON.parse(JSON.stringify(L));
+      normalizeListForUi(clone);
+      byId[String(clone.id)] = clone;
+      out.push(clone);
+    });
+    (localLists || []).forEach(function (L) {
+      if (!L || !L.id) return;
+      var lid = String(L.id);
+      var localClone = JSON.parse(JSON.stringify(L));
+      normalizeListForUi(localClone);
+      var remoteMatch = byId[lid];
+      if (!remoteMatch) {
+        byId[lid] = localClone;
+        out.push(localClone);
+        return;
+      }
+      var lt = localClone.updatedAt ? new Date(localClone.updatedAt).getTime() : 0;
+      var rt = remoteMatch.updatedAt ? new Date(remoteMatch.updatedAt).getTime() : 0;
+      if (lt > rt) {
+        byId[lid] = localClone;
+        for (var i = 0; i < out.length; i++) {
+          if (out[i] && String(out[i].id) === lid) {
+            out[i] = localClone;
+            break;
+          }
+        }
+      }
+    });
+    out.sort(function (a, b) {
+      var ta = a && a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      var tb = b && b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return tb - ta;
+    });
+    return out;
   }
 
   function saveWorkspaceLists(arr) {
-    try {
-      localStorage.setItem(listsStorageKey(), JSON.stringify(arr || []));
-    } catch (_) {}
+    workspaceListsCache = Array.isArray(arr) ? arr : [];
     if (listsPersistTimer) clearTimeout(listsPersistTimer);
     listsPersistTimer = setTimeout(function () {
-      void persistWorkspaceListsToSupabase(arr || []);
+      void persistWorkspaceListsToSupabase(workspaceListsCache || []);
     }, 250);
   }
 
@@ -17767,7 +17868,7 @@ var incomePowerState = {
     if (fid === 'priority' || fid === 'category' || fid === 'team' || fid === 'task_type' || fid === 'lead_source' || fid === 'platform' || fid === 'ctype' || fid === 'channels' || fid === 'audiences' || fid === 'format' || fid === 'venue' || fid === 'markets' || fid === 'quarter' || fid === 'accounts') return 'select';
     var nm = String(col.name || '').trim().toLowerCase();
     if (/\b(status|stage|state|health)\b/.test(nm)) return 'status';
-    if (/\b(date|due|deadline|start|end|updated|created|close)\b/.test(nm)) return 'date';
+    if (/\b(date|due|deadline|start|end|updated|created|close|meeting)\b/.test(nm)) return 'date';
     if (/\b(amount|arr|budget|value|price|cost|revenue)\b/.test(nm)) return 'currency';
     if (/\b(progress|score|count|days|votes|capacity|effort)\b/.test(nm)) return 'number';
     if (/\bemail\b/.test(nm)) return 'email';
@@ -19687,6 +19788,70 @@ var incomePowerState = {
     return { y: +m[1], mo: +m[2], d: +m[3] };
   }
 
+  function listsSortableDateMs(s) {
+    var raw = String(s != null ? s : '').trim();
+    if (!raw) return null;
+    var ymd = listsParseYmd(raw);
+    if (ymd) {
+      var iso = new Date(ymd.y, ymd.mo - 1, ymd.d);
+      if (!isNaN(iso.getTime())) return iso.getTime();
+    }
+    var parsed = Date.parse(raw);
+    if (!isNaN(parsed)) return parsed;
+    return null;
+  }
+
+  function listsSortableDateParts(s) {
+    var raw = String(s != null ? s : '').trim();
+    if (!raw) return null;
+    var ymd = listsParseYmd(raw);
+    if (ymd) return ymd;
+    var ms = listsSortableDateMs(raw);
+    if (ms == null) return null;
+    var d = new Date(ms);
+    if (isNaN(d.getTime())) return null;
+    return { y: d.getFullYear(), mo: d.getMonth() + 1, d: d.getDate() };
+  }
+
+  function listsFindColumnIdForSortRef(L, ref) {
+    var want = String(ref || '').trim();
+    if (!want) return '';
+    var cols = (L && L.columns) || [];
+    var i;
+    for (i = 0; i < cols.length; i++) {
+      var c = cols[i];
+      if (c && String(c.id) === want) return want;
+    }
+    var norm = listColNameNorm(want);
+    for (i = 0; i < cols.length; i++) {
+      var c2 = cols[i];
+      if (c2 && listColNameNorm(c2.name) === norm) return String(c2.id);
+    }
+    return want;
+  }
+
+  function listsResolveTableSort(L) {
+    var sort =
+      L && L.tableSort && L.tableSort.colId
+        ? L.tableSort
+        : L && L.listDefaults && L.listDefaults.sort && L.listDefaults.sort.colId
+          ? L.listDefaults.sort
+          : null;
+    if (!sort || !sort.colId) return null;
+    var colId = listsFindColumnIdForSortRef(L, sort.colId);
+    if (!colId) return null;
+    var cols = (L && L.columns) || [];
+    var hasCol = false;
+    for (var i = 0; i < cols.length; i++) {
+      if (cols[i] && String(cols[i].id) === String(colId)) {
+        hasCol = true;
+        break;
+      }
+    }
+    if (!hasCol) return null;
+    return { colId: String(colId), dir: sort.dir === 'desc' ? 'desc' : 'asc' };
+  }
+
   var listsSelectFlyout = null;
   var listsSelectFlyoutDown = null;
   var listsStatusEditPopover = null;
@@ -20855,7 +21020,7 @@ var incomePowerState = {
   function listsTableHtml(L) {
     var cols = L.columns || [];
     var rowEntries = listsDetailFilteredRowEntries(L);
-    var currentSort = L && L.tableSort && L.tableSort.colId ? { colId: String(L.tableSort.colId), dir: L.tableSort.dir === 'desc' ? 'desc' : 'asc' } : null;
+    var currentSort = listsResolveTableSort(L);
     var sortedRows = listsTableSortedRows(L, cols, currentSort, rowEntries);
     var thead =
       '<tr>' +
@@ -20931,7 +21096,7 @@ var incomePowerState = {
     for (var i = 0; i < rows.length; i++) {
       var v = rows[i] ? rows[i][colId] : '';
       var t = listsTableValueType(v, colType);
-      if (t === 'date' || t === 'number') return 'desc';
+      if (t === 'date' || listsSortableDateMs(v) != null || t === 'number') return 'desc';
       if (t === 'text') return 'asc';
     }
     return 'asc';
@@ -20958,11 +21123,11 @@ var incomePowerState = {
       if (at === 'empty' && bt !== 'empty') return 1;
       if (bt === 'empty' && at !== 'empty') return -1;
       if (at === 'date' && bt === 'date') {
-        var ad = listsParseYmd(String(av || ''));
-        var bd = listsParseYmd(String(bv || ''));
-        var ac = ad ? ad.y * 10000 + ad.mo * 100 + ad.d : -1;
-        var bc = bd ? bd.y * 10000 + bd.mo * 100 + bd.d : -1;
-        if (ac !== bc) return ac > bc ? dirSign : -dirSign;
+        var ams = listsSortableDateMs(av);
+        var bms = listsSortableDateMs(bv);
+        if (ams != null && bms != null && ams !== bms) return ams > bms ? dirSign : -dirSign;
+        if (ams != null && bms == null) return -dirSign;
+        if (ams == null && bms != null) return dirSign;
       } else if (at === 'number' && bt === 'number') {
         var an = Number(String(av != null ? av : '').replace(/[\$,]/g, '').replace(/%$/, ''));
         var bn = Number(String(bv != null ? bv : '').replace(/[\$,]/g, '').replace(/%$/, ''));
@@ -21154,7 +21319,7 @@ var incomePowerState = {
       entries.forEach(function (entry) {
         var r = entry.row;
         var ri = entry.rowIdx;
-        var p = listsParseYmd(r[dateCol]);
+        var p = listsSortableDateParts(r[dateCol]);
         if (p && p.y === y && p.mo === mo && p.d === i) {
           items.push(
             '<div class="lists-cal-item-row">' +
@@ -21399,7 +21564,7 @@ var incomePowerState = {
     var fid = String(c.featureId || '').toLowerCase();
     if (fid === 'date') return true;
     var nm = String(c.name || '').trim().toLowerCase();
-    return /\b(date|due|deadline|start|end)\b/.test(nm);
+    return /\b(date|due|deadline|start|end|meeting)\b/.test(nm);
   }
 
   function ensureListCalendarViewForDateColumn(L) {
@@ -21482,6 +21647,16 @@ var incomePowerState = {
         if (tplMeta.supportsCalendarView) L.supportsCalendarView = true;
         if (!L.boardGroupColumnId && tplMeta.boardGroupColumnId) L.boardGroupColumnId = tplMeta.boardGroupColumnId;
         if (!L.calendarDateColumnId && tplMeta.calendarDateColumnId) L.calendarDateColumnId = tplMeta.calendarDateColumnId;
+        if (
+          tplMeta.defaultSort &&
+          tplMeta.defaultSort.colId &&
+          (!L.listDefaults.sort || !L.listDefaults.sort.colId)
+        ) {
+          L.listDefaults.sort = {
+            colId: String(tplMeta.defaultSort.colId),
+            dir: tplMeta.defaultSort.dir === 'desc' ? 'desc' : 'asc',
+          };
+        }
         if (Array.isArray(tplMeta.previewTabs) && tplMeta.previewTabs.length) {
           var curTabs = Array.isArray(L.previewTabs) && L.previewTabs.length ? L.previewTabs : [];
           var tabById = {};
@@ -22271,13 +22446,9 @@ var incomePowerState = {
     var hydrateKey = currentWorkspaceListsHydrationKey();
     if (hydrateKey && hydrateKey !== listsRemoteHydratedKey) {
       void (async function () {
-        var remote = await fetchWorkspaceListsFromSupabase();
-        if (Array.isArray(remote) && remote.length) {
-          saveWorkspaceLists(remote);
-          listsRemoteHydratedKey = hydrateKey;
-          renderListsSidebar();
-          renderListsPageGrid();
-        }
+        await hydrateWorkspaceListsFromRemote();
+        renderListsSidebar();
+        renderListsPageGrid();
       })();
     }
 
@@ -22422,11 +22593,17 @@ var incomePowerState = {
         if (!listId || !colId) return;
         e.preventDefault();
         updateWorkspaceListById(listId, function (X) {
+          if (!X.listDefaults || typeof X.listDefaults !== 'object') X.listDefaults = {};
+          if (!X.listDefaults.sort || typeof X.listDefaults.sort !== 'object') X.listDefaults.sort = { colId: '', dir: 'asc' };
           if (!X.tableSort || String(X.tableSort.colId) !== String(colId)) {
-            X.tableSort = { colId: String(colId), dir: listsTableColumnDefaultSortDir(X, colId) };
+            var nextDir = listsTableColumnDefaultSortDir(X, colId);
+            X.tableSort = { colId: String(colId), dir: nextDir };
+            X.listDefaults.sort = { colId: String(colId), dir: nextDir };
             return;
           }
-          X.tableSort.dir = X.tableSort.dir === 'asc' ? 'desc' : 'asc';
+          var flipped = X.tableSort.dir === 'asc' ? 'desc' : 'asc';
+          X.tableSort.dir = flipped;
+          X.listDefaults.sort = { colId: String(colId), dir: flipped };
         });
       });
       lTableWrap.addEventListener('keydown', function (e) {

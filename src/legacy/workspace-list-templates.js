@@ -181,6 +181,7 @@
       emoji: '📅',
       title: 'Meeting Notes',
       dataType: 'Meetings',
+      defaultSort: { colId: 'c2', dir: 'desc' },
       desc: 'Turn meetings into action.',
       tags: [{ label: 'Operations', tone: 'blue' }],
       suggested: false,
@@ -538,7 +539,7 @@
     if (FIELD_TYPE_BY_FEATURE[fid]) return FIELD_TYPE_BY_FEATURE[fid];
     var nm = String(def.name || '').trim().toLowerCase();
     if (/\b(status|stage|state|health)\b/.test(nm)) return 'status';
-    if (/\b(date|due|deadline|start|end|updated|created|close)\b/.test(nm)) return 'date';
+    if (/\b(date|due|deadline|start|end|updated|created|close|meeting)\b/.test(nm)) return 'date';
     if (/\b(amount|arr|budget|value|price|cost|revenue)\b/.test(nm)) return 'currency';
     if (/\b(progress|score|count|days|votes|capacity|effort)\b/.test(nm)) return 'number';
     if (/\bemail\b/.test(nm)) return 'email';
