@@ -8,7 +8,20 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { serveWithEdgeRequestLogging } from "../_shared/withEdgeRequestLogging.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
-type AdvisorTask = "daily_brief" | "followup_draft" | "variance_explain" | "weekly_recap" | "general";
+type AdvisorTask =
+  | "daily_brief"
+  | "followup_draft"
+  | "variance_explain"
+  | "weekly_recap"
+  | "meeting_summary"
+  | "general";
+
+type MeetingSummaryPayload = {
+  summary: string;
+  action_items: Array<{ task: string; owner: string; due_date: string | null }>;
+  key_decisions: string[];
+  topics: string[];
+};
 
 type RequestBody = {
   organizationId?: string;
@@ -168,8 +181,91 @@ function sanitizeAdvisorContextAndConstraints(body: RequestBody): {
 
 function normalizeTask(task?: string): AdvisorTask {
   if (!task) return "general";
-  if (task === "daily_brief" || task === "followup_draft" || task === "variance_explain" || task === "weekly_recap") return task;
+  if (
+    task === "daily_brief" ||
+    task === "followup_draft" ||
+    task === "variance_explain" ||
+    task === "weekly_recap" ||
+    task === "meeting_summary"
+  ) {
+    return task;
+  }
   return "general";
+}
+
+function parseMeetingSummaryPayload(value: unknown): MeetingSummaryPayload | null {
+  if (!isRecord(value)) return null;
+  const summary = clampText(value.summary, 8000);
+  if (!summary) return null;
+  const action_items: MeetingSummaryPayload["action_items"] = [];
+  if (Array.isArray(value.action_items)) {
+    for (const raw of value.action_items.slice(0, 40)) {
+      if (!isRecord(raw)) continue;
+      const task = clampText(raw.task, 500);
+      if (!task) continue;
+      const owner = clampText(raw.owner, 200);
+      const dueRaw = raw.due_date;
+      const due_date =
+        dueRaw === null || dueRaw === undefined
+          ? null
+          : clampText(dueRaw, 32) || null;
+      action_items.push({ task, owner, due_date });
+    }
+  }
+  const key_decisions = Array.isArray(value.key_decisions)
+    ? value.key_decisions.map((x) => clampText(x, 500)).filter(Boolean).slice(0, 30)
+    : [];
+  const topics = Array.isArray(value.topics)
+    ? value.topics.map((x) => clampText(x, 120)).filter(Boolean).slice(0, 20)
+    : [];
+  return { summary, action_items, key_decisions, topics };
+}
+
+function extractJsonObjectFromText(rawText: string): Record<string, unknown> | null {
+  const trimmed = rawText.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) return null;
+    try {
+      const parsed = JSON.parse(trimmed.slice(firstBrace, lastBrace + 1)) as unknown;
+      return isRecord(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function meetingSummaryStub(message: string): MeetingSummaryPayload {
+  const excerpt = clampText(message, 400);
+  return {
+    summary:
+      "Meeting summary (stub — set ANTHROPIC_API_KEY for live AI). " +
+      (excerpt ? `Based on: ${excerpt}` : "Add transcript or notes and try again."),
+    action_items: [],
+    key_decisions: [],
+    topics: ["Meeting notes"],
+  };
+}
+
+function meetingSummaryResponse(req: Request, payload: MeetingSummaryPayload, meta: Record<string, unknown>) {
+  return jsonResponse(req, 200, {
+    meetingSummary: payload,
+    draft: JSON.stringify(payload),
+    title: "Meeting summary",
+    bullets: [],
+    actions: [],
+    crmProposal: null,
+    taskProposal: null,
+    clientNoteProposal: null,
+    workspaceListProposal: null,
+    workspaceListEditProposal: null,
+    meta,
+  });
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -546,9 +642,52 @@ function taskInstruction(task: AdvisorTask) {
       return "Explain variance with likely drivers and one concrete corrective action.";
     case "weekly_recap":
       return "Generate a concise weekly recap with wins, risks, and next priorities.";
+    case "meeting_summary":
+      return "Extract structured meeting intelligence from the transcript and notes.";
     default:
       return "Provide a concise advisor response with actionable guidance.";
   }
+}
+
+function meetingAnthropicPrompts(message: string) {
+  const systemPrompt =
+    "You are a meeting intelligence assistant embedded in a professional CRM. " +
+    "Return ONLY valid JSON (no markdown fences, no commentary). " +
+    "Required keys: summary (string, 3-4 sentences, past tense), " +
+    "action_items (array of { task, owner, due_date } where due_date is YYYY-MM-DD or null), " +
+    "key_decisions (array of strings), topics (array of short topic labels, 3-6 words each).";
+  return { systemPrompt, userPrompt: message };
+}
+
+async function callAnthropicMeetingSummary(anthropicApiKey: string, message: string): Promise<MeetingSummaryPayload> {
+  const { systemPrompt, userPrompt } = meetingAnthropicPrompts(message);
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": anthropicApiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    }),
+  });
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(`Anthropic error ${resp.status}: ${txt.slice(0, 500)}`);
+  }
+  const data = await resp.json();
+  const contentArr = Array.isArray(data?.content) ? data.content : [];
+  const textPart = contentArr.find((p: { type?: string }) => p && p.type === "text");
+  const rawText = String(textPart?.text || "").trim();
+  if (!rawText) throw new Error("Anthropic returned empty content.");
+  const parsed = extractJsonObjectFromText(rawText);
+  const meeting = parsed ? parseMeetingSummaryPayload(parsed) : null;
+  if (!meeting) throw new Error("Anthropic response is not valid meeting summary JSON.");
+  return meeting;
 }
 
 function ga4Configured() {
@@ -874,8 +1013,33 @@ serveWithEdgeRequestLogging("ai-assistant", async (req, _ctx) => {
   const context = body.context && typeof body.context === "object" ? body.context : {};
   const constraints = body.constraints && typeof body.constraints === "object" ? body.constraints : {};
   if (!anthropicApiKey) {
+    if (task === "meeting_summary") {
+      return meetingSummaryResponse(req, meetingSummaryStub(message), {
+        provider: "stub",
+        apiConnected: false,
+      });
+    }
     const stub = buildStubPayload(task, message, context);
     return jsonResponse(req, 200, stub);
+  }
+
+  if (task === "meeting_summary") {
+    if (body.stream === true) {
+      return jsonResponse(req, 400, { error: "meeting_summary does not support stream." });
+    }
+    try {
+      const meeting = await callAnthropicMeetingSummary(anthropicApiKey, message);
+      return meetingSummaryResponse(req, meeting, { provider: "anthropic", apiConnected: true });
+    } catch (err) {
+      const details = err instanceof Error ? err.message : "Unknown Anthropic error";
+      return meetingSummaryResponse(req, meetingSummaryStub(message), {
+        provider: "stub",
+        apiConnected: true,
+        degraded: true,
+        error: "Provider call failed; returned stub meeting summary.",
+        details,
+      });
+    }
   }
 
   if (body.stream === true) {

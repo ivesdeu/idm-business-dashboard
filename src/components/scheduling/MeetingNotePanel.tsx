@@ -48,6 +48,41 @@ function safeJsonParse<T> (raw: string): T | null {
   }
 }
 
+function parseMeetingSummaryFromAdvisorPayload (payload: unknown): AdvisorPayload | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const body = payload as {
+    meetingSummary?: unknown;
+    draft?: unknown;
+    error?: unknown;
+    details?: unknown;
+  };
+  if (body.meetingSummary && typeof body.meetingSummary === 'object') {
+    const ms = body.meetingSummary as AdvisorPayload;
+    if (typeof ms.summary === 'string' && Array.isArray (ms.action_items) && Array.isArray (ms.topics)) {
+      return ms;
+    }
+  }
+  const draft =
+    typeof body.draft === 'string'
+      ? body.draft.trim ()
+      : '';
+  if (draft) {
+    const direct = safeJsonParse<AdvisorPayload> (draft);
+    if (direct && typeof direct.summary === 'string' && Array.isArray (direct.action_items) && Array.isArray (direct.topics)) {
+      return direct;
+    }
+    const firstBrace = draft.indexOf ('{');
+    const lastBrace = draft.lastIndexOf ('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const sliced = safeJsonParse<AdvisorPayload> (draft.slice (firstBrace, lastBrace + 1));
+      if (sliced && typeof sliced.summary === 'string' && Array.isArray (sliced.action_items) && Array.isArray (sliced.topics)) {
+        return sliced;
+      }
+    }
+  }
+  return null;
+}
+
 async function callAdvisorForMeetingSummary (
   supabase: SupabaseClient,
   organizationId: string,
@@ -65,23 +100,15 @@ async function callAdvisorForMeetingSummary (
     ? String ((window as unknown as { __bizdashSupabaseAnonKey?: string }).__bizdashSupabaseAnonKey || '').trim ()
     : '';
   if (!accessToken || !base || !anon) {
-    throw new Error ('Sorry, we could not complete your request.');
+    throw new Error ('Sign in again to use Advisor summarization.');
   }
 
-  const systemPrompt =
-    'You are a meeting intelligence assistant embedded in a professional CRM. You receive transcripts from recorded meetings and extract structured insights. Respond only in valid JSON. No markdown, no explanation.';
-  const userPrompt =
+  const message =
     `Meeting: ${title}\n` +
-    `Attendees: ${attendees}\n` +
-    `Transcript:\n${transcript}\n\n` +
-    `Manual notes from user:\n${manualNotes}\n\n` +
-    'Return a JSON object with:\n' +
-    '- summary: string (3-4 sentence executive summary written in past tense)\n' +
-    '- action_items: array of { task: string, owner: string, due_date: string or null }\n' +
-    '- key_decisions: array of strings\n' +
-    '- topics: array of strings (main subjects discussed, 3-6 words each)';
+    `Attendees: ${attendees || '(not specified)'}\n` +
+    `Transcript:\n${transcript || '(empty)'}\n\n` +
+    `Manual notes from user:\n${manualNotes || '(empty)'}`;
 
-  const message = `${systemPrompt}\n\n${userPrompt}`;
   const res = await fetch (`${base}/functions/v1/ai-assistant`, {
     method: 'POST',
     headers: {
@@ -91,23 +118,34 @@ async function callAdvisorForMeetingSummary (
     },
     body: JSON.stringify ({
       organizationId,
-      task: 'general',
+      task: 'meeting_summary',
       message,
-      constraints: { output: 'json_only_meeting_intelligence' },
     }),
   });
   const payload = await res.json ().catch (() => ({}));
-  if (!res.ok) throw new Error ('Sorry, we could not complete your request.');
+  if (!res.ok) {
+    const errMsg =
+      typeof (payload as { error?: unknown }).error === 'string'
+        ? String ((payload as { error: string }).error)
+        : `Advisor request failed (${res.status}).`;
+    throw new Error (errMsg);
+  }
 
-  const candidate =
-    typeof (payload as { draft?: unknown }).draft === 'string'
-      ? String ((payload as { draft: string }).draft || '')
-      : typeof (payload as { bullets?: unknown }).bullets?.[0] === 'string'
-        ? String ((payload as { bullets: string[] }).bullets.join ('\n') || '')
+  const parsed = parseMeetingSummaryFromAdvisorPayload (payload);
+  if (!parsed) {
+    const degraded =
+      typeof (payload as { error?: unknown }).error === 'string'
+        ? String ((payload as { error: string }).error)
         : '';
-  const parsed = safeJsonParse<AdvisorPayload> (candidate.trim ());
-  if (!parsed || typeof parsed.summary !== 'string' || !Array.isArray (parsed.action_items) || !Array.isArray (parsed.topics)) {
-    throw new Error ('Sorry, we could not complete your request.');
+    const details =
+      typeof (payload as { details?: unknown }).details === 'string'
+        ? String ((payload as { details: string }).details)
+        : '';
+    throw new Error (
+      degraded || details
+        ? `${degraded}${details ? ` (${details})` : ''}`
+        : 'Could not parse meeting summary from Advisor. Try again or add more transcript text.',
+    );
   }
   return parsed;
 }
@@ -295,7 +333,14 @@ export function MeetingNotePanel ({
   }, [rawNotes, interimText]);
 
   const summarizeWithAdvisor = useCallback (async () => {
-    if (!supabase || !organizationId || !note) return;
+    if (!supabase || !organizationId || !note) {
+      setAdvisorError ('Workspace is still loading. Wait a moment and try again.');
+      return;
+    }
+    if (!rawNotes.trim () && !manualNotes.trim ()) {
+      setAdvisorError ('Add a transcript or notes before summarizing.');
+      return;
+    }
     setSummarizing (true);
     setAdvisorError (null);
     try {
@@ -428,16 +473,16 @@ export function MeetingNotePanel ({
               </div>
             )}
 
-            {(transcriptionStatus === 'stopped' || rawNotes.trim ()) ? (
+            {(transcriptionStatus === 'stopped' || rawNotes.trim () || manualNotes.trim ()) ? (
               <div className="rounded-xl border border-[var(--border)] bg-[var(--bg2)] p-3">
                 <button
                   type="button"
-                  className="btn btn-p inline-flex items-center gap-2"
+                  className="btn btn-p inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => void summarizeWithAdvisor ()}
-                  disabled={summarizing}
+                  disabled={summarizing || !organizationId}
                 >
                   <Sparkles className="h-4 w-4" aria-hidden />
-                  {hasSummarized ? 'Regenerate' : 'Summarize with Advisor'}
+                  {summarizing ? 'Summarizing…' : hasSummarized ? 'Regenerate' : 'Summarize with Advisor'}
                 </button>
                 {advisorError ? <p className="mt-2 text-xs text-[var(--red)]">{advisorError}</p> : null}
               </div>
