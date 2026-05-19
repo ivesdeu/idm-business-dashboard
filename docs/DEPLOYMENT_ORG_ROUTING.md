@@ -14,7 +14,7 @@ The dashboard expects URLs like `https://your-host/your-org-slug/` so the first 
 
 Netlify serves real files (e.g. `/assets/...`) when they exist, then falls back to `index.html` for unknown paths. [`netlify.toml`](../netlify.toml) adds long-lived `Cache-Control` for `/fonts/*`; put **more specific redirects or rewrites before** the catch-all `/* → /index.html` if you later add same-origin APIs or Functions so those paths are not swallowed by the SPA rule.
 
-[`public/_headers`](../public/_headers) is copied next to `_redirects` in `dist/` and sets baseline security headers plus **`Content-Security-Policy-Report-Only`** (same policy shape as a future enforcing CSP). Watch the browser console or a report collector for violations, tighten `connect-src` / `script-src` as needed, then duplicate the policy as **`Content-Security-Policy`** when noise is low. The app relies on **`'unsafe-inline'`** for large inline scripts/styles in `index.html`; removing that requires nonces or extracting bundles.
+[`public/_headers`](../public/_headers) is copied next to `_redirects` in `dist/` and sets baseline security headers plus **`Content-Security-Policy-Report-Only`** (same policy shape as a future enforcing CSP). Watch the browser console or a report collector for violations, tighten `connect-src` / `script-src` as needed, then duplicate the policy as **`Content-Security-Policy`** when noise is low. Meeting Notes realtime transcription requires `wss://streaming.assemblyai.com` (and `https://streaming.assemblyai.com`) in `connect-src`; `microphone=(self)` in Permissions-Policy for `getUserMedia`. The app relies on **`'unsafe-inline'`** for large inline scripts/styles in `index.html`; removing that requires nonces or extracting bundles.
 
 ## Vercel
 
