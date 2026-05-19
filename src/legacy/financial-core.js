@@ -5219,6 +5219,20 @@ import {
     panel.addEventListener('transitionend', onDone);
   }
 
+  function scrollAppContentToTop() {
+    var main = document.querySelector('#app-shell .main');
+    if (main) main.scrollTop = 0;
+    var settingsMain = document.querySelector('#page-settings .settings-main');
+    if (settingsMain) settingsMain.scrollTop = 0;
+    var listWrap = document.getElementById('lists-detail-table-wrap');
+    if (listWrap) listWrap.scrollTop = 0;
+    try {
+      window.scrollTo(0, 0);
+    } catch (_) {}
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  }
+
   function stagePageMotion(container) {
     if (!container || prefersReducedMotion()) return;
     /** Advisor: stagger header → transcript → composer (same motion tokens as other pages). */
@@ -7588,6 +7602,7 @@ var incomePowerState = {
       if (panelId !== 'connections') {
         bizdashCloseConnDetailSubmodal();
       }
+      scrollAppContentToTop();
     }
 
     navItems.forEach(function (btn) {
@@ -16479,6 +16494,9 @@ var incomePowerState = {
     closeListDetailView();
     workspaceListsCache = null;
     listsRemoteHydratedKey = '';
+    listsRemoteTableReady = false;
+    listsSyncState = { remoteUnavailable: false, lastPersistError: '' };
+    listsHydratePromise = null;
     if (listsFeatureWired) {
       renderListsSidebar();
       renderListsPageGrid();
@@ -17569,8 +17587,12 @@ var incomePowerState = {
   var listsUi = { selectedTplId: null, activeCat: 'content', search: '' };
   var listsPersistTimer = null;
   var listsRemoteHydratedKey = '';
+  var lastOpenListDetailId = '';
   var listsBackfillDoneByKey = {};
   var workspaceListsCache = null;
+  var listsRemoteTableReady = false;
+  var listsSyncState = { remoteUnavailable: false, lastPersistError: '' };
+  var listsHydratePromise = null;
   var workspaceUiIconsCache = {};
   var brandedNavIconsWired = false;
   var listsSbIconClickWired = false;
@@ -17610,6 +17632,69 @@ var incomePowerState = {
     try {
       localStorage.removeItem(legacyWorkspaceListsStorageKey());
     } catch (_) {}
+  }
+
+  function listsBackfillDoneStorageKey() {
+    var hydrateKey = currentWorkspaceListsHydrationKey();
+    return hydrateKey ? 'bizdash:lists-backfill-done:' + hydrateKey : '';
+  }
+
+  function listsBackfillMarkedDone() {
+    var k = listsBackfillDoneStorageKey();
+    if (!k) return false;
+    try {
+      return localStorage.getItem(k) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function markListsBackfillDone() {
+    var k = listsBackfillDoneStorageKey();
+    if (!k) return;
+    try {
+      localStorage.setItem(k, '1');
+    } catch (_) {}
+    var hydrateKey = currentWorkspaceListsHydrationKey();
+    if (hydrateKey) listsBackfillDoneByKey[hydrateKey] = true;
+  }
+
+  function workspaceListByIdMap(lists) {
+    var m = {};
+    (lists || []).forEach(function (L) {
+      if (L && L.id) m[String(L.id)] = L;
+    });
+    return m;
+  }
+
+  function workspaceListsNeedRemoteSync(merged, remoteLists) {
+    if (!Array.isArray(merged) || !merged.length) return false;
+    var remoteById = workspaceListByIdMap(remoteLists);
+    for (var i = 0; i < merged.length; i++) {
+      var L = merged[i];
+      if (!L || !L.id) continue;
+      var lid = String(L.id);
+      var remote = remoteById[lid];
+      if (!remote) return true;
+      var lt = L.updatedAt ? new Date(L.updatedAt).getTime() : 0;
+      var rt = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
+      if (lt > rt) return true;
+    }
+    return false;
+  }
+
+  async function syncMergedWorkspaceListsToRemote(merged, remoteLists) {
+    if (isScreenshotNoCloudUpload() || isDemoDashboardUser()) return { merged: merged, synced: false };
+    if (!workspaceListsNeedRemoteSync(merged, remoteLists)) return { merged: merged, synced: false };
+    var ok = await persistWorkspaceListsToSupabase(merged);
+    if (!ok) return { merged: merged, synced: false };
+    clearLegacyWorkspaceListsLocalStorage();
+    markListsBackfillDone();
+    var remoteAfter = await fetchWorkspaceListsFromSupabase();
+    if (Array.isArray(remoteAfter) && remoteAfter.length) {
+      return { merged: mergeWorkspaceListsById(merged, remoteAfter), synced: true };
+    }
+    return { merged: merged, synced: true };
   }
 
   function loadWorkspaceLists() {
@@ -17653,6 +17738,99 @@ var incomePowerState = {
     }
   }
 
+  function workspaceListRowFromPayload(L, orgId) {
+    var payload = JSON.parse(JSON.stringify(L || {}));
+    normalizeListForUi(payload);
+    return {
+      organization_id: orgId,
+      list_id: String(payload.id || ''),
+      title: String(payload.title || ''),
+      data_type: payload.dataType != null ? String(payload.dataType) : null,
+      layout: payload.layout != null ? String(payload.layout) : null,
+      payload: payload,
+      created_by: currentUser && currentUser.id ? String(currentUser.id) : null,
+      updated_at: payload.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  async function persistWorkspaceList(L) {
+    supabase = window.supabaseClient || supabase;
+    currentUser = window.currentUser || currentUser;
+    var orgId = getCurrentOrgId();
+    if (!L || !L.id) return { ok: false, error: 'Invalid list.' };
+    if (isDemoDashboardUser()) return { ok: true, synced: false };
+    if (!supabase || !currentUser || !orgId) {
+      return { ok: false, error: 'Sign in to sync lists to the cloud.' };
+    }
+    try {
+      var row = workspaceListRowFromPayload(L, orgId);
+      if (!row.list_id) return { ok: false, error: 'List is missing an id.' };
+      var up = await supabase.from('workspace_lists').upsert([row], {
+        onConflict: 'organization_id,list_id',
+      });
+      if (up.error) throw up.error;
+      listsRemoteTableReady = true;
+      listsSyncState.remoteUnavailable = false;
+      listsSyncState.lastPersistError = '';
+      return { ok: true, synced: true };
+    } catch (err) {
+      var msg = err && err.message ? String(err.message) : 'Database sync failed';
+      console.error('bizdash: workspace_lists persist list failed', err);
+      listsSyncState.lastPersistError = msg;
+      return { ok: false, error: msg };
+    }
+  }
+
+  function listsNotifyPersistFailure(message) {
+    var msg =
+      message && String(message).trim()
+        ? String(message).trim()
+        : 'List saved in this session only — database sync failed.';
+    if (typeof window.alert === 'function') {
+      window.alert(msg);
+    }
+  }
+
+  function renderListsSyncBanner() {
+    var host = document.getElementById('lists-sync-banner');
+    if (!host) return;
+    if (isDemoDashboardUser()) {
+      host.style.display = 'none';
+      host.innerHTML = '';
+      return;
+    }
+    if (!listsSyncState.remoteUnavailable && !listsSyncState.lastPersistError) {
+      host.style.display = 'none';
+      host.innerHTML = '';
+      return;
+    }
+    var text = listsSyncState.lastPersistError
+      ? 'List sync issue: ' + escList(listsSyncState.lastPersistError)
+      : 'Lists are not synced to the cloud. Apply migration <code>20260506154000_workspace_lists.sql</code> on your Supabase project, then refresh.';
+    host.innerHTML = text;
+    host.style.display = 'block';
+  }
+
+  function ensureListsHydrated() {
+    var hydrateKey = currentWorkspaceListsHydrationKey();
+    if (readLegacyWorkspaceListsFromLocalStorage().length) {
+      listsRemoteHydratedKey = '';
+    }
+    if (hydrateKey && hydrateKey === listsRemoteHydratedKey && workspaceListsCache != null) {
+      return Promise.resolve(workspaceListsCache);
+    }
+    if (listsHydratePromise) return listsHydratePromise;
+    listsHydratePromise = hydrateWorkspaceListsFromRemote()
+      .then(function (lists) {
+        renderListsSyncBanner();
+        return lists;
+      })
+      .finally(function () {
+        listsHydratePromise = null;
+      });
+    return listsHydratePromise;
+  }
+
   async function persistWorkspaceListsToSupabase(arr) {
     supabase = window.supabaseClient || supabase;
     currentUser = window.currentUser || currentUser;
@@ -17660,20 +17838,13 @@ var incomePowerState = {
     if (!supabase || !currentUser || !orgId || isDemoDashboardUser()) return false;
     var safe = Array.isArray(arr) ? arr : [];
     try {
-      var rows = safe.map(function (L) {
-        var payload = JSON.parse(JSON.stringify(L || {}));
-        normalizeListForUi(payload);
-        return {
-          organization_id: orgId,
-          list_id: String(payload.id || ''),
-          title: String(payload.title || ''),
-          data_type: payload.dataType != null ? String(payload.dataType) : null,
-          layout: payload.layout != null ? String(payload.layout) : null,
-          payload: payload,
-          created_by: currentUser && currentUser.id ? String(currentUser.id) : null,
-          updated_at: payload.updatedAt || new Date().toISOString(),
-        };
-      }).filter(function (r) { return !!r.list_id; });
+      var rows = safe
+        .map(function (L) {
+          return workspaceListRowFromPayload(L, orgId);
+        })
+        .filter(function (r) {
+          return !!r.list_id;
+        });
       if (rows.length) {
         var up = await supabase.from('workspace_lists').upsert(rows, {
           onConflict: 'organization_id,list_id',
@@ -17694,9 +17865,12 @@ var incomePowerState = {
           if (del.error) throw del.error;
         }
       }
+      listsRemoteTableReady = true;
+      listsSyncState.remoteUnavailable = false;
       return true;
     } catch (err) {
       console.error('bizdash: workspace_lists persist failed', err);
+      listsSyncState.lastPersistError = err && err.message ? String(err.message) : 'Database sync failed';
       return false;
     }
   }
@@ -17717,35 +17891,38 @@ var incomePowerState = {
     }
 
     var legacyLocal = readLegacyWorkspaceListsFromLocalStorage();
+    var cacheSnapshot =
+      workspaceListsCache && workspaceListsCache.length
+        ? workspaceListsCache.map(function (L) {
+            return JSON.parse(JSON.stringify(L));
+          })
+        : [];
     var remoteLists = await fetchWorkspaceListsFromSupabase();
     if (remoteLists === null) {
+      listsSyncState.remoteUnavailable = true;
       console.warn(
         'bizdash: workspace lists are not synced; apply migration supabase/migrations/20260506154000_workspace_lists.sql'
       );
       if (workspaceListsCache == null) {
-        workspaceListsCache = legacyLocal;
+        var localForOffline = mergeWorkspaceListsById(legacyLocal, cacheSnapshot);
+        workspaceListsCache = isDemoDashboardUser() ? localForOffline : localForOffline.length ? localForOffline : [];
       }
+      listsRemoteHydratedKey = hydrateKey;
+      renderListsSyncBanner();
       return workspaceListsCache || [];
     }
 
-    var merged = mergeWorkspaceListsById(legacyLocal, remoteLists);
-    workspaceListsCache = merged;
+    listsSyncState.remoteUnavailable = false;
+    listsRemoteTableReady = true;
+    var localForMerge = mergeWorkspaceListsById(legacyLocal, cacheSnapshot);
+    var merged = mergeWorkspaceListsById(localForMerge, remoteLists);
+    var syncResult = await syncMergedWorkspaceListsToRemote(merged, remoteLists);
+    workspaceListsCache = syncResult.merged;
     listsRemoteHydratedKey = hydrateKey;
-
-    var shouldBackfill =
-      !isScreenshotNoCloudUpload() &&
-      legacyLocal.length &&
-      !listsBackfillDoneByKey[hydrateKey];
-    if (shouldBackfill) {
-      var ok = await persistWorkspaceListsToSupabase(merged);
-      listsBackfillDoneByKey[hydrateKey] = true;
-      if (ok) {
-        clearLegacyWorkspaceListsLocalStorage();
-        var remoteAfter = await fetchWorkspaceListsFromSupabase();
-        if (Array.isArray(remoteAfter)) workspaceListsCache = remoteAfter;
-      }
-    } else if (legacyLocal.length) {
-      clearLegacyWorkspaceListsLocalStorage();
+    if (syncResult.synced) {
+      listsSyncState.lastPersistError = '';
+      renderListsSidebar();
+      renderListsPageGrid();
     }
 
     return workspaceListsCache;
@@ -18576,10 +18753,16 @@ var incomePowerState = {
     if (L.supportsCalendarView && !L.calendarDateColumnId) {
       L.calendarDateColumnId = colIds.length > 1 ? colIds[1] : colIds[0];
     }
-    pushWorkspaceList(L);
-    window.nav('lists', document.getElementById('lists-sb-browse'));
-    openListDetailView(L.id);
-    return { ok: true, listId: L.id };
+    return pushWorkspaceList(L).then(function (persistResult) {
+      window.nav('lists', document.getElementById('lists-sb-browse'));
+      openListDetailView(L.id);
+      return {
+        ok: true,
+        listId: L.id,
+        synced: !!(persistResult && persistResult.synced),
+        error: persistResult && persistResult.error ? persistResult.error : null,
+      };
+    });
   };
 
   function listColNameNorm(s) {
@@ -18880,12 +19063,28 @@ var incomePowerState = {
     return out;
   };
 
-  function pushWorkspaceList(L) {
-    var arr = loadWorkspaceLists();
-    arr.unshift(L);
-    saveWorkspaceLists(arr);
+  async function pushWorkspaceList(L) {
+    var arr = loadWorkspaceLists().slice();
+    if (L && L.id) {
+      normalizeListForUi(L);
+      L.updatedAt = new Date().toISOString();
+      arr.unshift(L);
+    }
+    workspaceListsCache = arr;
+    var persistResult = { ok: true, synced: false };
+    if (L && L.id && !isDemoDashboardUser()) {
+      persistResult = await persistWorkspaceList(L);
+      if (!persistResult.ok) {
+        listsNotifyPersistFailure(persistResult.error);
+      }
+    }
+    if (listsPersistTimer) clearTimeout(listsPersistTimer);
+    listsPersistTimer = setTimeout(function () {
+      void persistWorkspaceListsToSupabase(workspaceListsCache || []);
+    }, 250);
     renderListsSidebar();
     renderListsPageGrid();
+    return persistResult;
   }
 
   function wireListRowMenu(ev, listId, action) {
@@ -21709,6 +21908,8 @@ var incomePowerState = {
     var tabsHost = document.getElementById('lists-detail-tabs');
     var actions = document.getElementById('lists-detail-actions');
     if (!L || !main || !det || !wrap) return;
+    var openedDifferentList = String(listId) !== String(lastOpenListDetailId);
+    lastOpenListDetailId = String(listId);
     var snapBoard = L.boardGroupColumnId;
     var snapCalCol = L.calendarDateColumnId;
     var snapSupCal = L.supportsCalendarView;
@@ -21797,6 +21998,7 @@ var incomePowerState = {
             X.activeTabId = tid;
             X.activeView = listDetailTabToView(X, tid);
           });
+          scrollAppContentToTop();
         });
       });
     } else if (tabsHost) {
@@ -21805,6 +22007,7 @@ var incomePowerState = {
     }
     listRenderDetailBody(L);
     det.setAttribute('data-active-list', L.id);
+    if (openedDifferentList) scrollAppContentToTop();
   }
 
   function listsLibCurrentWho() {
@@ -21926,6 +22129,7 @@ var incomePowerState = {
     var empty = document.getElementById('lists-empty-hint');
     var chrome = document.getElementById('lists-lib-chrome');
     if (!grid || !empty) return;
+    renderListsSyncBanner();
     wireListsSidebarMenusOnce();
 
     var allLists = loadWorkspaceLists();
@@ -22443,14 +22647,10 @@ var incomePowerState = {
   function wireListsFeature() {
     if (listsFeatureWired) return;
     listsFeatureWired = true;
-    var hydrateKey = currentWorkspaceListsHydrationKey();
-    if (hydrateKey && hydrateKey !== listsRemoteHydratedKey) {
-      void (async function () {
-        await hydrateWorkspaceListsFromRemote();
-        renderListsSidebar();
-        renderListsPageGrid();
-      })();
-    }
+    void ensureListsHydrated().then(function () {
+      renderListsSidebar();
+      renderListsPageGrid();
+    });
 
     var wrap = document.getElementById('lists-sb-wrap');
     var toggle = document.getElementById('lists-sb-toggle');
@@ -22534,11 +22734,19 @@ var incomePowerState = {
     var emptyDb = document.getElementById('list-tmpl-empty-db');
     if (emptyDb) {
       emptyDb.addEventListener('click', function () {
-        closeListTemplatesModal();
-        pushWorkspaceList(blankNotionWorkspaceList());
-        window.nav('lists', document.getElementById('lists-sb-browse'));
-        var first = loadWorkspaceLists()[0];
-        if (first) openListDetailView(first.id);
+        void (async function () {
+          emptyDb.disabled = true;
+          try {
+            await ensureListsHydrated();
+            closeListTemplatesModal();
+            var blank = blankNotionWorkspaceList();
+            await pushWorkspaceList(blank);
+            window.nav('lists', document.getElementById('lists-sb-browse'));
+            openListDetailView(blank.id);
+          } finally {
+            emptyDb.disabled = false;
+          }
+        })();
       });
     }
     var aiBuild = document.getElementById('list-tmpl-ai-build');
@@ -22635,14 +22843,22 @@ var incomePowerState = {
       custCont.addEventListener('click', function () {
         var tpl = listsCustomizeState.template;
         if (!tpl) return;
-        var L = materializeListFromTemplateSelection(tpl, listsCustomizeState.enabledFeatures);
-        var eff = listDetailEffectiveTabs(tpl);
-        L.activeTabId = (eff[0] && eff[0].id) || 'all';
-        L.activeView = listDetailTabToView(L, L.activeTabId);
-        closeListCustomizeModal();
-        pushWorkspaceList(L);
-        window.nav('lists', document.getElementById('lists-sb-browse'));
-        openListDetailView(L.id);
+        void (async function () {
+          custCont.disabled = true;
+          try {
+            await ensureListsHydrated();
+            var L = materializeListFromTemplateSelection(tpl, listsCustomizeState.enabledFeatures);
+            var eff = listDetailEffectiveTabs(tpl);
+            L.activeTabId = (eff[0] && eff[0].id) || 'all';
+            L.activeView = listDetailTabToView(L, L.activeTabId);
+            closeListCustomizeModal();
+            await pushWorkspaceList(L);
+            window.nav('lists', document.getElementById('lists-sb-browse'));
+            openListDetailView(L.id);
+          } finally {
+            custCont.disabled = false;
+          }
+        })();
       });
     }
     var cModal = document.getElementById('listCustomizeModal');
@@ -23754,8 +23970,13 @@ var incomePowerState = {
 
     // Simple page navigation wiring to replace the original bundle's nav().
     // Exposed globally so existing onclick="nav('dashboard', this)" continues to work.
+    var lastNavPageId = null;
     window.nav = function (pageId, el) {
       document.body.classList.remove('mobile-nav-open');
+      if (pageId && pageId !== lastNavPageId) {
+        scrollAppContentToTop();
+        lastNavPageId = pageId;
+      }
 
       var appShell = document.getElementById('app-shell');
       if (appShell) appShell.classList.toggle('settings-route', pageId === 'settings');

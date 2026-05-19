@@ -18,6 +18,7 @@ FUNCS=(
   accept-org-invite
   ai-assistant
   create-stripe-checkout-session
+  assemblyai-token
   deepgram-token
   gmail-send
   integration-worker

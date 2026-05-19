@@ -5,6 +5,7 @@ type RecordingBarProps = {
   status: TranscriptionStatus;
   duration: number;
   error: string | null;
+  workspaceReady?: boolean;
   onStart: () => void;
   onPause: () => void;
   onResume: () => void;
@@ -22,6 +23,7 @@ export function RecordingBar ({
   status,
   duration,
   error,
+  workspaceReady = true,
   onStart,
   onPause,
   onResume,
@@ -30,12 +32,19 @@ export function RecordingBar ({
   if (status === 'idle') {
     return (
       <div className="sticky top-0 z-20 mb-3 rounded-xl border border-[var(--border)] bg-[var(--bg2)] p-3 shadow-sm">
-        <button type="button" className="btn btn-p inline-flex items-center gap-2" onClick={onStart}>
+        <button
+          type="button"
+          className="btn btn-p inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={onStart}
+          disabled={!workspaceReady}
+        >
           <Mic className="h-4 w-4" aria-hidden />
           Start Recording
         </button>
         <p className="mt-2 text-xs text-[var(--text3)]">
-          Captures your microphone. All speakers in the room will be picked up if on speaker.
+          {workspaceReady
+            ? 'Captures your microphone. All speakers in the room will be picked up if on speaker.'
+            : 'Finish signing in and loading your workspace before recording.'}
         </p>
         {error ? <p className="mt-2 text-xs text-[var(--red)]">{error}</p> : null}
       </div>

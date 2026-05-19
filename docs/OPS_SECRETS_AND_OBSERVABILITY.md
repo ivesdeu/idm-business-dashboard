@@ -10,6 +10,7 @@
 | `INTEGRATION_WORKER_SECRET` | Cron / worker callers | Long random value; same header for `integration-worker` only. |
 | `INTEGRATION_TOKEN_ENCRYPTION_KEY` | Optional AES for refresh tokens | Back up before rotation; re-encrypt column if you change key (planned migration). |
 | Anon key | Client | Public by design; RLS must hold. |
+| `ASSEMBLYAI_API_KEY` | Edge (`assemblyai-token`, `deepgram-token` alias) | Meeting Notes streaming; never `VITE_*`. If mis-set as `SSEMBLYAI_API_KEY`, rename or rely on Edge fallback until fixed. |
 
 Use Supabase **Edge Function secrets** UI or `supabase secrets set`; restrict GitHub/repo access to env files.
 
@@ -41,7 +42,8 @@ Canonical list (keep in sync with `supabase/functions/*/index.ts`):
 | **Stripe Connect** | `stripe-connect-start` / `stripe-connect-disconnect` URLs unchanged; `STRIPE_SECRET_KEY` / Connect settings still valid. |
 | **Google OAuth** | Authorized redirect URI includes `…/functions/v1/oauth-google-callback` (or `GOOGLE_REDIRECT_URI` if you override). |
 | **Microsoft OAuth** | Redirect URI includes `…/functions/v1/oauth-microsoft-callback` (or app registration equivalent). |
-| **CORS / browser callers** | `DASHBOARD_ALLOWED_ORIGINS` lists every production origin that calls browser-accessible Edge functions (e.g. `ai-assistant`, `create-stripe-checkout-session`, `stripe-connect-start`, `organization-team`, `accept-org-invite`, `gmail-send`). Compass: include `https://compass-login.ivesdeu.com`. |
+| **CORS / browser callers** | `DASHBOARD_ALLOWED_ORIGINS` lists every production origin that calls browser-accessible Edge functions (e.g. `ai-assistant`, `assemblyai-token`, `create-stripe-checkout-session`, `stripe-connect-start`, `organization-team`, `accept-org-invite`, `gmail-send`). Compass: include `https://compass-login.ivesdeu.com`. |
+| **Meeting Notes** | `ASSEMBLYAI_API_KEY` set; `assemblyai-token` deployed; `meeting_notes` migration applied; Netlify serves a build that calls `assemblyai-token` (not legacy `deepgram-token` only). |
 | **integration-worker** | Cron or caller still sends `INTEGRATION_WORKER_SECRET` header. |
 
 ## Alerts (recommended)

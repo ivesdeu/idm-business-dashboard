@@ -1188,7 +1188,7 @@
         if (!window.confirm('Create this list in your workspace Lists tab?')) return;
         addBtn.disabled = true;
         try {
-          var res = window.bizDashApplyWorkspaceListProposal(prop);
+          var res = await window.bizDashApplyWorkspaceListProposal(prop);
           await logAdvisorActionOutcome({
             id: mkUuid(),
             user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,

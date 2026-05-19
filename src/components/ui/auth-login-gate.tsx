@@ -239,6 +239,20 @@ export function AuthLoginGate() {
         className="mb-4 min-h-[1.25rem] text-sm text-destructive empty:min-h-0"
       />
 
+      <button
+        type="button"
+        id="gate-workspace-retry"
+        className="mb-4 hidden w-full items-center justify-center rounded-lg border border-solid border-neutral-300 bg-white px-4 py-2.5 text-sm font-medium text-foreground hover:bg-neutral-50"
+        style={{ display: 'none' }}
+        onClick={() => {
+          const retry = (window as unknown as { __bizdashRetryWorkspaceLoad?: () => void })
+            .__bizdashRetryWorkspaceLoad;
+          if (typeof retry === 'function') void retry();
+        }}
+      >
+        Retry loading workspace
+      </button>
+
       <div hidden={step === 'signup'}>
         <Card className="auth-form-enter w-full rounded-xl border border-solid border-neutral-200/70 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.06)]">
           <CardHeader className="space-y-1.5 px-8 pb-0 pt-9 text-center">

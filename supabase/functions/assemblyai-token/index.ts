@@ -1,7 +1,3 @@
-/**
- * Legacy alias — older app bundles call /deepgram-token. Issues the same AssemblyAI
- * streaming token as assemblyai-token (field `key` for backward compatibility).
- */
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { createAssemblyAiStreamingToken } from "../_shared/assemblyAiStreamingToken.ts";
 import { serveWithEdgeRequestLogging } from "../_shared/withEdgeRequestLogging.ts";
@@ -13,7 +9,7 @@ function json(req: Request, status: number, body: Record<string, unknown>) {
   });
 }
 
-serveWithEdgeRequestLogging("deepgram-token", async (req, _ctx) => {
+serveWithEdgeRequestLogging("assemblyai-token", async (req, _ctx) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeadersFor(req) });
   }
@@ -34,5 +30,5 @@ serveWithEdgeRequestLogging("deepgram-token", async (req, _ctx) => {
   if (!result.ok) {
     return json(req, result.status, { error: result.error });
   }
-  return json(req, 200, { key: result.token, token: result.token });
+  return json(req, 200, { token: result.token });
 });

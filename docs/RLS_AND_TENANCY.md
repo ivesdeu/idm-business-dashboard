@@ -35,6 +35,8 @@ These tables require **`organization_id NOT NULL`** and use the same four polici
 | `ai_feedback` | member | writer |
 | `ai_action_outcomes` | member | writer |
 
+**Workspace lists** use dedicated policies on `workspace_lists` (see migration [`20260506154000_workspace_lists.sql`](../supabase/migrations/20260506154000_workspace_lists.sql)): `workspace_lists_select` (member), insert/update/delete (writer). Payload is stored in `payload` jsonb; `list_id` is the client-generated list uuid.
+
 **Viewer behavior:** viewers pass `user_is_org_member` but **fail** `user_can_write_org`, so they can read org data but not mutate it.
 
 ## Organization directory

@@ -106,7 +106,9 @@
    * `callResolveSessionWorkspaceWithRetries` / `resolveOrgContextWithRetry` instead of a long outer wait.
    */
   /** UX ceiling for one full workspace resolve (invite + RPC + fallbacks). */
-  var ORG_RESOLVE_MS = 6000;
+  var ORG_RESOLVE_MS = 18000;
+  /** Cap accept-org-invite so a stuck invite cannot consume the whole org resolve budget. */
+  var INVITE_FETCH_MS = 5000;
   /** Onboarding prefill (org row + optional storage); keep bounded so login never “hangs”. */
   var ONBOARDING_GATE_MS = 8000;
   /** Avatar signed URL during prefill — do not block first paint on slow storage. */
@@ -476,15 +478,19 @@
         return false;
       }
       var url = SUPABASE_URL + '/functions/v1/accept-org-invite';
-      var res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + sess.access_token,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ token: tok }),
-      });
+      var res = await withTimeout(
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + sess.access_token,
+            apikey: SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ token: tok }),
+        }),
+        INVITE_FETCH_MS,
+        'Invitation acceptance timed out. You can retry from the sign-in screen.'
+      );
       var j = {};
       try {
         j = await res.json();
@@ -719,11 +725,56 @@
     }
   }
 
+  function hideGateWorkspaceRetry() {
+    var btn = $('gate-workspace-retry');
+    if (btn) btn.style.display = 'none';
+  }
+
+  function showGateWorkspaceRetry(message) {
+    var ge = $('gate-auth-error');
+    if (ge && message) ge.textContent = String(message);
+    var btn = $('gate-workspace-retry');
+    if (btn) btn.style.display = 'inline-flex';
+  }
+
+  async function retryWorkspaceLoadFromGate() {
+    hideGateWorkspaceRetry();
+    var ge = $('gate-auth-error');
+    if (ge) ge.textContent = '';
+    var sessRes = await getSessionNow();
+    var session = sessRes && sessRes.data ? sessRes.data.session : null;
+    var user = session && session.user ? session.user : window.currentUser;
+    if (!user || !user.id) {
+      showLogin();
+      return;
+    }
+    await runAuthSessionFlow(user, session);
+  }
+
+  window.__bizdashRetryWorkspaceLoad = retryWorkspaceLoadFromGate;
+
   async function resolveOrgContextWithRetry(user, authSession) {
     var timedOutMsg = 'Loading workspace timed out. Check your connection and try again.';
+    var slugAtStart = parseTenantSlug();
+    var hadInvite = false;
+    try {
+      hadInvite = !!(new URLSearchParams(window.location.search || '').get('invite') || '').trim();
+    } catch (_) {}
+    if (!hadInvite) {
+      try {
+        hadInvite = !!(sessionStorage.getItem(PENDING_INVITE_KEY) || '').trim();
+      } catch (_) {}
+    }
     try {
       return await withTimeout(ensureOrganizationContext(user, authSession), ORG_RESOLVE_MS, timedOutMsg);
     } catch (err) {
+      if (isOrgResolveTimeoutError(err)) {
+        console.error('resolveOrgContextWithRetry timed out', {
+          slug: slugAtStart,
+          hadInvite: hadInvite,
+          ms: ORG_RESOLVE_MS,
+        });
+      }
       // One immediate second chance for lock contention only (no extra wait).
       if (isLockStolenError(err)) {
         return await withTimeout(ensureOrganizationContext(user, authSession), ORG_RESOLVE_MS, timedOutMsg);
@@ -2029,6 +2080,7 @@
           );
           return;
         }
+        hideGateWorkspaceRetry();
         showLoading();
         var ctx = await resolveOrgContextWithRetry(user, authSession);
         if (!ctx || !ctx.ok) {
@@ -2055,6 +2107,19 @@
           setCurrentUser(user);
           return;
         }
+        if (isOrgResolveTimeoutError(err)) {
+          setCurrentUser(user);
+          var loadingTimeout = $('auth-loading');
+          if (loadingTimeout) loadingTimeout.style.display = 'none';
+          showGateWorkspaceRetry(
+            err && err.message
+              ? String(err.message)
+              : 'Loading workspace timed out. Check your connection and try again.'
+          );
+          showLogin();
+          return;
+        }
+        hideGateWorkspaceRetry();
         setCurrentUser(null);
         clearOrgContext();
         var ge = $('gate-auth-error');

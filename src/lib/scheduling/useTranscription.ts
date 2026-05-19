@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type {
-  DeepgramMessage,
-  DeepgramResultsMessage,
-  TranscriptionStatus,
-} from '@/components/scheduling/types';
+import type { AssemblyAiStreamingMessage, TranscriptionStatus } from '@/components/scheduling/types';
 
 type UseTranscriptionState = {
   status: TranscriptionStatus;
@@ -22,13 +18,27 @@ type UseTranscriptionResult = UseTranscriptionState & {
   setTranscript: (value: string) => void;
 };
 
+const TARGET_SAMPLE_RATE = 16000;
+const SPEECH_MODEL = 'u3-rt-pro';
+/** ~128 ms of audio at 16 kHz (AssemblyAI expects 50–1000 ms binary frames). */
+const PCM_BUFFER_SIZE = 2048;
+
 function getSupabase (): SupabaseClient | null {
   if (typeof window === 'undefined') return null;
   const c = (window as unknown as { supabaseClient?: SupabaseClient }).supabaseClient;
   return c ?? null;
 }
 
-async function fetchDeepgramTempKey (): Promise<string> {
+export function isWorkspaceReadyForTranscription (): boolean {
+  if (typeof window === 'undefined') return false;
+  const orgId = (window as unknown as { currentOrganizationId?: string | null }).currentOrganizationId;
+  return !!(orgId && String (orgId).trim ());
+}
+
+async function fetchAssemblyAiToken (): Promise<string> {
+  if (!isWorkspaceReadyForTranscription ()) {
+    throw new Error ('Workspace is still loading. Wait for sign-in to finish, then try recording again.');
+  }
   const supabase = getSupabase ();
   const base = typeof window !== 'undefined'
     ? String ((window as unknown as { __bizdashSupabaseUrl?: string }).__bizdashSupabaseUrl || '').trim ().replace (/\/$/, '')
@@ -40,7 +50,7 @@ async function fetchDeepgramTempKey (): Promise<string> {
   const sessionRes = await supabase.auth.getSession ();
   const accessToken = sessionRes.data.session?.access_token || '';
   if (!accessToken) throw new Error ('Sorry, we could not complete your request.');
-  const res = await fetch (`${base}/functions/v1/deepgram-token`, {
+  const res = await fetch (`${base}/functions/v1/assemblyai-token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -51,34 +61,46 @@ async function fetchDeepgramTempKey (): Promise<string> {
   });
   const payload = await res.json ().catch (() => ({}));
   if (!res.ok) {
-    const detail = typeof (payload as { error?: unknown }).error === 'string'
-      ? (payload as { error: string }).error
-      : 'Transcription service unavailable. Your notes are saved locally.';
-    throw new Error (detail || 'Transcription service unavailable. Your notes are saved locally.');
+    const errBody = typeof (payload as { error?: unknown }).error === 'string'
+      ? (payload as { error: string }).error.trim ()
+      : '';
+    const detail =
+      errBody ||
+      (res.status === 404
+        ? 'Transcription service is not deployed. Contact your administrator.'
+        : res.status === 402
+          ? 'AssemblyAI streaming is not enabled on this account. Upgrade your AssemblyAI plan.'
+          : res.status === 500
+            ? 'Transcription is not configured on the server (missing AssemblyAI API key).'
+            : `Transcription service unavailable (${res.status}). Your notes are saved locally.`);
+    throw new Error (detail);
   }
-  const key = typeof (payload as { key?: unknown }).key === 'string' ? (payload as { key: string }).key.trim () : '';
-  if (!key) throw new Error ('Transcription service unavailable. Your notes are saved locally.');
-  return key;
+  const body = payload as { token?: unknown; key?: unknown };
+  const token =
+    (typeof body.token === 'string' ? body.token.trim () : '') ||
+    (typeof body.key === 'string' ? body.key.trim () : '');
+  if (!token) throw new Error ('Transcription service unavailable. Your notes are saved locally.');
+  return token;
 }
 
-function wsUrlForListen (key: string): string {
+function streamingCloseErrorMessage (code: number, reason: string): string {
+  if (code === 1008) return 'Transcription authentication failed. Sign in again and retry.';
+  if (code === 3005) return 'Transcription session ended due to a server error.';
+  if (code === 3007) return 'Audio stream was invalid. Try stopping and starting recording again.';
+  if (code === 3008) return 'Transcription session timed out (3 hour limit).';
+  if (code === 3009) return 'Too many active transcription sessions. Try again shortly.';
+  if (reason) return reason;
+  return 'Transcription connection closed.';
+}
+
+function wsUrlForAssemblyAi (token: string): string {
   const params = new URLSearchParams ({
-    model: 'nova-2',
-    language: 'en-US',
-    smart_format: 'true',
-    interim_results: 'true',
-    utterance_end_ms: '1000',
-    punctuate: 'true',
+    sample_rate: String (TARGET_SAMPLE_RATE),
+    speech_model: SPEECH_MODEL,
+    formatted_finals: 'true',
+    token,
   });
-  return `wss://api.deepgram.com/v1/listen?${params.toString ()}&token=${encodeURIComponent (key)}`;
-}
-
-function preferredMimeType (): string | null {
-  if (typeof MediaRecorder === 'undefined') return null;
-  if (MediaRecorder.isTypeSupported ('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
-  if (MediaRecorder.isTypeSupported ('audio/ogg;codecs=opus')) return 'audio/ogg;codecs=opus';
-  if (MediaRecorder.isTypeSupported ('audio/webm')) return 'audio/webm';
-  return '';
+  return `wss://streaming.assemblyai.com/v3/ws?${params.toString ()}`;
 }
 
 function cleanText (value: string): string {
@@ -91,10 +113,35 @@ function appendText (current: string, chunk: string): string {
   return current ? `${current} ${next}` : next;
 }
 
-function transcriptFromResults (msg: DeepgramResultsMessage): string {
-  const alt = msg.channel?.alternatives?.[0];
-  const tx = typeof alt?.transcript === 'string' ? alt.transcript : '';
-  return cleanText (tx);
+function resampleFloatTo16k (input: Float32Array, inputRate: number): Int16Array {
+  if (inputRate === TARGET_SAMPLE_RATE) {
+    return float32ToInt16 (input);
+  }
+  const ratio = inputRate / TARGET_SAMPLE_RATE;
+  const outLen = Math.max (1, Math.floor (input.length / ratio));
+  const out = new Float32Array (outLen);
+  for (let i = 0; i < outLen; i += 1) {
+    const srcIdx = i * ratio;
+    const idx = Math.floor (srcIdx);
+    const frac = srcIdx - idx;
+    const s0 = input[idx] ?? 0;
+    const s1 = input[idx + 1] ?? s0;
+    out[i] = s0 + (s1 - s0) * frac;
+  }
+  return float32ToInt16 (out);
+}
+
+function float32ToInt16 (input: Float32Array): Int16Array {
+  const out = new Int16Array (input.length);
+  for (let i = 0; i < input.length; i += 1) {
+    const s = Math.max (-1, Math.min (1, input[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
+}
+
+function transcriptFromTurn (msg: AssemblyAiStreamingMessage): string {
+  return cleanText (typeof msg.transcript === 'string' ? msg.transcript : '');
 }
 
 export function useTranscription (): UseTranscriptionResult {
@@ -104,12 +151,15 @@ export function useTranscription (): UseTranscriptionResult {
   const [error, setError] = useState<string | null> (null);
   const [duration, setDuration] = useState (0);
 
-  const recorderRef = useRef<MediaRecorder | null> (null);
   const streamRef = useRef<MediaStream | null> (null);
   const wsRef = useRef<WebSocket | null> (null);
+  const audioContextRef = useRef<AudioContext | null> (null);
+  const processorRef = useRef<ScriptProcessorNode | null> (null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null> (null);
   const timerRef = useRef<number | null> (null);
+  const pausedRef = useRef (false);
   const permissionKnownRef = useRef<'granted' | 'denied' | 'unknown'> ('unknown');
-  const pendingChunkRef = useRef('');
+  const terminatingRef = useRef (false);
 
   const clearTimer = useCallback (() => {
     if (timerRef.current != null) window.clearInterval (timerRef.current);
@@ -130,13 +180,34 @@ export function useTranscription (): UseTranscriptionResult {
     streamRef.current = null;
   }, []);
 
-  const closeWs = useCallback (() => {
+  const teardownAudioGraph = useCallback (() => {
+    if (processorRef.current) {
+      try {
+        processorRef.current.disconnect ();
+      } catch (_) {}
+    }
+    processorRef.current = null;
+    if (sourceRef.current) {
+      try {
+        sourceRef.current.disconnect ();
+      } catch (_) {}
+    }
+    sourceRef.current = null;
+    const ctx = audioContextRef.current;
+    audioContextRef.current = null;
+    if (ctx) {
+      void ctx.close ().catch (() => {});
+    }
+  }, []);
+
+  const closeWs = useCallback ((sendTerminate: boolean) => {
     const ws = wsRef.current;
     if (!ws) return;
     wsRef.current = null;
+    if (sendTerminate) terminatingRef.current = true;
     try {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send (JSON.stringify ({ type: 'CloseStream' }));
+      if (sendTerminate && ws.readyState === WebSocket.OPEN) {
+        ws.send (JSON.stringify ({ type: 'Terminate' }));
       }
     } catch (_) {}
     try {
@@ -146,66 +217,47 @@ export function useTranscription (): UseTranscriptionResult {
 
   const stop = useCallback (() => {
     clearTimer ();
-    if (recorderRef.current) {
-      try {
-        const rec = recorderRef.current;
-        if (rec.state !== 'inactive') rec.stop ();
-      } catch (_) {}
-    }
-    recorderRef.current = null;
-    closeWs ();
+    pausedRef.current = false;
+    teardownAudioGraph ();
+    closeWs (true);
     stopTracks ();
-    if (pendingChunkRef.current) {
-      setTranscriptState ((prev) => appendText (prev, pendingChunkRef.current));
-      pendingChunkRef.current = '';
-    }
     setInterimText ('');
     setStatus ('stopped');
-  }, [clearTimer, closeWs, stopTracks]);
+    terminatingRef.current = false;
+  }, [clearTimer, closeWs, stopTracks, teardownAudioGraph]);
 
   const pause = useCallback (() => {
-    const rec = recorderRef.current;
-    if (!rec || rec.state !== 'recording') return;
-    rec.pause ();
+    if (status !== 'recording') return;
+    pausedRef.current = true;
     clearTimer ();
+    const ctx = audioContextRef.current;
+    if (ctx && ctx.state === 'running') {
+      void ctx.suspend ();
+    }
     setStatus ('paused');
-    try {
-      wsRef.current?.send (JSON.stringify ({ type: 'Pause' }));
-    } catch (_) {}
-  }, [clearTimer]);
+  }, [clearTimer, status]);
 
   const resume = useCallback (() => {
-    const rec = recorderRef.current;
-    if (!rec || rec.state !== 'paused') return;
-    rec.resume ();
+    if (status !== 'paused') return;
+    pausedRef.current = false;
+    const ctx = audioContextRef.current;
+    if (ctx && ctx.state === 'suspended') {
+      void ctx.resume ();
+    }
     startTimer ();
     setStatus ('recording');
-    try {
-      wsRef.current?.send (JSON.stringify ({ type: 'Resume' }));
-    } catch (_) {}
-  }, [startTimer]);
+  }, [startTimer, status]);
 
   const start = useCallback (async () => {
     if (status === 'recording' || status === 'paused' || status === 'requesting') return;
     setError (null);
     setInterimText ('');
-    pendingChunkRef.current = '';
     setDuration (0);
     setStatus ('requesting');
+    pausedRef.current = false;
+    terminatingRef.current = false;
 
     if (typeof window === 'undefined' || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      setError ('Recording requires a secure connection (HTTPS) and a supported browser.');
-      setStatus ('idle');
-      return;
-    }
-    if (typeof MediaRecorder === 'undefined') {
-      setError ('Recording requires a secure connection (HTTPS) and a supported browser.');
-      setStatus ('idle');
-      return;
-    }
-
-    const mimeType = preferredMimeType ();
-    if (mimeType == null) {
       setError ('Recording requires a secure connection (HTTPS) and a supported browser.');
       setStatus ('idle');
       return;
@@ -216,74 +268,90 @@ export function useTranscription (): UseTranscriptionResult {
       permissionKnownRef.current = 'granted';
       streamRef.current = stream;
 
-      const deepgramToken = await fetchDeepgramTempKey ();
-      const ws = new WebSocket (wsUrlForListen (deepgramToken));
+      const token = await fetchAssemblyAiToken ();
+      const ws = new WebSocket (wsUrlForAssemblyAi (token));
       wsRef.current = ws;
 
+      await new Promise<void> ((resolve, reject) => {
+        const onOpen = () => {
+          ws.removeEventListener ('error', onErr);
+          resolve ();
+        };
+        const onErr = () => {
+          ws.removeEventListener ('open', onOpen);
+          reject (new Error ('Could not connect to transcription service.'));
+        };
+        ws.addEventListener ('open', onOpen, { once: true });
+        ws.addEventListener ('error', onErr, { once: true });
+      });
+
       ws.addEventListener ('message', (ev) => {
-        let msg: DeepgramMessage;
+        let msg: AssemblyAiStreamingMessage;
         try {
-          msg = JSON.parse (String (ev.data || '{}')) as DeepgramMessage;
+          msg = JSON.parse (String (ev.data || '{}')) as AssemblyAiStreamingMessage;
         } catch {
           return;
         }
-        const type = typeof (msg as { type?: unknown }).type === 'string' ? String ((msg as { type?: string }).type) : '';
-        if (type === 'UtteranceEnd') {
-          if (pendingChunkRef.current) {
-            setTranscriptState ((prev) => appendText (prev, pendingChunkRef.current));
-            pendingChunkRef.current = '';
+        const type = typeof msg.type === 'string' ? msg.type : '';
+        if (type === 'Turn') {
+          const tx = transcriptFromTurn (msg);
+          if (!tx) return;
+          if (msg.end_of_turn) {
+            setTranscriptState ((prev) => appendText (prev, tx));
             setInterimText ('');
+          } else {
+            setInterimText (tx);
           }
           return;
         }
-        if (type === 'Error') {
-          setError ('Transcription service unavailable. Your notes are saved locally.');
-          stop ();
+        if (type === 'Termination') {
           return;
         }
-        const tx = transcriptFromResults (msg as DeepgramResultsMessage);
-        const isFinal = (msg as DeepgramResultsMessage).is_final === true;
-        if (!tx) return;
-        if (isFinal) {
-          setTranscriptState ((prev) => appendText (prev, tx));
-          pendingChunkRef.current = '';
-          setInterimText ('');
-        } else {
-          pendingChunkRef.current = tx;
-          setInterimText (tx);
+        if (type === 'Error') {
+          const detail = typeof msg.error === 'string' ? msg.error : 'Transcription service unavailable.';
+          setError (detail);
+          stop ();
         }
-      });
-      ws.addEventListener ('error', () => {
-        setError ('Transcription service unavailable. Your notes are saved locally.');
-      });
-      ws.addEventListener ('close', () => {
-        clearTimer ();
-        stopTracks ();
-        recorderRef.current = null;
-        if (pendingChunkRef.current) {
-          setTranscriptState ((prev) => appendText (prev, pendingChunkRef.current));
-          pendingChunkRef.current = '';
-        }
-        setInterimText ('');
-        setStatus ('stopped');
       });
 
-      const recorder = mimeType ? new MediaRecorder (stream, { mimeType }) : new MediaRecorder (stream);
-      recorderRef.current = recorder;
-      recorder.addEventListener ('dataavailable', async (event: BlobEvent) => {
-        if (!event.data || event.data.size === 0) return;
+      ws.addEventListener ('error', () => {
+        if (!terminatingRef.current) {
+          setError ('Transcription service unavailable. Your notes are saved locally.');
+        }
+      });
+
+      ws.addEventListener ('close', (ev) => {
+        if (wsRef.current === ws) wsRef.current = null;
+        clearTimer ();
+        teardownAudioGraph ();
+        stopTracks ();
+        setInterimText ('');
+        if (!terminatingRef.current && ev.code !== 1000) {
+          setError (streamingCloseErrorMessage (ev.code, String (ev.reason || '')));
+        }
+        setStatus ((s) => (s === 'requesting' ? 'idle' : 'stopped'));
+        terminatingRef.current = false;
+      });
+
+      const audioContext = new AudioContext ({ sampleRate: TARGET_SAMPLE_RATE });
+      audioContextRef.current = audioContext;
+      const inputRate = audioContext.sampleRate;
+      const source = audioContext.createMediaStreamSource (stream);
+      sourceRef.current = source;
+      const processor = audioContext.createScriptProcessor (PCM_BUFFER_SIZE, 1, 1);
+      processorRef.current = processor;
+      processor.onaudioprocess = (event) => {
+        if (pausedRef.current) return;
         const wsLive = wsRef.current;
         if (!wsLive || wsLive.readyState !== WebSocket.OPEN) return;
+        const channel = event.inputBuffer.getChannelData (0);
+        const pcm = resampleFloatTo16k (channel, inputRate);
         try {
-          const buf = await event.data.arrayBuffer ();
-          wsLive.send (buf);
+          wsLive.send (pcm.buffer);
         } catch (_) {}
-      });
-      recorder.addEventListener ('error', () => {
-        setError ('Transcription service unavailable. Your notes are saved locally.');
-        stop ();
-      });
-      recorder.start (250);
+      };
+      source.connect (processor);
+      processor.connect (audioContext.destination);
 
       setStatus ('recording');
       startTimer ();
@@ -298,25 +366,21 @@ export function useTranscription (): UseTranscriptionResult {
         setError ('Transcription service unavailable. Your notes are saved locally.');
       }
       clearTimer ();
+      teardownAudioGraph ();
+      closeWs (false);
       stopTracks ();
-      closeWs ();
       setStatus ('idle');
     }
-  }, [clearTimer, closeWs, startTimer, status, stop, stopTracks]);
+  }, [clearTimer, closeWs, startTimer, status, stop, stopTracks, teardownAudioGraph]);
 
   useEffect (() => {
     return () => {
       clearTimer ();
-      if (recorderRef.current) {
-        try {
-          if (recorderRef.current.state !== 'inactive') recorderRef.current.stop ();
-        } catch (_) {}
-      }
-      recorderRef.current = null;
-      closeWs ();
+      teardownAudioGraph ();
+      closeWs (true);
       stopTracks ();
     };
-  }, [clearTimer, closeWs, stopTracks]);
+  }, [clearTimer, closeWs, stopTracks, teardownAudioGraph]);
 
   return {
     status,

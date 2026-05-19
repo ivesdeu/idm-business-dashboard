@@ -4,7 +4,7 @@ import { Sparkles, X } from 'lucide-react';
 import { RecordingBar } from '@/components/scheduling/RecordingBar';
 import type { MeetingActionItem, MeetingNote, SchedulingAppointment } from '@/components/scheduling/types';
 import { rowToMeetingNote, type MeetingNoteRow } from '@/lib/scheduling/supabase';
-import { useTranscription } from '@/lib/scheduling/useTranscription';
+import { isWorkspaceReadyForTranscription, useTranscription } from '@/lib/scheduling/useTranscription';
 
 type MeetingNotePanelProps = {
   open: boolean;
@@ -364,6 +364,7 @@ export function MeetingNotePanel ({
             status={transcriptionStatus}
             duration={duration}
             error={transcriptionError}
+            workspaceReady={!!organizationId && isWorkspaceReadyForTranscription ()}
             onStart={() => {
               void start ();
             }}

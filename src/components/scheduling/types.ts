@@ -10,48 +10,14 @@ export type TranscriptChunk = {
   receivedAt: number;
 };
 
-export type DeepgramWord = {
-  word: string;
-  confidence?: number;
-  start?: number;
-  end?: number;
-  speaker?: number;
-  punctuated_word?: string;
+export type AssemblyAiStreamingMessage = {
+  type?: string;
+  transcript?: string;
+  end_of_turn?: boolean;
+  error?: string;
+  id?: string;
+  expires_at?: number;
 };
-
-export type DeepgramAlternative = {
-  transcript: string;
-  confidence?: number;
-  words?: DeepgramWord[];
-};
-
-export type DeepgramResultsMessage = {
-  type?: 'Results';
-  is_final?: boolean;
-  speech_final?: boolean;
-  channel?: { alternatives?: DeepgramAlternative[] };
-};
-
-export type DeepgramUtteranceEndMessage = {
-  type: 'UtteranceEnd';
-};
-
-export type DeepgramMetadataMessage = {
-  type: 'Metadata';
-};
-
-export type DeepgramErrorMessage = {
-  type: 'Error';
-  description?: string;
-  message?: string;
-};
-
-export type DeepgramMessage =
-  | DeepgramResultsMessage
-  | DeepgramUtteranceEndMessage
-  | DeepgramMetadataMessage
-  | DeepgramErrorMessage
-  | Record<string, unknown>;
 
 export type MeetingActionItem = {
   task: string;
