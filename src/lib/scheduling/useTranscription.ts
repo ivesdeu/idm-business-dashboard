@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AssemblyAiStreamingMessage, TranscriptionStatus } from '@/components/scheduling/types';
 
@@ -11,6 +11,7 @@ type UseTranscriptionState = {
 };
 
 type UseTranscriptionResult = UseTranscriptionState & {
+  analyserRef: RefObject<AnalyserNode | null>;
   start: () => Promise<void>;
   pause: () => void;
   resume: () => void;
@@ -155,6 +156,7 @@ export function useTranscription (): UseTranscriptionResult {
   const wsRef = useRef<WebSocket | null> (null);
   const audioContextRef = useRef<AudioContext | null> (null);
   const processorRef = useRef<ScriptProcessorNode | null> (null);
+  const analyserRef = useRef<AnalyserNode | null> (null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null> (null);
   const timerRef = useRef<number | null> (null);
   const pausedRef = useRef (false);
@@ -187,6 +189,12 @@ export function useTranscription (): UseTranscriptionResult {
       } catch (_) {}
     }
     processorRef.current = null;
+    if (analyserRef.current) {
+      try {
+        analyserRef.current.disconnect ();
+      } catch (_) {}
+    }
+    analyserRef.current = null;
     if (sourceRef.current) {
       try {
         sourceRef.current.disconnect ();
@@ -338,6 +346,10 @@ export function useTranscription (): UseTranscriptionResult {
       const inputRate = audioContext.sampleRate;
       const source = audioContext.createMediaStreamSource (stream);
       sourceRef.current = source;
+      const analyser = audioContext.createAnalyser ();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.7;
+      analyserRef.current = analyser;
       const processor = audioContext.createScriptProcessor (PCM_BUFFER_SIZE, 1, 1);
       processorRef.current = processor;
       processor.onaudioprocess = (event) => {
@@ -350,6 +362,7 @@ export function useTranscription (): UseTranscriptionResult {
           wsLive.send (pcm.buffer);
         } catch (_) {}
       };
+      source.connect (analyser);
       source.connect (processor);
       processor.connect (audioContext.destination);
 
@@ -388,6 +401,7 @@ export function useTranscription (): UseTranscriptionResult {
     interimText,
     error,
     duration,
+    analyserRef,
     start,
     pause,
     resume,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Sparkles, X } from 'lucide-react';
+import { MeetingSummaryMarkdown } from '@/components/scheduling/MeetingSummaryMarkdown';
 import { RecordingBar } from '@/components/scheduling/RecordingBar';
 import type { MeetingActionItem, MeetingNote, SchedulingAppointment } from '@/components/scheduling/types';
 import { rowToMeetingNote, type MeetingNoteRow } from '@/lib/scheduling/supabase';
@@ -58,7 +59,7 @@ function parseMeetingSummaryFromAdvisorPayload (payload: unknown): AdvisorPayloa
   };
   if (body.meetingSummary && typeof body.meetingSummary === 'object') {
     const ms = body.meetingSummary as AdvisorPayload;
-    if (typeof ms.summary === 'string' && Array.isArray (ms.action_items) && Array.isArray (ms.topics)) {
+    if (typeof ms.summary === 'string' && Array.isArray (ms.action_items)) {
       return ms;
     }
   }
@@ -68,14 +69,14 @@ function parseMeetingSummaryFromAdvisorPayload (payload: unknown): AdvisorPayloa
       : '';
   if (draft) {
     const direct = safeJsonParse<AdvisorPayload> (draft);
-    if (direct && typeof direct.summary === 'string' && Array.isArray (direct.action_items) && Array.isArray (direct.topics)) {
+    if (direct && typeof direct.summary === 'string' && Array.isArray (direct.action_items)) {
       return direct;
     }
     const firstBrace = draft.indexOf ('{');
     const lastBrace = draft.lastIndexOf ('}');
     if (firstBrace >= 0 && lastBrace > firstBrace) {
       const sliced = safeJsonParse<AdvisorPayload> (draft.slice (firstBrace, lastBrace + 1));
-      if (sliced && typeof sliced.summary === 'string' && Array.isArray (sliced.action_items) && Array.isArray (sliced.topics)) {
+      if (sliced && typeof sliced.summary === 'string' && Array.isArray (sliced.action_items)) {
         return sliced;
       }
     }
@@ -488,29 +489,17 @@ export function MeetingNotePanel ({
               </div>
             ) : null}
 
-            {summary ? (
+            {summary || actionItems.length ? (
               <div className="rounded-xl border border-[var(--border)] bg-[var(--bg2)] p-4">
                 <h3 className="text-sm font-semibold text-[var(--text)]">Summary</h3>
-                <p className="mt-2 text-sm text-[var(--text2)]">{summary}</p>
+                <MeetingSummaryMarkdown
+                  className="mt-3"
+                  summary={summary}
+                  actionItems={actionItems}
+                />
               </div>
             ) : null}
 
-            {actionItems.length ? (
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
-                <h3 className="text-sm font-semibold text-[var(--text)]">Action Items</h3>
-                <ul className="mt-2 space-y-2">
-                  {actionItems.map ((item, idx) => (
-                    <li key={`${item.task}-${idx}`} className="rounded-lg border border-[var(--border)] bg-[var(--bg2)] px-3 py-2 text-sm">
-                      <div className="font-medium text-[var(--text)]">{item.task}</div>
-                      <div className="text-xs text-[var(--text3)]">
-                        {item.owner || 'Unassigned'}
-                        {item.dueDate ? ` · ${item.dueDate}` : ''}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
 
             {topics.length ? (
               <div>
@@ -522,15 +511,6 @@ export function MeetingNotePanel ({
                     </span>
                   ))}
                 </div>
-              </div>
-            ) : null}
-
-            {decisions.length ? (
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-[var(--text)]">Key Decisions</h3>
-                <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--text2)]">
-                  {decisions.map ((decision, idx) => <li key={`${decision}-${idx}`}>{decision}</li>)}
-                </ul>
               </div>
             ) : null}
 

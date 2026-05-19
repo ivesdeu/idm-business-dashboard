@@ -11,6 +11,11 @@ import { isDemoMode } from '@/lib/demoMode';
 import { syncToGoogleCalendar } from '@/lib/googleCalendar';
 import { getSchedulingMockAppointments } from '@/lib/mockData/appointments';
 import { schedulingAppointmentFromDemoSeed } from '@/lib/scheduling/mapDemo';
+import {
+  isTransientFetchError,
+  logSchedulingFetchError,
+  withTransientRetry,
+} from '@/lib/scheduling/fetchWithRetry';
 import type { AppointmentRow } from '@/lib/scheduling/supabase';
 import { rowToSchedulingAppointment } from '@/lib/scheduling/supabase';
 
@@ -25,8 +30,11 @@ function getSupabase (): SupabaseClient | null {
 function getOrgId (): string | null {
   if (typeof window === 'undefined') return null;
   const fn = (window as unknown as { bizDashGetCurrentOrgId?: () => string | null }).bizDashGetCurrentOrgId;
-  const id = typeof fn === 'function' ? fn () : null;
-  return id && String (id).trim () ? String (id).trim () : null;
+  const fromFn = typeof fn === 'function' ? fn () : null;
+  const id =
+    (fromFn && String (fromFn).trim ()) ||
+    String ((window as unknown as { currentOrganizationId?: string | null }).currentOrganizationId || '').trim ();
+  return id || null;
 }
 
 function uid (): string {
@@ -56,7 +64,12 @@ export function SchedulingPage () {
     }, 5200);
   }, []);
 
+  const reloadGenerationRef = useRef (0);
+
   const reloadLive = useCallback (async () => {
+    const generation = reloadGenerationRef.current + 1;
+    reloadGenerationRef.current = generation;
+
     const supabase = getSupabase ();
     const orgId = getOrgId ();
     if (!supabase || !orgId) {
@@ -66,13 +79,27 @@ export function SchedulingPage () {
       return;
     }
 
-    const { data: clients, error: cErr } = await supabase
-      .from ('clients')
-      .select ('id, company_name, contact_name')
-      .eq ('organization_id', orgId)
-      .order ('created_at', { ascending: true });
+    const { data: sessionData } = await supabase.auth.getSession ();
+    if (!sessionData.session) {
+      setAppointments ([]);
+      setClientOptions ([]);
+      setLoading (false);
+      return;
+    }
 
-    if (cErr) console.error ('scheduling clients', cErr);
+    if (reloadGenerationRef.current !== generation) return;
+
+    const { data: clients, error: cErr } = await withTransientRetry (() =>
+      supabase
+        .from ('clients')
+        .select ('id, company_name, contact_name')
+        .eq ('organization_id', orgId)
+        .order ('created_at', { ascending: true }),
+    );
+
+    if (reloadGenerationRef.current !== generation) return;
+
+    if (cErr) logSchedulingFetchError ('scheduling clients', cErr);
 
     const opts: ClientOption[] =
       (clients ?? []).map ((r: { id: string; company_name: string | null; contact_name: string | null }) => ({
@@ -86,15 +113,21 @@ export function SchedulingPage () {
       nameMap[o.id] = o.label;
     });
 
-    const { data: rows, error } = await supabase
-      .from ('appointments')
-      .select ('*')
-      .eq ('organization_id', orgId)
-      .order ('start_time', { ascending: true });
+    const { data: rows, error } = await withTransientRetry (() =>
+      supabase
+        .from ('appointments')
+        .select ('*')
+        .eq ('organization_id', orgId)
+        .order ('start_time', { ascending: true }),
+    );
+
+    if (reloadGenerationRef.current !== generation) return;
 
     if (error) {
-      console.error ('scheduling appointments', error);
-      setAppointments ([]);
+      logSchedulingFetchError ('scheduling appointments', error);
+      if (!isTransientFetchError (error)) {
+        setAppointments ([]);
+      }
       setLoading (false);
       return;
     }
@@ -157,15 +190,20 @@ export function SchedulingPage () {
       timerIds.forEach ((id) => window.clearTimeout (id));
       timerIds = [];
     };
+    let bumpDebounce: number | null = null;
     const bump = () => {
-      setRefreshToken ((x) => x + 1);
+      if (bumpDebounce != null) window.clearTimeout (bumpDebounce);
+      bumpDebounce = window.setTimeout (() => {
+        bumpDebounce = null;
+        setRefreshToken ((x) => x + 1);
+      }, 120);
     };
     const onShow = () => {
       clearTimers ();
       bump ();
       // Retry only when org context is still initializing; otherwise avoid redundant refetch bursts.
       if (!getOrgId ()) {
-        timerIds = [200, 800, 2200].map ((ms) => window.setTimeout (bump, ms));
+        timerIds = [400, 1200].map ((ms) => window.setTimeout (bump, ms));
       }
     };
     const obs = new MutationObserver (() => {
@@ -177,6 +215,7 @@ export function SchedulingPage () {
     return () => {
       obs.disconnect ();
       clearTimers ();
+      if (bumpDebounce != null) window.clearTimeout (bumpDebounce);
     };
   }, [demoMode]);
 

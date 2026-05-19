@@ -195,7 +195,7 @@ function normalizeTask(task?: string): AdvisorTask {
 
 function parseMeetingSummaryPayload(value: unknown): MeetingSummaryPayload | null {
   if (!isRecord(value)) return null;
-  const summary = clampText(value.summary, 8000);
+  const summary = clampText(value.summary, 20000);
   if (!summary) return null;
   const action_items: MeetingSummaryPayload["action_items"] = [];
   if (Array.isArray(value.action_items)) {
@@ -244,11 +244,12 @@ function meetingSummaryStub(message: string): MeetingSummaryPayload {
   const excerpt = clampText(message, 400);
   return {
     summary:
-      "Meeting summary (stub — set ANTHROPIC_API_KEY for live AI). " +
-      (excerpt ? `Based on: ${excerpt}` : "Add transcript or notes and try again."),
+      "### Meeting Overview\n\n" +
+      "- Meeting summary (stub — set ANTHROPIC_API_KEY for live AI).\n" +
+      (excerpt ? `- Source excerpt: ${excerpt}\n` : "- Add transcript or notes and try again.\n"),
     action_items: [],
     key_decisions: [],
-    topics: ["Meeting notes"],
+    topics: [],
   };
 }
 
@@ -649,13 +650,24 @@ function taskInstruction(task: AdvisorTask) {
   }
 }
 
+const MEETING_SUMMARY_MARKDOWN_RULES =
+  "Format the summary field as Markdown only. Use ### section headings and bullet lists. " +
+  "Choose section titles that match the meeting (e.g. Event Overview, Reservations & Space, Catering & Services, Registration, Technical Support, Financial Considerations — or business equivalents). " +
+  "Use nested bullets with four-space indent for sub-points (timelines, details). " +
+  "Be specific with dates, times, numbers, and owners when stated. " +
+  "Do NOT put Action Items inside summary. " +
+  "Omit empty sections. Prefer 4–8 substantive sections. Past tense, concise professional tone.";
+
 function meetingAnthropicPrompts(message: string) {
   const systemPrompt =
     "You are a meeting intelligence assistant embedded in a professional CRM. " +
-    "Return ONLY valid JSON (no markdown fences, no commentary). " +
-    "Required keys: summary (string, 3-4 sentences, past tense), " +
-    "action_items (array of { task, owner, due_date } where due_date is YYYY-MM-DD or null), " +
-    "key_decisions (array of strings), topics (array of short topic labels, 3-6 words each).";
+    "Return ONLY valid JSON (no markdown code fences, no commentary outside JSON). " +
+    "Required keys: " +
+    "summary (string, Markdown with ### sections and - bullets per rules below), " +
+    "action_items (array of { task, owner, due_date } where due_date is YYYY-MM-DD or null; every follow-up task belongs here), " +
+    "key_decisions (array of strings, optional highlights not already in summary), " +
+    "topics (array of short topic labels, 3-6 words each, optional). " +
+    MEETING_SUMMARY_MARKDOWN_RULES;
   return { systemPrompt, userPrompt: message };
 }
 
@@ -670,7 +682,7 @@ async function callAnthropicMeetingSummary(anthropicApiKey: string, message: str
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 2000,
+      max_tokens: 4096,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     }),
