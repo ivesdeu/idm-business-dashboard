@@ -2,6 +2,21 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AssemblyAiStreamingMessage, TranscriptionStatus } from '@/components/scheduling/types';
 
+export const BIZDASH_ORG_CONTEXT_EVENT = 'bizdash:org-context';
+
+function readOrganizationIdFromWindow (): string | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as {
+    currentOrganizationId?: string | null;
+    bizDashGetCurrentOrgId?: () => string | null;
+  };
+  const fromFn = typeof w.bizDashGetCurrentOrgId === 'function' ? w.bizDashGetCurrentOrgId () : null;
+  const id =
+    (fromFn && String (fromFn).trim ()) ||
+    String (w.currentOrganizationId || '').trim ();
+  return id || null;
+}
+
 type UseTranscriptionState = {
   status: TranscriptionStatus;
   transcript: string;
@@ -31,15 +46,67 @@ function getSupabase (): SupabaseClient | null {
 }
 
 export function isWorkspaceReadyForTranscription (): boolean {
-  if (typeof window === 'undefined') return false;
-  const orgId = (window as unknown as { currentOrganizationId?: string | null }).currentOrganizationId;
-  return !!(orgId && String (orgId).trim ());
+  return !!readOrganizationIdFromWindow ();
+}
+
+async function hasTranscriptionSession (): Promise<boolean> {
+  const supabase = getSupabase ();
+  if (!supabase) return false;
+  const { data } = await supabase.auth.getSession ();
+  return !!data.session?.access_token;
+}
+
+/** True when signed in (session) or workspace org is on window — either is enough to start mic/streaming. */
+export function useTranscriptionReady (): boolean {
+  const [ready, setReady] = useState (() => !!readOrganizationIdFromWindow ());
+
+  useEffect (() => {
+    let cancelled = false;
+
+    const sync = async () => {
+      if (cancelled) return;
+      if (readOrganizationIdFromWindow ()) {
+        setReady (true);
+        return;
+      }
+      if (await hasTranscriptionSession ()) {
+        setReady (true);
+      }
+    };
+
+    void sync ();
+
+    const intervalId = window.setInterval (() => {
+      void sync ();
+    }, 400);
+
+    const supabase = getSupabase ();
+    const sub = supabase?.auth.onAuthStateChange (() => {
+      void sync ();
+    });
+
+    const onOrg = () => {
+      void sync ();
+    };
+    window.addEventListener (BIZDASH_ORG_CONTEXT_EVENT, onOrg);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval (intervalId);
+      sub?.data.subscription.unsubscribe ();
+      window.removeEventListener (BIZDASH_ORG_CONTEXT_EVENT, onOrg);
+    };
+  }, []);
+
+  return ready;
+}
+
+/** @deprecated Use useTranscriptionReady */
+export function useWorkspaceReadyForTranscription (): boolean {
+  return useTranscriptionReady ();
 }
 
 async function fetchAssemblyAiToken (): Promise<string> {
-  if (!isWorkspaceReadyForTranscription ()) {
-    throw new Error ('Workspace is still loading. Wait for sign-in to finish, then try recording again.');
-  }
   const supabase = getSupabase ();
   const base = typeof window !== 'undefined'
     ? String ((window as unknown as { __bizdashSupabaseUrl?: string }).__bizdashSupabaseUrl || '').trim ().replace (/\/$/, '')
@@ -50,7 +117,9 @@ async function fetchAssemblyAiToken (): Promise<string> {
   if (!supabase || !base || !anon) throw new Error ('Sorry, we could not complete your request.');
   const sessionRes = await supabase.auth.getSession ();
   const accessToken = sessionRes.data.session?.access_token || '';
-  if (!accessToken) throw new Error ('Sorry, we could not complete your request.');
+  if (!accessToken) {
+    throw new Error ('Sign in to start transcribing.');
+  }
   const res = await fetch (`${base}/functions/v1/assemblyai-token`, {
     method: 'POST',
     headers: {

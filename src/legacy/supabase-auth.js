@@ -106,7 +106,9 @@
    * `callResolveSessionWorkspaceWithRetries` / `resolveOrgContextWithRetry` instead of a long outer wait.
    */
   /** UX ceiling for one full workspace resolve (invite + RPC + fallbacks). */
-  var ORG_RESOLVE_MS = 18000;
+  var ORG_RESOLVE_MS = 28000;
+  /** Per-RPC ceiling so one hung PostgREST call cannot consume the whole org-resolve budget. */
+  var ORG_RPC_MS = 5500;
   /** Cap accept-org-invite so a stuck invite cannot consume the whole org resolve budget. */
   var INVITE_FETCH_MS = 5000;
   /** Onboarding prefill (org row + optional storage); keep bounded so login never “hangs”. */
@@ -159,6 +161,21 @@
   function isOrgResolveTimeoutError(err) {
     var msg = err && err.message ? String(err.message) : String(err || '');
     return msg.indexOf('Loading workspace timed out') !== -1;
+  }
+
+  function isRpcTimeoutError(err) {
+    if (!err) return false;
+    var msg = String(err.message || err.details || err.hint || err || '').toLowerCase();
+    return msg.indexOf('timed out') !== -1;
+  }
+
+  /** Run a Supabase call with a hard ceiling; returns `{ data, error }` shape on failure. */
+  async function supabaseCallWithTimeout(task, ms, label) {
+    try {
+      return await withTimeout(task(), ms, label + ' timed out');
+    } catch (err) {
+      return { data: null, error: err };
+    }
   }
 
   async function retryOnAuthLock(task) {
@@ -393,6 +410,11 @@
     window.currentOrganizationId = nextOrg;
     window.currentOrganizationSlug = slug || null;
     window.currentOrganizationRole = role || null;
+    try {
+      window.dispatchEvent(
+        new CustomEvent('bizdash:org-context', { detail: { organizationId: nextOrg } }),
+      );
+    } catch (_) {}
     if (typeof window.refreshSidebarWorkspaceChrome === 'function') {
       window.refreshSidebarWorkspaceChrome();
     }
@@ -556,18 +578,32 @@
    * without throwing — retry a few times before surfacing to the user.
    */
   async function callResolveSessionWorkspaceWithRetries(slug) {
-    var delays = [0, 400, 1000];
+    var delays = [0, 350, 900, 1800];
     var lastRes = null;
     for (var i = 0; i < delays.length; i++) {
       if (delays[i] > 0) await sleep(delays[i]);
-      lastRes = await retryOnAuthLock(function () {
-        return supabase.rpc('resolve_session_workspace', { p_slug: slug || null });
-      });
+      lastRes = await supabaseCallWithTimeout(
+        function () {
+          return retryOnAuthLock(function () {
+            return supabase.rpc('resolve_session_workspace', { p_slug: slug || null });
+          });
+        },
+        ORG_RPC_MS,
+        'resolve_session_workspace'
+      );
       if (!lastRes.error) return lastRes;
       if (isResolveSessionWorkspaceUnavailableError(lastRes.error)) return lastRes;
-      if (!isTransientSupabaseNetworkError(lastRes.error)) return lastRes;
+      if (!isTransientSupabaseNetworkError(lastRes.error) && !isRpcTimeoutError(lastRes.error)) return lastRes;
     }
     return lastRes;
+  }
+
+  function shouldUseLegacyWorkspaceResolve(err) {
+    if (!err) return false;
+    if (isResolveSessionWorkspaceUnavailableError(err)) return true;
+    if (isTransientSupabaseNetworkError(err)) return true;
+    if (isRpcTimeoutError(err)) return true;
+    return false;
   }
 
   /**
@@ -578,9 +614,15 @@
   async function ensureOrganizationContextWithoutResolveRpc(user, authSession, gateErr) {
     var slug = parseTenantSlug();
     if (slug) {
-      var pubRes = await retryOnAuthLock(function () {
-        return supabase.rpc('organization_public_by_slug', { sl: slug });
-      });
+      var pubRes = await supabaseCallWithTimeout(
+        function () {
+          return retryOnAuthLock(function () {
+            return supabase.rpc('organization_public_by_slug', { sl: slug });
+          });
+        },
+        ORG_RPC_MS,
+        'organization_public_by_slug'
+      );
       if (pubRes.error) {
         console.error('organization_public_by_slug failed', pubRes.error);
         gateErr('Could not load workspace URL. ' + String(pubRes.error.message || pubRes.error));
@@ -593,14 +635,20 @@
         return { ok: false };
       }
       var org = pubRes.data[0];
-      var memRes = await retryOnAuthLock(function () {
-        return supabase
-          .from('organization_members')
-          .select('role')
-          .eq('organization_id', org.id)
-          .eq('user_id', user.id)
-          .maybeSingle();
-      });
+      var memRes = await supabaseCallWithTimeout(
+        function () {
+          return retryOnAuthLock(function () {
+            return supabase
+              .from('organization_members')
+              .select('role')
+              .eq('organization_id', org.id)
+              .eq('user_id', user.id)
+              .maybeSingle();
+          });
+        },
+        ORG_RPC_MS,
+        'organization_members'
+      );
       if (memRes.error) {
         console.error('organization_members membership check failed', memRes.error);
         gateErr('Could not verify workspace membership. ' + String(memRes.error.message || memRes.error));
@@ -608,9 +656,15 @@
         return { ok: false };
       }
       if (!memRes.data) {
-        var fallbackList = await retryOnAuthLock(function () {
-          return supabase.rpc('my_organizations');
-        });
+        var fallbackList = await supabaseCallWithTimeout(
+          function () {
+            return retryOnAuthLock(function () {
+              return supabase.rpc('my_organizations');
+            });
+          },
+          ORG_RPC_MS,
+          'my_organizations'
+        );
         if (fallbackList.error || !fallbackList.data || !fallbackList.data.length) {
           gateErr('No workspace found for your account yet. Try again in a moment, or contact support.');
           clearOrgContext();
@@ -630,9 +684,15 @@
       return { ok: true, needsOnboarding: needsOnSlug };
     }
 
-    var listRes = await retryOnAuthLock(function () {
-      return supabase.rpc('my_organizations');
-    });
+    var listRes = await supabaseCallWithTimeout(
+      function () {
+        return retryOnAuthLock(function () {
+          return supabase.rpc('my_organizations');
+        });
+      },
+      ORG_RPC_MS,
+      'my_organizations'
+    );
     if (listRes.error) {
       console.error('my_organizations failed', listRes.error);
       gateErr('Could not load your workspaces. ' + String(listRes.error.message || listRes.error));
@@ -677,7 +737,7 @@
 
     var slug = parseTenantSlug();
     var wsRes = await callResolveSessionWorkspaceWithRetries(slug);
-    if (wsRes.error && isResolveSessionWorkspaceUnavailableError(wsRes.error)) {
+    if (wsRes.error && shouldUseLegacyWorkspaceResolve(wsRes.error)) {
       console.warn('resolve_session_workspace unavailable; using legacy workspace resolution', wsRes.error);
       return ensureOrganizationContextWithoutResolveRpc(user, authSession, gateErr);
     }

@@ -5,7 +5,7 @@ import { MeetingSummaryMarkdown } from '@/components/scheduling/MeetingSummaryMa
 import { RecordingBar } from '@/components/scheduling/RecordingBar';
 import type { MeetingActionItem, MeetingNote, SchedulingAppointment } from '@/components/scheduling/types';
 import { rowToMeetingNote, type MeetingNoteRow } from '@/lib/scheduling/supabase';
-import { isWorkspaceReadyForTranscription, useTranscription } from '@/lib/scheduling/useTranscription';
+import { useTranscription, useTranscriptionReady } from '@/lib/scheduling/useTranscription';
 
 type MeetingNotePanelProps = {
   open: boolean;
@@ -186,6 +186,7 @@ export function MeetingNotePanel ({
     stop,
     setTranscript,
   } = useTranscription ();
+  const transcriptionReady = useTranscriptionReady ();
 
   const title = useMemo (() => {
     if (note?.title) return note.title;
@@ -410,7 +411,7 @@ export function MeetingNotePanel ({
             status={transcriptionStatus}
             duration={duration}
             error={transcriptionError}
-            workspaceReady={!!organizationId && isWorkspaceReadyForTranscription ()}
+            workspaceReady={transcriptionReady}
             onStart={() => {
               void start ();
             }}

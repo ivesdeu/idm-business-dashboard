@@ -1,4 +1,5 @@
 import { AudioLines, Copy, Settings2, UserPlus, Volume2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { InlineRecordingBar } from '@/components/scheduling/InlineRecordingBar';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useMeetingNote } from '@/lib/scheduling/useMeetingNote';
-import { isWorkspaceReadyForTranscription, useTranscription } from '@/lib/scheduling/useTranscription';
+import { useTranscription, useTranscriptionReady } from '@/lib/scheduling/useTranscription';
 
 function getSupabase (): SupabaseClient | null {
   if (typeof window === 'undefined') return null;
@@ -29,7 +30,18 @@ function getOrgId (): string | null {
 export function MeetingNotesPage () {
   const organizationId = getOrgId ();
   const supabase = getSupabase ();
-  const workspaceReady = isWorkspaceReadyForTranscription ();
+  const transcriptionReady = useTranscriptionReady ();
+  const [pageVisible, setPageVisible] = useState (false);
+
+  useEffect (() => {
+    const page = document.getElementById ('page-meeting-notes');
+    if (!page) return;
+    const sync = () => setPageVisible (page.classList.contains ('on'));
+    const obs = new MutationObserver (sync);
+    obs.observe (page, { attributes: true, attributeFilter: ['class'] });
+    sync ();
+    return () => obs.disconnect ();
+  }, []);
 
   const {
     status: transcriptionStatus,
@@ -99,9 +111,15 @@ export function MeetingNotesPage () {
                   </Button>
                   <button
                     type="button"
-                    className="inline-flex h-9 items-center justify-center rounded-xl border border-[#2f5f92] bg-[#2f5f92] px-4 text-sm font-medium text-white shadow-none transition-colors hover:bg-[#3e6e9f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f5f92] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-9 items-center justify-center rounded-xl border-0 bg-[#2f5f92] px-4 text-sm font-medium text-white shadow-none transition-colors hover:bg-[#3e6e9f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f5f92] disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
+                      boxShadow: 'none',
+                      border: 'none',
+                    }}
                     onClick={() => void start ()}
-                    disabled={!workspaceReady}
+                    disabled={!transcriptionReady}
                     aria-label="Start transcribing"
                   >
                     Start transcribing
@@ -118,16 +136,28 @@ export function MeetingNotesPage () {
               </span>
               <button
                 type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text3)] transition-colors hover:bg-[var(--bg3)] hover:text-[var(--text2)]"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-white text-[var(--text2)] shadow-none transition-colors hover:border-[var(--border2)] hover:bg-[var(--bg3)]"
+                style={{
+                  background: '#ffffff',
+                  backgroundImage: 'none',
+                  WebkitAppearance: 'none',
+                  appearance: 'none',
+                  boxShadow: 'none',
+                }}
                 aria-label="Add attendee"
               >
-                <UserPlus className="h-3.5 w-3.5" aria-hidden />
+                <UserPlus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
               </button>
             </div>
           ) : null}
           <CardDescription className="mt-3 text-sm">
             Notion AI will summarize the notes and transcript
           </CardDescription>
+          {!isActive && !transcriptionReady && pageVisible ? (
+            <p className="mt-2 text-xs text-[var(--text3)]">
+              Sign in to enable transcription.
+            </p>
+          ) : null}
           {!isActive && transcriptionError ? (
             <p className="mt-2 text-xs text-[var(--red)]">{transcriptionError}</p>
           ) : null}
