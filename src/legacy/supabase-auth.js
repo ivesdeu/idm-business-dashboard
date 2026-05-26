@@ -6,6 +6,9 @@
 
   var PENDING_INVITE_KEY = 'bizdash_pending_org_invite';
   var FLASH_INVITE_KEY = 'bizdash_flash_invite_msg';
+  /** Last resolved workspace for this browser session (fallback when RPCs time out). */
+  var ORG_CONTEXT_CACHE_KEY = 'bizdash_org_context_v1';
+  var ORG_CONTEXT_CACHE_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 
   // Injected at build/dev time by Vite (`vite.config.mjs`); set VITE_SUPABASE_* in `.env` for other projects.
   var SUPABASE_URL = typeof __BIZDASH_SUPABASE_URL__ !== 'undefined' ? __BIZDASH_SUPABASE_URL__ : '';
@@ -108,7 +111,7 @@
   /** UX ceiling for one full workspace resolve (invite + RPC + fallbacks). */
   var ORG_RESOLVE_MS = 28000;
   /** Per-RPC ceiling so one hung PostgREST call cannot consume the whole org-resolve budget. */
-  var ORG_RPC_MS = 5500;
+  var ORG_RPC_MS = 9000;
   /** Cap accept-org-invite so a stuck invite cannot consume the whole org resolve budget. */
   var INVITE_FETCH_MS = 5000;
   /** Onboarding prefill (org row + optional storage); keep bounded so login never “hangs”. */
@@ -202,6 +205,47 @@
     window.currentOrganizationId = null;
     window.currentOrganizationSlug = null;
     window.currentOrganizationRole = null;
+    try {
+      sessionStorage.removeItem(ORG_CONTEXT_CACHE_KEY);
+    } catch (_) {}
+  }
+
+  function persistOrgContextCache(orgId, slug, role) {
+    try {
+      var uid = window.currentUser && window.currentUser.id;
+      if (!uid || !orgId) return;
+      sessionStorage.setItem(
+        ORG_CONTEXT_CACHE_KEY,
+        JSON.stringify({
+          userId: String(uid),
+          orgId: String(orgId),
+          slug: slug ? String(slug) : '',
+          role: role ? String(role) : '',
+          ts: Date.now(),
+        }),
+      );
+    } catch (_) {}
+  }
+
+  function tryRestoreOrgContextFromCache(user, pathSlug) {
+    try {
+      var raw = sessionStorage.getItem(ORG_CONTEXT_CACHE_KEY);
+      if (!raw || !user || !user.id) return null;
+      var c = JSON.parse(raw);
+      if (!c || String(c.userId) !== String(user.id) || !c.orgId) return null;
+      if (Date.now() - (c.ts || 0) > ORG_CONTEXT_CACHE_MAX_MS) return null;
+      if (
+        pathSlug &&
+        c.slug &&
+        String(pathSlug).toLowerCase() !== String(c.slug).toLowerCase()
+      ) {
+        return null;
+      }
+      setOrgContext(c.orgId, c.slug, c.role);
+      return { ok: true, needsOnboarding: false };
+    } catch (_) {
+      return null;
+    }
   }
 
   function captureInviteFromUrlToStorage() {
@@ -429,6 +473,7 @@
     if (orgId && typeof window.bizDashReloadCustomersColumnPrefs === 'function') {
       window.bizDashReloadCustomersColumnPrefs();
     }
+    if (orgId) persistOrgContextCache(orgId, slug, role);
   }
 
   /** Path slug for tenant URLs (`/:slug/…`). Exposed for Advisor org hydration. */
@@ -578,7 +623,7 @@
    * without throwing — retry a few times before surfacing to the user.
    */
   async function callResolveSessionWorkspaceWithRetries(slug) {
-    var delays = [0, 350, 900, 1800];
+    var delays = [0, 400, 1000];
     var lastRes = null;
     for (var i = 0; i < delays.length; i++) {
       if (delays[i] > 0) await sleep(delays[i]);
@@ -593,7 +638,31 @@
       );
       if (!lastRes.error) return lastRes;
       if (isResolveSessionWorkspaceUnavailableError(lastRes.error)) return lastRes;
-      if (!isTransientSupabaseNetworkError(lastRes.error) && !isRpcTimeoutError(lastRes.error)) return lastRes;
+      /* Do not burn the whole org-resolve budget retrying a hung RPC — fall through to legacy. */
+      if (isRpcTimeoutError(lastRes.error)) return lastRes;
+      if (!isTransientSupabaseNetworkError(lastRes.error)) return lastRes;
+    }
+    return lastRes;
+  }
+
+  async function callMyOrganizationsWithRetries() {
+    var delays = [0, 600];
+    var lastRes = null;
+    for (var i = 0; i < delays.length; i++) {
+      if (delays[i] > 0) await sleep(delays[i]);
+      lastRes = await supabaseCallWithTimeout(
+        function () {
+          return retryOnAuthLock(function () {
+            return supabase.rpc('my_organizations');
+          });
+        },
+        ORG_RPC_MS,
+        'my_organizations'
+      );
+      if (!lastRes.error) return lastRes;
+      if (!isTransientSupabaseNetworkError(lastRes.error) && !isRpcTimeoutError(lastRes.error)) {
+        return lastRes;
+      }
     }
     return lastRes;
   }
@@ -656,15 +725,7 @@
         return { ok: false };
       }
       if (!memRes.data) {
-        var fallbackList = await supabaseCallWithTimeout(
-          function () {
-            return retryOnAuthLock(function () {
-              return supabase.rpc('my_organizations');
-            });
-          },
-          ORG_RPC_MS,
-          'my_organizations'
-        );
+        var fallbackList = await callMyOrganizationsWithRetries();
         if (fallbackList.error || !fallbackList.data || !fallbackList.data.length) {
           gateErr('No workspace found for your account yet. Try again in a moment, or contact support.');
           clearOrgContext();
@@ -684,15 +745,7 @@
       return { ok: true, needsOnboarding: needsOnSlug };
     }
 
-    var listRes = await supabaseCallWithTimeout(
-      function () {
-        return retryOnAuthLock(function () {
-          return supabase.rpc('my_organizations');
-        });
-      },
-      ORG_RPC_MS,
-      'my_organizations'
-    );
+    var listRes = await callMyOrganizationsWithRetries();
     if (listRes.error) {
       console.error('my_organizations failed', listRes.error);
       gateErr('Could not load your workspaces. ' + String(listRes.error.message || listRes.error));
@@ -825,8 +878,21 @@
         hadInvite = !!(sessionStorage.getItem(PENDING_INVITE_KEY) || '').trim();
       } catch (_) {}
     }
-    try {
+    async function attemptResolve() {
       return await withTimeout(ensureOrganizationContext(user, authSession), ORG_RESOLVE_MS, timedOutMsg);
+    }
+    function restoreFromCacheIfPossible() {
+      var restored = tryRestoreOrgContextFromCache(user, slugAtStart);
+      if (restored) {
+        console.warn('workspace resolve failed; restored org from session cache', {
+          slug: slugAtStart,
+        });
+        return restored;
+      }
+      return null;
+    }
+    try {
+      return await attemptResolve();
     } catch (err) {
       if (isOrgResolveTimeoutError(err)) {
         console.error('resolveOrgContextWithRetry timed out', {
@@ -835,19 +901,34 @@
           ms: ORG_RESOLVE_MS,
         });
       }
-      // One immediate second chance for lock contention only (no extra wait).
       if (isLockStolenError(err)) {
-        return await withTimeout(ensureOrganizationContext(user, authSession), ORG_RESOLVE_MS, timedOutMsg);
+        try {
+          return await attemptResolve();
+        } catch (errLock) {
+          var fromCacheLock = restoreFromCacheIfPossible();
+          if (fromCacheLock) return fromCacheLock;
+          throw errLock;
+        }
       }
-      // Transient slowness (cold Supabase connection, flaky network, tab backgrounded): one full retry.
       if (isOrgResolveTimeoutError(err)) {
         await sleep(50);
-        return await withTimeout(ensureOrganizationContext(user, authSession), ORG_RESOLVE_MS, timedOutMsg);
+        try {
+          return await attemptResolve();
+        } catch (errTimeout) {
+          var fromCacheTimeout = restoreFromCacheIfPossible();
+          if (fromCacheTimeout) return fromCacheTimeout;
+          throw errTimeout;
+        }
       }
-      /* Thrown network errors from invite flow or rare client throws — one backoff retry. */
       if (isTransientSupabaseNetworkError(err)) {
         await sleep(200);
-        return await withTimeout(ensureOrganizationContext(user, authSession), ORG_RESOLVE_MS, timedOutMsg);
+        try {
+          return await attemptResolve();
+        } catch (errNet) {
+          var fromCacheNet = restoreFromCacheIfPossible();
+          if (fromCacheNet) return fromCacheNet;
+          throw errNet;
+        }
       }
       throw err;
     }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, MoreHorizontal, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Check, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import {
   CUSTOMERS_COLUMN_DEFS,
   defaultPillColorForOption,
@@ -426,11 +426,6 @@ function CrmSelectPortalMenu({
     [selectKey, opts, filtered],
   );
 
-  const openColumnsPanel = useCallback(() => {
-    document.getElementById('btn-customers-columns')?.click();
-    onClose();
-  }, [onClose]);
-
   return createPortal(
     <>
       <div
@@ -545,17 +540,6 @@ function CrmSelectPortalMenu({
           )}
         </div>
 
-        <div className="shrink-0 border-t border-neutral-100">
-          <button
-            type="button"
-            className="!bg-transparent flex w-full items-center gap-2 border-0 px-4 py-2.5 text-left text-[13px] text-neutral-600 outline-none transition-colors hover:!bg-black/[0.04]"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={openColumnsPanel}
-          >
-            <SlidersHorizontal className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={1.75} aria-hidden />
-            Edit property
-          </button>
-        </div>
       </div>
       {pillEditor ? (
         <CrmPillOptionEditorPopover

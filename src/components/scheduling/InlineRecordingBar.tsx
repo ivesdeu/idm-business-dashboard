@@ -78,8 +78,15 @@ export function InlineRecordingBar ({
         {(isRecording || isPaused || isRequesting) ? (
           <Button
             type="button"
-            variant="outline"
-            className="h-8 shrink-0 rounded-xl border-[#f5c4c4] bg-[#fef2f2] px-3 text-sm font-medium text-[#b42318] shadow-none hover:bg-[#fee2e2]"
+            variant="ghost"
+            className="h-8 shrink-0 rounded-xl border-0 bg-[#fef2f2] px-3 text-sm font-medium text-[#b42318] shadow-none outline-none ring-0 hover:bg-[#fee2e2] focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+            style={{
+              WebkitAppearance: 'none',
+              appearance: 'none',
+              boxShadow: 'none',
+              border: 'none',
+              outline: 'none',
+            }}
             onClick={onStop}
           >
             Stop

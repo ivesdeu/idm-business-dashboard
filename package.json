@@ -11,7 +11,8 @@
     "preview": "vite preview --host localhost --port 5173 --strictPort",
     "db:push": "supabase db push",
     "db:push:all": "supabase db push --include-all --yes",
-    "deploy:edge": "bash scripts/deploy-edge-functions.sh"
+    "deploy:edge": "bash scripts/deploy-edge-functions.sh",
+    "test:tenant-isolation": "node scripts/tenant-isolation-test.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

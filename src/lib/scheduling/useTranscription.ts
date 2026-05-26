@@ -35,9 +35,40 @@ type UseTranscriptionResult = UseTranscriptionState & {
 };
 
 const TARGET_SAMPLE_RATE = 16000;
-const SPEECH_MODEL = 'u3-rt-pro';
-/** ~128 ms of audio at 16 kHz (AssemblyAI expects 50–1000 ms binary frames). */
-const PCM_BUFFER_SIZE = 2048;
+/** Primary model — requires Universal-3 Pro streaming on the AssemblyAI account. */
+const SPEECH_MODEL_PRIMARY = 'u3-rt-pro';
+/** Fallback when the account only has legacy Universal Streaming English. */
+const SPEECH_MODEL_FALLBACK = 'universal-streaming-english';
+const BEGIN_TIMEOUT_MS = 12000;
+
+function readSpeechModelOverride (): string | null {
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    const fromEnv = String (
+      (import.meta.env as { VITE_ASSEMBLYAI_STREAMING_SPEECH_MODEL?: string })
+        .VITE_ASSEMBLYAI_STREAMING_SPEECH_MODEL || '',
+    ).trim ();
+    if (fromEnv) return fromEnv;
+  }
+  return null;
+}
+
+function speechModelsToTry (): string[] {
+  const override = readSpeechModelOverride ();
+  if (override) return [override];
+  return [SPEECH_MODEL_PRIMARY, SPEECH_MODEL_FALLBACK];
+}
+/** AssemblyAI rejects PCM frames shorter than 50 ms at 16 kHz (code 3007). */
+const MIN_PCM_SAMPLES_16K = 800;
+const SCRIPT_PROCESSOR_SIZES = [256, 512, 1024, 2048, 4096, 8192, 16384] as const;
+
+/** ScriptProcessor buffer must be a power of two and yield ≥50 ms after resample to 16 kHz. */
+function scriptProcessorBufferSize (inputRate: number): number {
+  const minInputSamples = Math.ceil (inputRate * 0.052);
+  for (const size of SCRIPT_PROCESSOR_SIZES) {
+    if (size >= minInputSamples) return size;
+  }
+  return 16384;
+}
 
 function getSupabase (): SupabaseClient | null {
   if (typeof window === 'undefined') return null;
@@ -153,24 +184,120 @@ async function fetchAssemblyAiToken (): Promise<string> {
   return token;
 }
 
-function streamingCloseErrorMessage (code: number, reason: string): string {
-  if (code === 1008) return 'Transcription authentication failed. Sign in again and retry.';
-  if (code === 3005) return 'Transcription session ended due to a server error.';
-  if (code === 3007) return 'Audio stream was invalid. Try stopping and starting recording again.';
-  if (code === 3008) return 'Transcription session timed out (3 hour limit).';
-  if (code === 3009) return 'Too many active transcription sessions. Try again shortly.';
-  if (reason) return reason;
-  return 'Transcription connection closed.';
+function streamingCloseErrorMessage (
+  code: number,
+  reason: string,
+  speechModel?: string,
+): string {
+  const detail = reason.trim ();
+  const modelHint = speechModel ? ` (model: ${speechModel})` : '';
+  if (code === 1008) {
+    return (
+      detail ||
+      `Transcription authentication failed${modelHint}. Sign in again, confirm ASSEMBLYAI_API_KEY is set, and retry.`
+    );
+  }
+  if (code === 3005) return detail || `Transcription session ended due to a server error${modelHint}.`;
+  if (code === 3007) {
+    return detail || 'Audio chunks were too small or too large. Try stopping and starting recording again.';
+  }
+  if (code === 3008) return detail || 'Transcription session timed out (3 hour limit).';
+  if (code === 3009) return detail || 'Too many active transcription sessions. Try again shortly.';
+  if (detail) return `${detail}${modelHint}`;
+  if (code > 0) return `Transcription connection closed (code ${code})${modelHint}.`;
+  return `Transcription connection closed${modelHint}. Enable AssemblyAI Streaming on your account or set VITE_ASSEMBLYAI_STREAMING_SPEECH_MODEL=universal-streaming-english.`;
 }
 
-function wsUrlForAssemblyAi (token: string): string {
+function wsUrlForAssemblyAi (token: string, speechModel: string): string {
   const params = new URLSearchParams ({
     sample_rate: String (TARGET_SAMPLE_RATE),
-    speech_model: SPEECH_MODEL,
-    formatted_finals: 'true',
+    speech_model: speechModel,
+    format_turns: 'true',
     token,
   });
   return `wss://streaming.assemblyai.com/v3/ws?${params.toString ()}`;
+}
+
+type StreamingMessageHandlers = {
+  onTurn: (msg: AssemblyAiStreamingMessage) => void;
+  onServerError: (detail: string) => void;
+};
+
+/** Opens WS, waits for AssemblyAI `Begin`, then resolves. Rejects on timeout or abnormal close. */
+function establishStreamingSession (
+  token: string,
+  speechModel: string,
+  handlers: StreamingMessageHandlers,
+): Promise<WebSocket> {
+  return new Promise ((resolve, reject) => {
+    const ws = new WebSocket (wsUrlForAssemblyAi (token, speechModel));
+    let settled = false;
+
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout (beginTimer);
+      try {
+        ws.close ();
+      } catch (_) {}
+      reject (err);
+    };
+
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout (beginTimer);
+      resolve (ws);
+    };
+
+    const beginTimer = window.setTimeout (() => {
+      fail (
+        new Error (
+          `Transcription session did not start within ${BEGIN_TIMEOUT_MS / 1000}s (model: ${speechModel}). ` +
+            'Check that AssemblyAI Streaming is enabled for your API key.',
+        ),
+      );
+    }, BEGIN_TIMEOUT_MS);
+
+    ws.addEventListener ('message', (ev) => {
+      let msg: AssemblyAiStreamingMessage;
+      try {
+        msg = JSON.parse (String (ev.data || '{}')) as AssemblyAiStreamingMessage;
+      } catch {
+        return;
+      }
+      const type = typeof msg.type === 'string' ? msg.type : '';
+      if (type === 'Begin') {
+        succeed ();
+        return;
+      }
+      if (type === 'Turn') {
+        handlers.onTurn (msg);
+        return;
+      }
+      if (type === 'Termination') {
+        return;
+      }
+      if (type === 'Error') {
+        const detail = typeof msg.error === 'string' ? msg.error : 'Transcription service unavailable.';
+        handlers.onServerError (detail);
+        fail (new Error (detail));
+      }
+    });
+
+    ws.addEventListener ('error', () => {
+      fail (new Error ('Could not connect to transcription service.'));
+    });
+
+    ws.addEventListener ('close', (ev) => {
+      if (settled) return;
+      fail (
+        new Error (
+          streamingCloseErrorMessage (ev.code, String (ev.reason || ''), speechModel),
+        ),
+      );
+    });
+  });
 }
 
 function cleanText (value: string): string {
@@ -181,6 +308,21 @@ function appendText (current: string, chunk: string): string {
   const next = cleanText (chunk);
   if (!next) return current;
   return current ? `${current} ${next}` : next;
+}
+
+function sendPcmInAssemblyChunks (ws: WebSocket, pcm16k: Int16Array, remainderRef: { current: Int16Array }) {
+  if (!pcm16k.length) return;
+  const prev = remainderRef.current;
+  const merged = new Int16Array (prev.length + pcm16k.length);
+  merged.set (prev, 0);
+  merged.set (pcm16k, prev.length);
+  let offset = 0;
+  while (offset + MIN_PCM_SAMPLES_16K <= merged.length) {
+    const frame = merged.subarray (offset, offset + MIN_PCM_SAMPLES_16K);
+    ws.send (frame.buffer.slice (frame.byteOffset, frame.byteOffset + frame.byteLength));
+    offset += MIN_PCM_SAMPLES_16K;
+  }
+  remainderRef.current = offset < merged.length ? merged.subarray (offset) : new Int16Array (0);
 }
 
 function resampleFloatTo16k (input: Float32Array, inputRate: number): Int16Array {
@@ -231,6 +373,9 @@ export function useTranscription (): UseTranscriptionResult {
   const pausedRef = useRef (false);
   const permissionKnownRef = useRef<'granted' | 'denied' | 'unknown'> ('unknown');
   const terminatingRef = useRef (false);
+  const sessionReadyRef = useRef (false);
+  const activeSpeechModelRef = useRef<string | null> (null);
+  const pcmSendRemainderRef = useRef<Int16Array> (new Int16Array (0));
 
   const clearTimer = useCallback (() => {
     if (timerRef.current != null) window.clearInterval (timerRef.current);
@@ -295,12 +440,14 @@ export function useTranscription (): UseTranscriptionResult {
   const stop = useCallback (() => {
     clearTimer ();
     pausedRef.current = false;
+    sessionReadyRef.current = false;
+    activeSpeechModelRef.current = null;
     teardownAudioGraph ();
     closeWs (true);
     stopTracks ();
     setInterimText ('');
+    setError (null);
     setStatus ('stopped');
-    terminatingRef.current = false;
   }, [clearTimer, closeWs, stopTracks, teardownAudioGraph]);
 
   const pause = useCallback (() => {
@@ -333,6 +480,8 @@ export function useTranscription (): UseTranscriptionResult {
     setStatus ('requesting');
     pausedRef.current = false;
     terminatingRef.current = false;
+    sessionReadyRef.current = false;
+    pcmSendRemainderRef.current = new Int16Array (0);
 
     if (typeof window === 'undefined' || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setError ('Recording requires a secure connection (HTTPS) and a supported browser.');
@@ -346,31 +495,9 @@ export function useTranscription (): UseTranscriptionResult {
       streamRef.current = stream;
 
       const token = await fetchAssemblyAiToken ();
-      const ws = new WebSocket (wsUrlForAssemblyAi (token));
-      wsRef.current = ws;
-
-      await new Promise<void> ((resolve, reject) => {
-        const onOpen = () => {
-          ws.removeEventListener ('error', onErr);
-          resolve ();
-        };
-        const onErr = () => {
-          ws.removeEventListener ('open', onOpen);
-          reject (new Error ('Could not connect to transcription service.'));
-        };
-        ws.addEventListener ('open', onOpen, { once: true });
-        ws.addEventListener ('error', onErr, { once: true });
-      });
-
-      ws.addEventListener ('message', (ev) => {
-        let msg: AssemblyAiStreamingMessage;
-        try {
-          msg = JSON.parse (String (ev.data || '{}')) as AssemblyAiStreamingMessage;
-        } catch {
-          return;
-        }
-        const type = typeof msg.type === 'string' ? msg.type : '';
-        if (type === 'Turn') {
+      const models = speechModelsToTry ();
+      const turnHandlers: StreamingMessageHandlers = {
+        onTurn: (msg) => {
           const tx = transcriptFromTurn (msg);
           if (!tx) return;
           if (msg.end_of_turn) {
@@ -379,35 +506,64 @@ export function useTranscription (): UseTranscriptionResult {
           } else {
             setInterimText (tx);
           }
-          return;
-        }
-        if (type === 'Termination') {
-          return;
-        }
-        if (type === 'Error') {
-          const detail = typeof msg.error === 'string' ? msg.error : 'Transcription service unavailable.';
+        },
+        onServerError: (detail) => {
           setError (detail);
           stop ();
-        }
-      });
+        },
+      };
 
-      ws.addEventListener ('error', () => {
-        if (!terminatingRef.current) {
-          setError ('Transcription service unavailable. Your notes are saved locally.');
+      let ws: WebSocket | null = null;
+      let lastConnectError: Error | null = null;
+
+      for (let i = 0; i < models.length; i += 1) {
+        const speechModel = models[i];
+        try {
+          ws = await establishStreamingSession (token, speechModel, turnHandlers);
+          activeSpeechModelRef.current = speechModel;
+          break;
+        } catch (err) {
+          lastConnectError = err instanceof Error ? err : new Error (String (err || ''));
+          if (i < models.length - 1) {
+            console.warn (
+              `[transcription] model ${speechModel} failed, retrying with ${models[i + 1]}`,
+              lastConnectError.message,
+            );
+          }
         }
-      });
+      }
+
+      if (!ws) {
+        throw lastConnectError || new Error ('Could not start transcription session.');
+      }
+
+      sessionReadyRef.current = true;
+      wsRef.current = ws;
 
       ws.addEventListener ('close', (ev) => {
         if (wsRef.current === ws) wsRef.current = null;
+        const wasUserInitiated = terminatingRef.current;
+        const speechModel = activeSpeechModelRef.current;
+        terminatingRef.current = false;
+        sessionReadyRef.current = false;
+        activeSpeechModelRef.current = null;
         clearTimer ();
         teardownAudioGraph ();
         stopTracks ();
         setInterimText ('');
-        if (!terminatingRef.current && ev.code !== 1000) {
-          setError (streamingCloseErrorMessage (ev.code, String (ev.reason || '')));
+        const isCleanClose = ev.code === 1000 || ev.code === 1005;
+        console.info (
+          '[transcription] ws closed',
+          { code: ev.code, reason: ev.reason, wasUserInitiated, isCleanClose, speechModel },
+        );
+        if (wasUserInitiated || isCleanClose) {
+          setError (null);
+        } else if (ev.code > 0 || ev.reason) {
+          setError (
+            streamingCloseErrorMessage (ev.code, String (ev.reason || ''), speechModel || undefined),
+          );
         }
         setStatus ((s) => (s === 'requesting' ? 'idle' : 'stopped'));
-        terminatingRef.current = false;
       });
 
       const audioContext = new AudioContext ({ sampleRate: TARGET_SAMPLE_RATE });
@@ -419,16 +575,19 @@ export function useTranscription (): UseTranscriptionResult {
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.7;
       analyserRef.current = analyser;
-      const processor = audioContext.createScriptProcessor (PCM_BUFFER_SIZE, 1, 1);
+      const processorSize = scriptProcessorBufferSize (inputRate);
+      const processor = audioContext.createScriptProcessor (processorSize, 1, 1);
       processorRef.current = processor;
+      const pcmRemainder = { current: pcmSendRemainderRef.current };
       processor.onaudioprocess = (event) => {
-        if (pausedRef.current) return;
+        if (pausedRef.current || !sessionReadyRef.current) return;
         const wsLive = wsRef.current;
         if (!wsLive || wsLive.readyState !== WebSocket.OPEN) return;
         const channel = event.inputBuffer.getChannelData (0);
         const pcm = resampleFloatTo16k (channel, inputRate);
         try {
-          wsLive.send (pcm.buffer);
+          sendPcmInAssemblyChunks (wsLive, pcm, pcmRemainder);
+          pcmSendRemainderRef.current = pcmRemainder.current;
         } catch (_) {}
       };
       source.connect (analyser);

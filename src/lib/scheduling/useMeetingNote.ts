@@ -38,6 +38,8 @@ export function useMeetingNote ({
   useEffect (() => {
     if (!supabase || !organizationId) return;
     let cancelled = false;
+    const localTranscript = transcript;
+    const preserveLocalTranscript = !!(localTranscript.trim () || duration > 0);
     setLoading (true);
     setSaveError (null);
     void (async () => {
@@ -57,9 +59,14 @@ export function useMeetingNote ({
         const mapped = rowToMeetingNote (data[0] as MeetingNoteRow);
         setNote (mapped);
         const initial = mapped.transcript || mapped.rawNotes || '';
-        setRawNotes (initial);
-        prevTranscriptRef.current = initial;
-        setTranscript (initial);
+        if (preserveLocalTranscript) {
+          setRawNotes (localTranscript);
+          prevTranscriptRef.current = localTranscript;
+        } else {
+          setRawNotes (initial);
+          prevTranscriptRef.current = initial;
+          setTranscript (initial);
+        }
       } else {
         const insertBody = {
           organization_id: organizationId,
@@ -89,9 +96,14 @@ export function useMeetingNote ({
         }
         const mapped = rowToMeetingNote (created as MeetingNoteRow);
         setNote (mapped);
-        setRawNotes ('');
-        prevTranscriptRef.current = '';
-        setTranscript ('');
+        if (preserveLocalTranscript) {
+          setRawNotes (localTranscript);
+          prevTranscriptRef.current = localTranscript;
+        } else {
+          setRawNotes ('');
+          prevTranscriptRef.current = '';
+          setTranscript ('');
+        }
       }
       setLoading (false);
     })();

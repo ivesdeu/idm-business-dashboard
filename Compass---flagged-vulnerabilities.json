@@ -1,0 +1,44 @@
+{
+    "findings": [
+        {
+            "title": "Stored XSS in the Projects table lets any workspace writer execute script in other members' browsers.",
+            "severity": "high",
+            "location": "src/legacy/financial-core.js",
+            "attacker": "Any authenticated workspace member with write access to projects (owner, admin, or member).",
+            "input": "Project fields persisted in the `projects` table, including `name`, `type`, `description`, `dueDate`, and client-linked display data.",
+            "attack_path": "The attacker enters a JavaScript payload into a project field through the project modal. `persistProjectToSupabase()` stores those raw values in the org-scoped `projects` table, other members load that data through `fetchProjectsFromSupabase()`, and `renderProjects()` injects the fields directly into `tbody.innerHTML` without escaping, executing the payload in the victim browser.",
+            "impact": "A malicious workspace member can run arbitrary JavaScript in another member's authenticated session, use `window.supabaseClient` or the victim's live page context to read or mutate workspace data, invoke authenticated edge functions, and effectively act as the victim inside the app.",
+            "evidence": [
+                "`src/legacy/financial-core.js` reads raw project form values and saves them into the in-memory project object in the project modal handler.",
+                "`src/legacy/financial-core.js` -> `projectRowForDb()` copies `name`, `type`, `description`, and related fields straight into the database payload; `persistProjectToSupabase()` upserts that payload to `projects`.",
+                "`src/legacy/financial-core.js` -> `fetchProjectsFromSupabase()` selects all project rows for the current organization and maps them back into UI objects.",
+                "`src/legacy/financial-core.js` -> `renderProjects()` concatenates `p.name`, `clientName`, `p.type`, `p.description`, and `p.dueDate` straight into `tbody.innerHTML` with no `esc()` call.",
+                "`src/legacy/supabase-auth.js` exposes the live authenticated Supabase client as `window.supabaseClient`, which injected script can use once it gains execution."
+            ],
+            "status": "active",
+            "commit_hash": "83c738e6fefdf7b5938dec55e374473bda4d8f4f",
+            "detected_at_pst": "2026-05-26T07:55:19-07:00",
+            "reported_link": ""
+        },
+        {
+            "title": "Stored XSS in custom project status labels executes when teammates open the status manager.",
+            "severity": "medium",
+            "location": "src/legacy/financial-core.js",
+            "attacker": "Any authenticated workspace member with write access to workspace app settings (owner, admin, or member).",
+            "input": "A custom project status label entered through the Projects status-management UI and stored in org-scoped `app_settings.project_statuses`.",
+            "attack_path": "The attacker adds a malicious status label through the Manage statuses flow. `persistAppSettingsToSupabase()` saves `project_statuses` into the shared org `app_settings` row, other members load those labels during workspace hydration, and `renderStatusList()` inserts each label directly into `statusList.innerHTML` without escaping when the status manager is opened.",
+            "impact": "Opening the status manager is enough to trigger arbitrary JavaScript in the victim browser, enabling the attacker to hijack or use the victim's authenticated in-app session and perform actions as that user.",
+            "evidence": [
+                "`src/legacy/financial-core.js` lets users add arbitrary status labels through the `btn-status-add` handler and immediately persists them.",
+                "`src/legacy/financial-core.js` -> `persistAppSettingsToSupabase()` writes `project_statuses` to the shared org `app_settings` row.",
+                "`src/legacy/financial-core.js` loads `settingsRow.project_statuses` during workspace hydration and stores them into `projectStatuses` for later rendering.",
+                "`src/legacy/financial-core.js` -> `renderStatusList()` concatenates each raw `label` into `statusList.innerHTML` with no escaping.",
+                "`supabase/migrations/20260301107000_organizations_multitenancy.sql` gives authenticated org writers update access to `app_settings`, so an ordinary member can plant the payload for other members."
+            ],
+            "status": "active",
+            "commit_hash": "83c738e6fefdf7b5938dec55e374473bda4d8f4f",
+            "detected_at_pst": "2026-05-26T07:55:19-07:00",
+            "reported_link": ""
+        }
+    ]
+}

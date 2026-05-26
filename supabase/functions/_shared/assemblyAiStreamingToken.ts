@@ -35,7 +35,7 @@ export async function createAssemblyAiStreamingToken(
   }
 
   // AssemblyAI streaming auth: raw API key in Authorization header (no "Bearer" prefix).
-  const expiresInSeconds = 120;
+  const expiresInSeconds = 300;
   const tokenUrl =
     `https://streaming.assemblyai.com/v3/token?expires_in_seconds=${expiresInSeconds}&max_session_duration_seconds=3600`;
   const aaiRes = await fetch(tokenUrl, {

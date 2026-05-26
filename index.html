@@ -1884,22 +1884,6 @@
     border-radius: 0;
     box-shadow: none;
   }
-  .chat-top-bar {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 48px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg2);
-  }
-  .chat-top-bar-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text);
-    letter-spacing: -0.01em;
-  }
   .chat-composer-dock {
     flex-shrink: 0;
     display: flex;
@@ -2394,14 +2378,19 @@
   .dt tbody tr:last-child td { border-bottom:none; }
   .card .dt tbody tr:last-child td { border-bottom:none; }
   .dt tr:hover td { background:rgba(0,0,0,0.02); }
+  /* Sort-header styling — applies to any .dt table whose <th> has class="th-sort"
+     and (optionally) a child <span class="th-sort-ind"> placeholder for the ↑/↓ glyph. */
+  .dt th.th-sort,
   #expenses-table th.th-sort {
     cursor: pointer;
     user-select: none;
   }
+  .dt th.th-sort:focus-visible,
   #expenses-table th.th-sort:focus-visible {
     outline: 2px solid var(--border);
     outline-offset: 2px;
   }
+  .dt .th-sort-ind,
   #expenses-table .exp-th-sort-ind {
     font-size: 0.65rem;
     opacity: 0.85;
@@ -2462,7 +2451,99 @@
     cursor: pointer;
   }
   .lists-sb-ico-hit:hover { background: var(--bg3, rgba(127,127,127,0.1)); }
-  .lists-th-cell { vertical-align: middle; white-space: nowrap; }
+  .lists-th-cell { vertical-align: middle; white-space: nowrap; position: relative; }
+  .lists-dt-wrap { overflow-x: auto; max-width: 100%; }
+  .lists-dt { table-layout: fixed; width: max-content; }
+  .lists-dt td { overflow: hidden; word-break: break-word; }
+  .lists-th-resize {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    width: 8px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 5;
+    touch-action: none;
+  }
+  .lists-th-resize::after {
+    content: '';
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    border-radius: 2px;
+    background: rgba(127, 127, 127, 0.4);
+    transition: background-color 120ms ease, top 120ms ease, bottom 120ms ease;
+  }
+  .lists-th-resize:hover::after,
+  .lists-th-resize.is-dragging::after,
+  body.lists-col-resizing .lists-th-resize.is-dragging::after {
+    background: var(--brand, #2f5f92);
+    top: 10%;
+    bottom: 10%;
+  }
+  body.lists-col-resizing {
+    cursor: col-resize !important;
+    user-select: none;
+  }
+  body.lists-col-resizing * { cursor: col-resize !important; }
+  /* Generic resizable-column table support. Apply data-resizable-cols="1" to any <table>.
+     Init logic in financial-core.js (initResizableTables) measures current widths, injects a
+     <colgroup>, switches to fixed layout, and appends a .tbl-th-resize handle to each <th>. */
+  .dt-resizable {
+    table-layout: fixed;
+    width: max-content;
+    min-width: 100%;
+  }
+  .dt-resizable > thead > tr > th { position: relative; }
+  .dt-resizable > tbody > tr > td { overflow: hidden; word-break: break-word; }
+  /* When a table is resizable, the <col> width is the source of truth.
+     Existing per-column max-widths (e.g. #customers-table .td-truncate) would
+     otherwise keep clipping content even after the user expands the column. */
+  .dt-resizable .td-truncate { max-width: none; }
+  .dt-resizable-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tbl-th-resize {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    width: 8px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 5;
+    touch-action: none;
+  }
+  .tbl-th-resize::after {
+    content: '';
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    border-radius: 2px;
+    background: rgba(127, 127, 127, 0.4);
+    transition: background-color 120ms ease, top 120ms ease, bottom 120ms ease;
+  }
+  .tbl-th-resize:hover::after,
+  .tbl-th-resize.is-dragging::after,
+  body.tbl-col-resizing .tbl-th-resize.is-dragging::after {
+    background: var(--brand, #2f5f92);
+    top: 10%;
+    bottom: 10%;
+  }
+  body.tbl-col-resizing {
+    cursor: col-resize !important;
+    user-select: none;
+  }
+  body.tbl-col-resizing * { cursor: col-resize !important; }
   .lists-th-ico-hit {
     display: inline-flex;
     align-items: center;
@@ -5499,6 +5580,261 @@
     box-shadow: 0 0 0 2px var(--coral-border-soft);
   }
 
+  /* Workspace lists — date picker popover */
+  .lists-date-trigger {
+    cursor: pointer;
+  }
+  .lists-date-picker {
+    position: fixed;
+    z-index: 145;
+    background: #fff;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+    padding: 10px;
+    width: 480px;
+    max-width: calc(100vw - 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--text);
+  }
+  .lists-dp-inputrow { padding: 2px 2px 0; }
+  .lists-dp-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    background: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    outline: none;
+  }
+  .lists-dp-input::placeholder { color: var(--text3); font-weight: 400; }
+  .lists-dp-input:focus {
+    border-color: var(--coral-border-mid);
+    box-shadow: 0 0 0 2px var(--coral-border-soft);
+  }
+  .lists-dp-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 160px;
+    gap: 14px;
+    align-items: start;
+  }
+  .lists-dp-cal { min-width: 0; }
+  .lists-dp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px 6px;
+  }
+  .lists-dp-monthlbl {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .lists-dp-navbtns { display: inline-flex; gap: 4px; }
+  .lists-dp-nav {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text2);
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lists-dp-nav:hover { background: var(--bg3); color: var(--text); }
+  .lists-dp-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    padding: 0 2px;
+    margin-bottom: 2px;
+  }
+  .lists-dp-wd {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text3);
+    padding: 4px 0;
+  }
+  .lists-dp-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    padding: 0 2px;
+  }
+  .lists-dp-day {
+    appearance: none;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lists-dp-day:hover { background: var(--bg3); }
+  .lists-dp-day.is-out { color: var(--text3); opacity: 0.55; cursor: default; }
+  .lists-dp-day.is-out:hover { background: transparent; }
+  .lists-dp-day.is-today {
+    border-color: var(--border2);
+  }
+  .lists-dp-day.is-selected {
+    background: var(--coral);
+    color: #fff;
+    border-color: var(--coral);
+  }
+  .lists-dp-day.is-selected.is-today { box-shadow: 0 0 0 2px var(--coral-border-soft); }
+  .lists-dp-day.is-selected:hover { background: var(--coral); }
+
+  .lists-dp-timewrap { min-width: 0; }
+  .lists-dp-time {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .lists-dp-tlabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text3);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 2px 0;
+  }
+  .lists-dp-timerow {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .lists-dp-tinput {
+    flex: 1 1 auto;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    background: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    outline: none;
+    text-align: center;
+  }
+  .lists-dp-tinput::placeholder { color: var(--text3); font-weight: 400; }
+  .lists-dp-tinput:focus {
+    border-color: var(--coral-border-mid);
+    box-shadow: 0 0 0 2px var(--coral-border-soft);
+  }
+  .lists-dp-ampm-wrap {
+    position: relative;
+    flex: 0 0 auto;
+  }
+  .lists-dp-ampm-trigger {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    min-height: 36px;
+    padding: 0 8px 0 10px;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .lists-dp-ampm-trigger:hover { background: var(--bg3); }
+  .lists-dp-ampm-trigger.is-open {
+    border-color: var(--coral-border-mid);
+    box-shadow: 0 0 0 2px var(--coral-border-soft);
+  }
+  .lists-dp-ampm-val { line-height: 1; }
+  .lists-dp-ampm-chev {
+    font-size: 9px;
+    color: var(--text3);
+    line-height: 1;
+  }
+  .lists-dp-ampm-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 5;
+    background: #fff;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 60px;
+  }
+  .lists-dp-ampm-opt {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .lists-dp-ampm-opt:hover { background: var(--bg3); }
+  .lists-dp-ampm-opt.is-selected {
+    background: var(--coral);
+    color: #fff;
+    font-weight: 600;
+  }
+  .lists-dp-ampm-opt.is-selected:hover {
+    background: var(--coral);
+    color: #fff;
+  }
+  .lists-dp-thint {
+    font-size: 11px;
+    color: var(--text3);
+    padding: 0 2px;
+  }
+  .lists-dp-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 4px 0;
+  }
+  .lists-dp-foot-btn {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--coral);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .lists-dp-foot-btn:hover { background: var(--coral-border-soft); }
+
   .lists-board {
     display: flex;
     gap: 12px;
@@ -5814,7 +6150,35 @@
   .lists-notion-table td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
   .lists-notion-table th { background: var(--bg2); color: var(--text3); font-weight: 600; }
   .lists-th-icon { width: 36px; color: var(--text3); }
-  .lists-add-prop { color: var(--text3); font-size: 12px; }
+  .lists-add-prop {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 5px;
+    text-align: left;
+  }
+  .lists-add-prop:hover { background: var(--bg3); color: var(--text2); }
+  .lists-notion-colhdr {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text2);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 6px;
+    margin: -2px -6px;
+    border-radius: 5px;
+    text-align: left;
+    width: calc(100% + 12px);
+  }
+  .lists-notion-colhdr:hover { background: var(--bg3); color: var(--text); }
   .lists-notion-newpage {
     margin-top: 10px;
     border: none;
@@ -5826,6 +6190,65 @@
     padding: 4px 0;
   }
   .lists-notion-newpage:hover { color: var(--lt-blue); }
+
+  .lists-notion-pop {
+    position: fixed;
+    z-index: 150;
+    background: #fff;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+    padding: 12px;
+    width: 280px;
+    max-width: calc(100vw - 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .lists-notion-pop-h {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .lists-notion-pop-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .lists-notion-pop-lbl {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .lists-notion-pop-name,
+  .lists-notion-pop-type {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    background: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+  }
+  .lists-notion-pop-name:focus,
+  .lists-notion-pop-type:focus {
+    border-color: var(--coral-border-mid);
+    box-shadow: 0 0 0 2px var(--coral-border-soft);
+  }
+  .lists-notion-pop-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-end;
+    padding-top: 2px;
+  }
   .list-cust-mo { z-index: 118; }
   .list-cust-md {
     width: min(1000px, 98vw);
@@ -6978,6 +7401,7 @@
         <kbd class="sb-kbd">/</kbd>
       </span>
     </button>
+    <div id="voice-agent-react-root"></div>
     <div class="sb-user" id="sb-user-menu" data-public-title="Account">
       <button type="button" class="sb-user-profile-hit" id="sb-user-go-profile" title="Profile settings" aria-label="Open profile settings">
         <div class="avatar" id="user-avatar">?</div>
@@ -7133,7 +7557,7 @@
           <div>No receivables yet.</div>
           <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me understand who owes money and how to follow up on receivables.">Draft with Advisor</button></p>
         </div>
-        <table class="dt" id="dash-ar-table" style="display:none;">
+        <table class="dt" id="dash-ar-table" data-resizable-cols="1" style="display:none;">
           <thead><tr><th>Client</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead>
           <tbody id="dash-ar-body"></tbody>
         </table>
@@ -7182,7 +7606,7 @@
         <div>No transactions yet. Use “Add transaction” to record income or expenses.</div>
         <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me categorize transactions and suggest a simple bookkeeping rhythm for this workspace.">Draft with Advisor</button></p>
       </div>
-      <table class="dt" id="transaction-log-table" style="display:none;">
+      <table class="dt" id="transaction-log-table" data-resizable-cols="1" style="display:none;">
         <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Note</th><th style="width:88px;"></th></tr></thead>
         <tbody id="transaction-log-body"></tbody>
       </table>
@@ -7203,8 +7627,25 @@
         <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me define my first client record and pipeline stages for this CRM.">Draft with Advisor</button></p>
       </div>
       <div class="customers-table-scroll">
-        <table class="dt" id="customers-table" style="display:none;">
-          <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Preferred</th><th>Style</th><th>Status</th><th>Priority</th><th>Projects</th><th>Revenue</th><th>Allocated cost</th><th>Profit</th><th>Margin</th><th>ROI</th><th>Updated</th><th style="width:140px;">Actions</th></tr></thead>
+        <table class="dt" id="customers-table" data-resizable-cols="1" style="display:none;">
+          <thead><tr>
+            <th class="th-sort" data-cust-sort="company" role="columnheader" scope="col" tabindex="0">Company <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="contact" role="columnheader" scope="col" tabindex="0">Contact <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="email" role="columnheader" scope="col" tabindex="0">Email <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="phone" role="columnheader" scope="col" tabindex="0">Phone <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="preferred" role="columnheader" scope="col" tabindex="0">Preferred <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="style" role="columnheader" scope="col" tabindex="0">Style <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="status" role="columnheader" scope="col" tabindex="0">Status <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="priority" role="columnheader" scope="col" tabindex="0">Priority <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="projects" role="columnheader" scope="col" tabindex="0">Projects <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="revenue" role="columnheader" scope="col" tabindex="0">Revenue <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="allocated" role="columnheader" scope="col" tabindex="0">Allocated cost <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="profit" role="columnheader" scope="col" tabindex="0">Profit <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="margin" role="columnheader" scope="col" tabindex="0">Margin <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="roi" role="columnheader" scope="col" tabindex="0">ROI <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th class="th-sort" data-cust-sort="updated" role="columnheader" scope="col" tabindex="0">Updated <span class="th-sort-ind" aria-hidden="true"></span></th>
+            <th style="width:140px;" role="columnheader" scope="col">Actions</th>
+          </tr></thead>
           <tbody id="customers-tbody"></tbody>
         </table>
       </div>
@@ -7403,7 +7844,7 @@
         <div>No income recorded yet.</div>
         <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me plan income categories and what to track each month.">Draft with Advisor</button></p>
       </div>
-      <table class="dt" id="income-table" style="display:none;">
+      <table class="dt" id="income-table" data-resizable-cols="1" style="display:none;">
         <thead id="income-thead"></thead>
         <tbody id="income-tbody"></tbody>
       </table>
@@ -7512,7 +7953,7 @@
         <div>No expenses yet.</div>
         <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Suggest an expense policy and categories that fit a small agency.">Draft with Advisor</button></p>
       </div>
-      <table class="dt" id="expenses-table" style="display:none;">
+      <table class="dt" id="expenses-table" data-resizable-cols="1" style="display:none;">
         <thead><tr>
           <th class="th-sort" data-exp-sort="date" role="columnheader" scope="col" tabindex="0">Date <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
           <th class="th-sort" data-exp-sort="title" role="columnheader" scope="col" tabindex="0">Title <span class="exp-th-sort-ind" aria-hidden="true"></span></th>
@@ -7603,8 +8044,15 @@
         <div>No time logged yet.</div>
         <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me set up time tracking habits and billable vs non-billable rules.">Draft with Advisor</button></p>
       </div>
-      <table class="dt" id="timesheet-table" style="display:none;">
-        <thead><tr><th>Employee (Account)</th><th>Total</th><th>Billable</th><th>Non-Billable</th><th>Entries</th><th>Utilization</th></tr></thead>
+      <table class="dt" id="timesheet-table" data-resizable-cols="1" style="display:none;">
+        <thead><tr>
+          <th class="th-sort" data-ts-sort="employee" role="columnheader" scope="col" tabindex="0">Employee (Account) <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-ts-sort="total" role="columnheader" scope="col" tabindex="0">Total <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-ts-sort="billable" role="columnheader" scope="col" tabindex="0">Billable <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-ts-sort="nonBillable" role="columnheader" scope="col" tabindex="0">Non-Billable <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-ts-sort="entries" role="columnheader" scope="col" tabindex="0">Entries <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-ts-sort="util" role="columnheader" scope="col" tabindex="0">Utilization <span class="th-sort-ind" aria-hidden="true"></span></th>
+        </tr></thead>
         <tbody id="timesheet-tbody"></tbody>
       </table>
     </div>
@@ -7614,8 +8062,18 @@
         <div>No entries yet.</div>
         <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Suggest how to describe time entries for clearer client invoices.">Draft with Advisor</button></p>
       </div>
-      <table class="dt" id="timesheet-log-table" style="display:none;">
-        <thead><tr><th>Date</th><th>Employee</th><th>Project</th><th>Task</th><th>Activity</th><th>Hours</th><th>Type</th><th>Notes</th><th style="width:110px;">Actions</th></tr></thead>
+      <table class="dt" id="timesheet-log-table" data-resizable-cols="1" style="display:none;">
+        <thead><tr>
+          <th class="th-sort" data-tslog-sort="date" role="columnheader" scope="col" tabindex="0">Date <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-tslog-sort="account" role="columnheader" scope="col" tabindex="0">Employee <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-tslog-sort="project" role="columnheader" scope="col" tabindex="0">Project <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-tslog-sort="task" role="columnheader" scope="col" tabindex="0">Task <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-tslog-sort="activityCode" role="columnheader" scope="col" tabindex="0">Activity <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-tslog-sort="minutes" role="columnheader" scope="col" tabindex="0">Hours <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-tslog-sort="billable" role="columnheader" scope="col" tabindex="0">Type <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th class="th-sort" data-tslog-sort="notes" role="columnheader" scope="col" tabindex="0">Notes <span class="th-sort-ind" aria-hidden="true"></span></th>
+          <th style="width:110px;">Actions</th>
+        </tr></thead>
         <tbody id="timesheet-log-tbody"></tbody>
       </table>
     </div>
@@ -7640,7 +8098,7 @@
         <div>No projects yet.</div>
         <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me outline a project plan with milestones and status labels.">Draft with Advisor</button></p>
       </div>
-      <table class="dt" id="projects-table" style="display:none;">
+      <table class="dt" id="projects-table" data-resizable-cols="1" style="display:none;">
         <thead><tr><th>Project</th><th>Client</th><th>Type</th><th>Description</th><th>Due</th><th>Value</th><th>Status</th><th style="min-width:120px;">Case study</th><th style="width:160px;">Actions</th></tr></thead>
         <tbody id="projects-tbody"></tbody>
       </table>
@@ -7734,7 +8192,7 @@
         <div>No client data yet.</div>
         <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Summarize client performance and what I should watch on this Insights page.">Draft with Advisor</button></p>
       </div>
-      <table class="dt" id="ins-clients-table" style="display:none;">
+      <table class="dt" id="ins-clients-table" data-resizable-cols="1" style="display:none;">
         <thead><tr><th>Client</th><th>Revenue</th><th>Projects</th><th>Retainer</th><th>Last Activity</th><th>Status</th></tr></thead>
         <tbody id="ins-clients-tbody"></tbody>
       </table>
@@ -7834,7 +8292,6 @@
   <!-- CHAT: React composer + transcript; image attach/lightbox for legacy assistant flow -->
   <div class="pg" id="page-chat">
     <div class="chat-shell">
-      <header class="chat-top-bar" role="banner"><span class="chat-top-bar-title">Advisor</span></header>
       <div class="chat-transcript">
         <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
       </div>
@@ -7869,7 +8326,7 @@
         <div class="fst">Members</div>
         <p id="team-page-hint" style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:12px;"></p>
         <div style="overflow:auto;">
-          <table class="dt" id="team-members-table" style="width:100%;">
+          <table class="dt" id="team-members-table" data-resizable-cols="1" style="width:100%;">
             <thead>
               <tr>
                 <th>Email</th>
@@ -9570,12 +10027,8 @@
   <div id="listsSbContextMenu" class="lists-sb-ctx" aria-hidden="true" role="menu">
   <div class="lists-sb-ctx-h">List</div>
   <button type="button" class="lists-sb-ctx-item" data-ctx="fav" role="menuitem"><span data-ctx-fav-lbl>Add to Favorites</span></button>
-  <button type="button" class="lists-sb-ctx-item" data-ctx="offline" role="menuitem">
-    <span>Available offline</span>
-    <span class="lists-sb-ctx-sw" data-ctx-off-sw aria-hidden="true"></span>
-  </button>
   <div class="lists-sb-ctx-div"></div>
-  <button type="button" class="lists-sb-ctx-item" data-ctx="copylink" role="menuitem">Copy link <kbd>⌘L</kbd></button>
+  <button type="button" class="lists-sb-ctx-item" data-ctx="copylink" role="menuitem"><span data-ctx-copy-lbl>Copy link</span> <kbd>⌘L</kbd></button>
   <div class="lists-sb-ctx-dup-wrap">
     <button type="button" class="lists-sb-ctx-item" data-ctx="dup-hover" role="menuitem">Duplicate <span style="margin-left:auto;color:var(--text3)">›</span></button>
     <div class="lists-sb-ctx-sub" role="menu">
@@ -9584,15 +10037,9 @@
     </div>
   </div>
   <button type="button" class="lists-sb-ctx-item" data-ctx="rename" role="menuitem">Rename <kbd>⌘R</kbd></button>
-  <button type="button" class="lists-sb-ctx-item" data-ctx="moveto" role="menuitem">Move to <kbd>⌘P</kbd></button>
   <button type="button" class="lists-sb-ctx-item" data-ctx="trash" role="menuitem">Move to Trash</button>
   <div class="lists-sb-ctx-div"></div>
-  <button type="button" class="lists-sb-ctx-item" data-ctx="tab" role="menuitem">Open in new tab <kbd>⌘⇧↵</kbd></button>
-  <button type="button" class="lists-sb-ctx-item" data-ctx="win" role="menuitem">Open in new window <kbd>⌘↵</kbd></button>
-  <button type="button" class="lists-sb-ctx-item" data-ctx="peek" role="menuitem">Open in side peek <kbd>⌥Click</kbd></button>
-  <div class="lists-sb-ctx-div"></div>
   <div class="lists-sb-ctx-foot" id="lists-sb-ctx-meta">Last edited —</div>
-  <button type="button" class="lists-sb-ctx-item" data-ctx="help" role="menuitem">Learn about databases</button>
 </div>
 
 <!-- Quick actions (command palette — dashboard-only actions) -->

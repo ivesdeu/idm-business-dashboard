@@ -1,25 +1,30 @@
-# Tenant isolation smoke test (manual)
+# Tenant isolation smoke test
 
-Automated policy presence: run [`supabase/tests/tenant_isolation_rls_check.sql`](../supabase/tests/tenant_isolation_rls_check.sql) after migrations.
+Quick path to verify org-scoped data isolation. For full steps, see **[TENANT_ISOLATION_TEST_RUNBOOK.md](TENANT_ISOLATION_TEST_RUNBOOK.md)**.
 
-## Manual JWT test (two users, two orgs)
+## Automated (recommended)
 
-Goal: prove User A **cannot** read or write User B’s org rows when both use the **anon key + JWT** (PostgREST + RLS).
+1. **SQL (postgres):** run [`supabase/tests/tenant_isolation_rls_check.sql`](../supabase/tests/tenant_isolation_rls_check.sql) in Supabase SQL Editor.
+2. **Dynamic (JWT):** configure `TENANT_TEST_*` in `.env`, then:
 
-1. Create **User A** and **User B** (Auth) and ensure each has a distinct organization (or invite B into a second workspace).
-2. As **User A** (JWT in Supabase client or REST):
-   - `insert` a row into `clients` with `organization_id = OrgA`.
-3. As **User B** with JWT:
-   - `select * from clients where organization_id = OrgA` → **expect 0 rows** (or RLS error if misconfigured).
-4. As **User B**, attempt `update` or `delete` on A’s client id (if somehow known) → **expect failure**.
+```bash
+npm run test:tenant-isolation
+```
 
-Repeat for `transactions` or `workspace_tasks` if those are critical paths.
+## Manual spot-check
 
-## Edge API test
+1. Create **User A** and **User B** in two different organizations.
+2. As A, insert a `clients` row in OrgA.
+3. As B (JWT + anon key), `select` clients where `organization_id = OrgA` → expect **0 rows**.
+4. As B, attempt update/delete on A’s client id → expect **failure / 0 rows**.
+5. Call `gmail-send` with A’s JWT and B’s `organization_id` → expect **403**.
 
-- Call `gmail-send` or `create-stripe-checkout-session` with a valid JWT for User A but **`organization_id` = Org B** → **expect 403** (membership check).
+## Edge API
+
+See [EDGE_FUNCTION_AUTH.md](EDGE_FUNCTION_AUTH.md) for the full function audit table.
 
 ## Related
 
-- [RLS_AND_TENANCY.md](RLS_AND_TENANCY.md)  
-- [EDGE_FUNCTION_AUTH.md](EDGE_FUNCTION_AUTH.md)
+- [TENANT_ISOLATION_TEST_RUNBOOK.md](TENANT_ISOLATION_TEST_RUNBOOK.md)
+- [SECURITY_CONSULTANT_SCOPE.md](SECURITY_CONSULTANT_SCOPE.md)
+- [RLS_AND_TENANCY.md](RLS_AND_TENANCY.md)
