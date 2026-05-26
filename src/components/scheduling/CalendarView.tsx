@@ -523,7 +523,7 @@ export function CalendarView ({ appointments, onCreateAppointment }: Props) {
         <WeekTimeGrid
           weekDays={weekDays}
           appointments={appointments}
-          onCreateRange={openQuickCreate}
+          onCreateRange={onCreateAppointment ? openQuickCreate : undefined}
           openPreview={openPreview}
           surface={surface}
           text={text}

@@ -317,6 +317,11 @@ export function SchedulingPage () {
       notes: string | null;
       syncToGoogle: boolean;
     }) => {
+      if (demoMode) {
+        pushToast ({ kind: 'error', message: 'Demo appointments are read-only and are not stored locally.' });
+        return;
+      }
+
       const supabase = getSupabase ();
       const orgId = getOrgId ();
       if (!supabase || !orgId) {
@@ -452,7 +457,7 @@ export function SchedulingPage () {
       pushToast ({ kind: 'success', message: 'Appointment created.' });
       setSubView ('calendar');
     },
-    [clientOptions, editTarget, pushToast],
+    [clientOptions, demoMode, editTarget, pushToast],
   );
 
   return (
@@ -505,7 +510,11 @@ export function SchedulingPage () {
         <>
           {subView === 'calendar' ? (
             <>
-              <CalendarView appointments={appointments} onSelect={(a) => setDetail (a)} onCreateAppointment={handleFormSubmit} />
+              <CalendarView
+                appointments={appointments}
+                onSelect={(a) => setDetail (a)}
+                onCreateAppointment={demoMode ? undefined : handleFormSubmit}
+              />
               {appointments.length === 0 ? (
                 <p className="sched-empty-sub" style={{ marginTop: '12px', textAlign: 'center' }}>
                   {demoMode
