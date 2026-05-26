@@ -35,6 +35,10 @@ type Props = {
   clientOptions: ClientOption[];
   demoMode: boolean;
   initial: SchedulingAppointment | null;
+  draft?: {
+    startTime: string;
+    endTime: string;
+  } | null;
   onSubmit: (payload: {
     title: string;
     clientId: string | null;
@@ -47,7 +51,7 @@ type Props = {
   onCancelEdit: () => void;
 };
 
-export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit, onCancelEdit }: Props) {
+export function NewAppointmentForm ({ clientOptions, demoMode, initial, draft, onSubmit, onCancelEdit }: Props) {
   const [title, setTitle] = useState ('');
   const [clientId, setClientId] = useState<string> ('');
   const [dateStr, setDateStr] = useState (() => isoToDateInput (new Date ().toISOString ()));
@@ -59,26 +63,27 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
   const [submitting, setSubmitting] = useState (false);
 
   useEffect (() => {
-    if (!initial) {
-      setTitle ('');
-      setClientId ('');
-      setDateStr (isoToDateInput (new Date ().toISOString ()));
-      setStartT ('09:00');
-      setEndT ('10:00');
-      setLocation ('');
-      setNotes ('');
+    if (initial) {
+      setTitle (initial.title);
+      setClientId (initial.clientId ?? '');
+      setDateStr (isoToDateInput (initial.startTime));
+      setStartT (isoToTimeInput (initial.startTime));
+      setEndT (isoToTimeInput (initial.endTime));
+      setLocation (initial.location ?? '');
+      setNotes (initial.notes ?? '');
       setSyncToGoogle (false);
       return;
     }
-    setTitle (initial.title);
-    setClientId (initial.clientId ?? '');
-    setDateStr (isoToDateInput (initial.startTime));
-    setStartT (isoToTimeInput (initial.startTime));
-    setEndT (isoToTimeInput (initial.endTime));
-    setLocation (initial.location ?? '');
-    setNotes (initial.notes ?? '');
+
+    setTitle ('');
+    setClientId ('');
+    setDateStr (draft ? isoToDateInput (draft.startTime) : isoToDateInput (new Date ().toISOString ()));
+    setStartT (draft ? isoToTimeInput (draft.startTime) : '09:00');
+    setEndT (draft ? isoToTimeInput (draft.endTime) : '10:00');
+    setLocation ('');
+    setNotes ('');
     setSyncToGoogle (false);
-  }, [initial]);
+  }, [draft, initial]);
 
   async function handleSubmit (e: FormEvent) {
     e.preventDefault ();

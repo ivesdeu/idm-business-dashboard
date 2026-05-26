@@ -455,7 +455,7 @@ import {
 
   var SIDEBAR_NAV_PAGE_DEFS = [
     { id: 'customers', label: 'Customers' },
-    { id: 'scheduling', label: 'Scheduling' },
+    { id: 'scheduling', label: 'Calendar' },
     { id: 'meeting-notes', label: 'Meeting Notes' },
     { id: 'emails', label: 'Emails' },
     { id: 'revenue', label: 'Income' },
@@ -24548,7 +24548,7 @@ var incomePowerState = {
       },
       { id: 'go-dash', label: 'Go to Dashboard', keys: '', kw: 'home performance kpi', run: function () { qaGo('dashboard'); } },
       { id: 'go-cust', label: 'Go to Customers', keys: '', kw: 'clients pipeline', run: function () { qaGo('customers'); } },
-      { id: 'go-sch', label: 'Go to Scheduling', keys: '', kw: 'calendar meetings availability', run: function () { qaGo('scheduling'); } },
+      { id: 'go-sch', label: 'Go to Calendar', keys: '', kw: 'calendar meetings availability', run: function () { qaGo('scheduling'); } },
       { id: 'go-mn', label: 'Go to Meeting Notes', keys: '', kw: 'transcription notes recording ai meeting', run: function () { qaGo('meeting-notes'); } },
       { id: 'go-eml', label: 'Go to Emails', keys: '', kw: 'mail inbox drafts gmail compose', run: function () { qaGo('emails'); } },
       { id: 'go-inc', label: 'Go to Income', keys: '', kw: 'revenue invoices ar', run: function () { qaGo('revenue'); } },
@@ -25539,7 +25539,7 @@ var incomePowerState = {
         var titles = {
           dashboard: 'Business Performance',
           customers: 'Customers',
-          scheduling: 'Scheduling',
+          scheduling: 'Calendar',
           'meeting-notes': 'Meeting Notes',
           emails: 'Emails',
           revenue: 'Income',

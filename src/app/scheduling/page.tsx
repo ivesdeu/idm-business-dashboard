@@ -459,7 +459,7 @@ export function SchedulingPage () {
     <div className="scheduling-root min-h-[420px]">
       <div className="ph">
         <div>
-          <div className="pt">Scheduling</div>
+          <div className="pt">Calendar</div>
           <div className="ps">
             Calendar and appointments for your workspace. Google Calendar sync is stubbed until OAuth is enabled.
           </div>
@@ -469,7 +469,7 @@ export function SchedulingPage () {
         </button>
       </div>
 
-      <nav className="sched-view-tabs" aria-label="Scheduling views">
+      <nav className="sched-view-tabs" aria-label="Calendar views">
         <button
           type="button"
           className={`btn spend-ctype sched-tab-btn${subView === 'calendar' ? ' on' : ''}`}
@@ -505,7 +505,7 @@ export function SchedulingPage () {
         <>
           {subView === 'calendar' ? (
             <>
-              <CalendarView appointments={appointments} onSelect={(a) => setDetail (a)} />
+              <CalendarView appointments={appointments} onSelect={(a) => setDetail (a)} onCreateAppointment={handleFormSubmit} />
               {appointments.length === 0 ? (
                 <p className="sched-empty-sub" style={{ marginTop: '12px', textAlign: 'center' }}>
                   {demoMode
