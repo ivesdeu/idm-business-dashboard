@@ -4,6 +4,8 @@
 
 This project stores Google OAuth tokens for **Gmail and Google Calendar** in `public.integration_credentials` (see migration [`20260418001000_integration_credentials.sql`](../supabase/migrations/20260418001000_integration_credentials.sql)). Only Edge Functions using the **service role** key should read or write that table.
 
+> For Plaid (bank transaction sync), see [`docs/PLAID_INTEGRATION.md`](PLAID_INTEGRATION.md).
+
 If you later add Microsoft (Graph, Outlook, etc.), use the `oauth-microsoft-*` functions and Azure redirect URIs documented in git history or re-add a short “Microsoft” section; this doc assumes **Google only**.
 
 ## Google Cloud: redirect URI

@@ -1,8 +1,38 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AssemblyAiStreamingMessage, TranscriptionStatus } from '@/components/scheduling/types';
+import { isDemoMode } from '@/lib/demoMode';
 
 export const BIZDASH_ORG_CONTEXT_EVENT = 'bizdash:org-context';
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: { error?: string; message?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<{
+    isFinal: boolean;
+    0: { transcript: string };
+  }>;
+};
+type SpeechRecognitionCtor = new () => BrowserSpeechRecognition;
+
+function getSpeechRecognitionCtor (): SpeechRecognitionCtor | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  };
+  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
 
 function readOrganizationIdFromWindow (): string | null {
   if (typeof window === 'undefined') return null;
@@ -89,13 +119,17 @@ async function hasTranscriptionSession (): Promise<boolean> {
 
 /** True when signed in (session) or workspace org is on window — either is enough to start mic/streaming. */
 export function useTranscriptionReady (): boolean {
-  const [ready, setReady] = useState (() => !!readOrganizationIdFromWindow ());
+  const [ready, setReady] = useState (() => isDemoMode () || !!readOrganizationIdFromWindow ());
 
   useEffect (() => {
     let cancelled = false;
 
     const sync = async () => {
       if (cancelled) return;
+      if (isDemoMode ()) {
+        setReady (true);
+        return;
+      }
       if (readOrganizationIdFromWindow ()) {
         setReady (true);
         return;
@@ -376,6 +410,83 @@ export function useTranscription (): UseTranscriptionResult {
   const sessionReadyRef = useRef (false);
   const activeSpeechModelRef = useRef<string | null> (null);
   const pcmSendRemainderRef = useRef<Int16Array> (new Int16Array (0));
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null> (null);
+  const demoActiveRef = useRef (false);
+
+  const stopSpeechRecognition = useCallback (() => {
+    const sr = speechRecognitionRef.current;
+    speechRecognitionRef.current = null;
+    demoActiveRef.current = false;
+    if (sr) {
+      sr.onresult = null;
+      sr.onerror = null;
+      sr.onend = null;
+      try {
+        sr.stop ();
+      } catch (_) {}
+      try {
+        sr.abort ();
+      } catch (_) {}
+    }
+  }, []);
+
+  const startSpeechRecognition = useCallback ((): boolean => {
+    const Ctor = getSpeechRecognitionCtor ();
+    if (!Ctor) {
+      setError (
+        'Demo transcription requires a browser with the Web Speech API (Chrome, Edge, or Safari).',
+      );
+      return false;
+    }
+    const sr = new Ctor ();
+    sr.continuous = true;
+    sr.interimResults = true;
+    sr.lang = 'en-US';
+    sr.onresult = (event) => {
+      if (pausedRef.current) return;
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const res = event.results[i];
+        const text = res[0]?.transcript ?? '';
+        if (res.isFinal) {
+          setTranscriptState ((prev) => appendText (prev, text));
+        } else {
+          interim += `${interim ? ' ' : ''}${text}`;
+        }
+      }
+      setInterimText (cleanText (interim));
+    };
+    sr.onerror = (event) => {
+      const code = event?.error || '';
+      if (code === 'not-allowed' || code === 'service-not-allowed') {
+        setError ('Microphone access was denied. Check your browser permissions.');
+      } else if (code === 'no-speech') {
+        // Ignored — silence is fine; recognition will restart on 'end'.
+      } else if (code === 'aborted') {
+        // Ignored — we aborted intentionally on stop/pause.
+      } else if (code) {
+        console.warn ('[transcription demo] speech recognition error', code);
+      }
+    };
+    sr.onend = () => {
+      if (demoActiveRef.current && !pausedRef.current) {
+        try {
+          sr.start ();
+        } catch (_) {}
+      }
+    };
+    speechRecognitionRef.current = sr;
+    demoActiveRef.current = true;
+    try {
+      sr.start ();
+    } catch (err) {
+      console.warn ('[transcription demo] speech recognition start failed', err);
+      setError ('Demo transcription could not start. Try reloading the page.');
+      stopSpeechRecognition ();
+      return false;
+    }
+    return true;
+  }, [stopSpeechRecognition]);
 
   const clearTimer = useCallback (() => {
     if (timerRef.current != null) window.clearInterval (timerRef.current);
@@ -439,16 +550,23 @@ export function useTranscription (): UseTranscriptionResult {
 
   const stop = useCallback (() => {
     clearTimer ();
+    stopSpeechRecognition ();
     pausedRef.current = false;
     sessionReadyRef.current = false;
     activeSpeechModelRef.current = null;
     teardownAudioGraph ();
     closeWs (true);
     stopTracks ();
-    setInterimText ('');
+    setInterimText ((interim) => {
+      const pending = cleanText (interim);
+      if (pending) {
+        setTranscriptState ((prev) => appendText (prev, pending));
+      }
+      return '';
+    });
     setError (null);
     setStatus ('stopped');
-  }, [clearTimer, closeWs, stopTracks, teardownAudioGraph]);
+  }, [clearTimer, stopSpeechRecognition, closeWs, stopTracks, teardownAudioGraph]);
 
   const pause = useCallback (() => {
     if (status !== 'recording') return;
@@ -476,6 +594,7 @@ export function useTranscription (): UseTranscriptionResult {
     if (status === 'recording' || status === 'paused' || status === 'requesting') return;
     setError (null);
     setInterimText ('');
+    setTranscriptState ('');
     setDuration (0);
     setStatus ('requesting');
     pausedRef.current = false;
@@ -489,10 +608,35 @@ export function useTranscription (): UseTranscriptionResult {
       return;
     }
 
+    const demo = isDemoMode ();
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia ({ audio: true });
       permissionKnownRef.current = 'granted';
       streamRef.current = stream;
+
+      if (demo) {
+        const audioContext = new AudioContext ();
+        audioContextRef.current = audioContext;
+        const source = audioContext.createMediaStreamSource (stream);
+        sourceRef.current = source;
+        const analyser = audioContext.createAnalyser ();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.7;
+        analyserRef.current = analyser;
+        source.connect (analyser);
+        const started = startSpeechRecognition ();
+        if (!started) {
+          teardownAudioGraph ();
+          stopTracks ();
+          setStatus ('idle');
+          return;
+        }
+        sessionReadyRef.current = true;
+        setStatus ('recording');
+        startTimer ();
+        return;
+      }
 
       const token = await fetchAssemblyAiToken ();
       const models = speechModelsToTry ();
@@ -617,11 +761,12 @@ export function useTranscription (): UseTranscriptionResult {
   useEffect (() => {
     return () => {
       clearTimer ();
+      stopSpeechRecognition ();
       teardownAudioGraph ();
       closeWs (true);
       stopTracks ();
     };
-  }, [clearTimer, closeWs, stopTracks, teardownAudioGraph]);
+  }, [clearTimer, stopSpeechRecognition, closeWs, stopTracks, teardownAudioGraph]);
 
   return {
     status,

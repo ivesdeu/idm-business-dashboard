@@ -11,6 +11,7 @@ import {
   defaultPillColorForOption,
   selectOptionsForColumn,
 } from '../lib/crm-customers-schema.ts';
+import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl, paymentReturnUrl } from '../lib/appUrl.js';
 
 (function () {
   'use strict';
@@ -1428,6 +1429,9 @@ import {
     if (tx.importSource && String(tx.importSource).trim()) m.importSource = String(tx.importSource).trim();
     if (tx.externalId != null && String(tx.externalId).trim()) m.externalId = String(tx.externalId).trim();
     if (tx.rawMemo != null && String(tx.rawMemo).trim()) m.rawMemo = String(tx.rawMemo).trim();
+    if (tx.reviewStatus != null && String(tx.reviewStatus).trim()) m.review_status = String(tx.reviewStatus).trim();
+    if (tx.plaidTransactionId != null && String(tx.plaidTransactionId).trim()) m.plaid_transaction_id = String(tx.plaidTransactionId).trim();
+    if (tx.plaidAccountId != null && String(tx.plaidAccountId).trim()) m.plaid_account_id = String(tx.plaidAccountId).trim();
     return Object.keys(m).length ? m : null;
   }
 
@@ -1456,6 +1460,15 @@ import {
     }
     if (meta.stripe_charge_id != null && String(meta.stripe_charge_id).trim()) {
       out.stripeChargeId = String(meta.stripe_charge_id).trim();
+    }
+    if (meta.review_status != null && String(meta.review_status).trim()) {
+      out.reviewStatus = String(meta.review_status).trim();
+    }
+    if (meta.plaid_transaction_id != null && String(meta.plaid_transaction_id).trim()) {
+      out.plaidTransactionId = String(meta.plaid_transaction_id).trim();
+    }
+    if (meta.plaid_account_id != null && String(meta.plaid_account_id).trim()) {
+      out.plaidAccountId = String(meta.plaid_account_id).trim();
     }
     return out;
   }
@@ -2280,8 +2293,8 @@ import {
         body: JSON.stringify({
           invoiceId: inv.id,
           organizationId: getCurrentOrgId(),
-          successUrl: window.location.origin + window.location.pathname + '?payment=success',
-          cancelUrl: window.location.origin + window.location.pathname + '?payment=cancel',
+          successUrl: paymentReturnUrl('payment=success'),
+          cancelUrl: paymentReturnUrl('payment=cancel'),
         }),
       });
       var payload = {};
@@ -6346,6 +6359,11 @@ var incomePowerState = {
     var expenseTxs = c.txs.filter(function (tx) {
       return ['lab','sw','ads','oth'].indexOf(tx.category) !== -1;
     });
+    if (state.expensesUnreviewedOnly) {
+      expenseTxs = expenseTxs.filter(function (tx) {
+        return tx && tx.reviewStatus === 'unreviewed';
+      });
+    }
 
     if (expenseTxs.length === 0) {
       tbody.innerHTML = '';
@@ -6378,6 +6396,10 @@ var incomePowerState = {
         '<td>' + esc(clientCell) + '</td>' +
         '<td>' + (tx.expenseRecurringLead ? '<span class="pl pg-c">Series</span>' : tx.expenseRecurrenceInstance ? '<span class="pl pg-c">Yes</span>' : 'No') + '</td>' +
         '<td style="white-space:nowrap;">' +
+          (tx.source === 'Plaid' && tx.reviewStatus === 'unreviewed'
+            ? ('<button type="button" class="btn btn-p" data-exp-review="approve" data-exp-review-id="' + esc(tx.id) + '" style="margin-right:6px;">Approve</button>' +
+              '<button type="button" class="btn" data-exp-review="hide" data-exp-review-id="' + esc(tx.id) + '" style="margin-right:6px;">Hide</button>')
+            : '') +
           '<button type="button" class="btn" data-exp-edit="' + esc(tx.id) + '" style="margin-right:6px;">Edit</button>' +
           '<button type="button" class="btn" data-exp-del="' + esc(tx.id) + '" style="color:var(--red);">Delete</button>' +
         '</td>' +
@@ -7467,7 +7489,7 @@ var incomePowerState = {
     root.setAttribute('aria-hidden', 'true');
     var bd = document.getElementById('conn-detail-backdrop');
     if (bd) bd.setAttribute('aria-hidden', 'true');
-    ['conn-detail-pane-gmail', 'conn-detail-pane-calendar', 'conn-detail-pane-stripe'].forEach(function (id) {
+    ['conn-detail-pane-gmail', 'conn-detail-pane-calendar', 'conn-detail-pane-stripe', 'conn-detail-pane-plaid'].forEach(function (id) {
       var p = document.getElementById(id);
       if (p) p.hidden = true;
     });
@@ -7480,21 +7502,24 @@ var incomePowerState = {
   function bizdashOpenConnDetailSubmodal(which) {
     var root = document.getElementById('conn-detail-submodal');
     if (!root) return;
-    if (which !== 'gmail' && which !== 'calendar' && which !== 'stripe') return;
+    if (which !== 'gmail' && which !== 'calendar' && which !== 'stripe' && which !== 'plaid') return;
     var titleEl = document.getElementById('conn-detail-title');
-    var titles = { gmail: 'Gmail', calendar: 'Google Calendar', stripe: 'Stripe' };
+    var titles = { gmail: 'Gmail', calendar: 'Google Calendar', stripe: 'Stripe', plaid: 'Plaid' };
     if (titleEl) titleEl.textContent = titles[which] || which;
     var pg = document.getElementById('conn-detail-pane-gmail');
     var pc = document.getElementById('conn-detail-pane-calendar');
     var ps = document.getElementById('conn-detail-pane-stripe');
+    var pp = document.getElementById('conn-detail-pane-plaid');
     if (pg) pg.hidden = which !== 'gmail';
     if (pc) pc.hidden = which !== 'calendar';
     if (ps) ps.hidden = which !== 'stripe';
+    if (pp) pp.hidden = which !== 'plaid';
     root.classList.add('on');
     root.setAttribute('aria-hidden', 'false');
     var backdrop = document.getElementById('conn-detail-backdrop');
     if (backdrop) backdrop.setAttribute('aria-hidden', 'false');
     if (which === 'stripe') refreshStripeConnectPanel();
+    if (which === 'plaid') refreshPlaidConnectPanel();
     if (!connDetailEscHandler) {
       connDetailEscHandler = function (e) {
         if (e.key === 'Escape' && root.classList.contains('on')) {
@@ -7599,6 +7624,7 @@ var incomePowerState = {
       if (panelId === 'connections') {
         refreshConnectionsPanel();
         refreshStripeConnectPanel();
+        refreshPlaidConnectPanel();
       }
       if (panelId === 'profile') {
         syncPrefsToProfilePanel();
@@ -7715,7 +7741,7 @@ var incomePowerState = {
       card.addEventListener('click', function () {
         var sub = (card.getAttribute('data-conn-sub') || '').trim();
         if (!sub) return;
-        if (sub === 'gmail' || sub === 'calendar' || sub === 'stripe') {
+        if (sub === 'gmail' || sub === 'calendar' || sub === 'stripe' || sub === 'plaid') {
           bizdashOpenConnDetailSubmodal(sub);
           return;
         }
@@ -7732,7 +7758,8 @@ var incomePowerState = {
     var gmailCard = document.getElementById('conn-card-gmail');
     var calCard = document.getElementById('conn-card-gcalendar');
     var stripeCard = document.getElementById('conn-card-stripe');
-    if (!gmailCard || !calCard || !stripeCard) return;
+    var plaidCard = document.getElementById('conn-card-plaid');
+    if (!gmailCard || !calCard || !stripeCard || !plaidCard) return;
 
     function setRow(card, on) {
       card.classList.toggle('conn-app-card--on', !!on);
@@ -7746,6 +7773,7 @@ var incomePowerState = {
       setRow(gmailCard, false);
       setRow(calCard, false);
       setRow(stripeCard, false);
+      setRow(plaidCard, false);
       return;
     }
     var sessRes = await sb.auth.getSession();
@@ -7754,6 +7782,7 @@ var incomePowerState = {
       setRow(gmailCard, false);
       setRow(calCard, false);
       setRow(stripeCard, false);
+      setRow(plaidCard, false);
       return;
     }
     var base = typeof window.__bizdashSupabaseUrl === 'string' ? window.__bizdashSupabaseUrl.trim().replace(/\/$/, '') : '';
@@ -7776,11 +7805,76 @@ var incomePowerState = {
       setRow(gmailCard, false);
       setRow(calCard, false);
       setRow(stripeCard, false);
+      setRow(plaidCard, false);
       return;
     }
     setRow(gmailCard, !!j.gmail);
     setRow(calCard, !!j.google_calendar);
     setRow(stripeCard, !!j.stripe);
+    setRow(plaidCard, !!(j.plaid && j.plaid.connected));
+  }
+
+  async function refreshPlaidConnectPanel() {
+    var el = document.getElementById('plaid-connect-status');
+    var btnStart = document.getElementById('btn-plaid-connect-start');
+    var btnSync = document.getElementById('btn-plaid-sync');
+    var btnDisc = document.getElementById('btn-plaid-disconnect');
+    var sb = window.supabaseClient;
+    var org = getCurrentOrgId();
+    try {
+      if (!el) return;
+      if (!sb || !org) {
+        el.textContent = 'Sign in and open a workspace to manage Plaid.';
+        if (btnStart) btnStart.disabled = true;
+        if (btnSync) btnSync.disabled = true;
+        if (btnDisc) btnDisc.disabled = true;
+        return;
+      }
+      el.textContent = 'Loading…';
+      if (btnStart) btnStart.disabled = false;
+      if (btnSync) btnSync.disabled = false;
+      if (btnDisc) btnDisc.disabled = false;
+      await refreshConnectionsPanel();
+      // Use connection-status payload (service role reads plaid_items).
+      var sessRes = await sb.auth.getSession();
+      var sess = sessRes && sessRes.data ? sessRes.data.session : null;
+      var base = typeof window.__bizdashSupabaseUrl === 'string' ? window.__bizdashSupabaseUrl.trim().replace(/\/$/, '') : '';
+      var anon = typeof window.__bizdashSupabaseAnonKey === 'string' ? window.__bizdashSupabaseAnonKey.trim() : '';
+      if (!sess || !sess.access_token || !base || !anon) {
+        el.textContent = 'Sign in to connect Plaid.';
+        return;
+      }
+      var res = await fetch(base + '/functions/v1/integration-connection-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + sess.access_token,
+          apikey: anon,
+        },
+        body: JSON.stringify({ organizationId: org }),
+      });
+      var j = {};
+      try {
+        j = await res.json();
+      } catch (_) {}
+      if (!res.ok) {
+        el.textContent = 'Could not load Plaid status.';
+        return;
+      }
+      var p = j.plaid || {};
+      var connected = !!p.connected;
+      var last = p.last_sync_at ? String(p.last_sync_at) : '';
+      var unrev = typeof p.unreviewed_count === 'number' ? p.unreviewed_count : 0;
+      el.innerHTML =
+        connected
+          ? '<strong>Connected.</strong> ' +
+            (last ? 'Last sync: ' + esc(last) + '. ' : '') +
+            (unrev ? '<span style="color:var(--coral);font-weight:600;">Unreviewed: ' + esc(String(unrev)) + '</span>' : 'No unreviewed items.')
+          : '<strong>Not connected.</strong> Connect Plaid to import bank transactions.';
+      if (btnStart) btnStart.textContent = connected ? 'Connect another bank' : 'Connect Plaid';
+    } catch (_) {
+      if (el) el.textContent = 'Could not load Plaid status.';
+    }
   }
 
   async function refreshStripeConnectPanel() {
@@ -8013,6 +8107,186 @@ var incomePowerState = {
           return;
         }
         refreshStripeConnectPanel();
+      });
+    }
+  }
+
+  function loadPlaidLinkScript() {
+    if (window.Plaid && typeof window.Plaid.create === 'function') return Promise.resolve(window.Plaid);
+    if (window.__bizdashPlaidLoadPromise) return window.__bizdashPlaidLoadPromise;
+    window.__bizdashPlaidLoadPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js';
+      s.async = true;
+      s.onload = function () {
+        if (window.Plaid && typeof window.Plaid.create === 'function') resolve(window.Plaid);
+        else reject(new Error('Plaid Link did not load'));
+      };
+      s.onerror = function () {
+        reject(new Error('Failed to load Plaid Link'));
+      };
+      document.head.appendChild(s);
+    });
+    return window.__bizdashPlaidLoadPromise;
+  }
+
+  async function triggerPlaidSync() {
+    var sb = window.supabaseClient;
+    var org = getCurrentOrgId();
+    if (!sb || !org) {
+      alert('Sign in first.');
+      return;
+    }
+    var sessRes = await sb.auth.getSession();
+    var sess = sessRes && sessRes.data ? sessRes.data.session : null;
+    if (!sess || !sess.access_token) {
+      alert('Sign in first.');
+      return;
+    }
+    var base = typeof window.__bizdashSupabaseUrl === 'string' ? window.__bizdashSupabaseUrl.trim().replace(/\/$/, '') : '';
+    var anon = typeof window.__bizdashSupabaseAnonKey === 'string' ? window.__bizdashSupabaseAnonKey.trim() : '';
+    if (!base || !anon) return;
+    var res = await fetch(base + '/functions/v1/plaid-sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + sess.access_token,
+        apikey: anon,
+      },
+      body: JSON.stringify({ organizationId: org }),
+    });
+    var t = '';
+    var j = {};
+    try {
+      t = await res.text();
+      j = JSON.parse(t);
+    } catch (_) {}
+    if (!res.ok) {
+      alert('Plaid sync failed: ' + bizdashDescribeEdgeFnFailure(res, t, j));
+      return;
+    }
+    refreshPlaidConnectPanel();
+    refreshConnectionsPanel();
+    renderAll();
+  }
+
+  function wirePlaidConnectInSettings() {
+    var start = document.getElementById('btn-plaid-connect-start');
+    var sync = document.getElementById('btn-plaid-sync');
+    var disc = document.getElementById('btn-plaid-disconnect');
+    if (start && start.getAttribute('data-wired-plaid') !== '1') {
+      start.setAttribute('data-wired-plaid', '1');
+      start.addEventListener('click', async function () {
+        var sb = window.supabaseClient;
+        var org = getCurrentOrgId();
+        var sessRes = sb ? await sb.auth.getSession() : null;
+        var sess = sessRes && sessRes.data ? sessRes.data.session : null;
+        if (!sb || !org || !sess || !sess.access_token) {
+          alert('Sign in first.');
+          return;
+        }
+        var base = typeof window.__bizdashSupabaseUrl === 'string' ? window.__bizdashSupabaseUrl.trim().replace(/\/$/, '') : '';
+        var anon = typeof window.__bizdashSupabaseAnonKey === 'string' ? window.__bizdashSupabaseAnonKey.trim() : '';
+        if (!base || !anon) return;
+
+        var tokenRes = await fetch(base + '/functions/v1/plaid-link-token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + sess.access_token,
+            apikey: anon,
+          },
+          body: JSON.stringify({ organizationId: org }),
+        });
+        var tokenText = await tokenRes.text();
+        var tokenJson = {};
+        try { tokenJson = JSON.parse(tokenText); } catch (_) {}
+        if (!tokenRes.ok || !tokenJson.link_token) {
+          alert('Plaid connect failed: ' + bizdashDescribeEdgeFnFailure(tokenRes, tokenText, tokenJson));
+          return;
+        }
+
+        var Plaid = null;
+        try {
+          Plaid = await loadPlaidLinkScript();
+        } catch (err) {
+          alert('Plaid Link failed to load. Check network / CSP.');
+          return;
+        }
+
+        var handler = Plaid.create({
+          token: tokenJson.link_token,
+          onSuccess: async function (public_token, metadata) {
+            try {
+              var inst = metadata && metadata.institution ? metadata.institution : {};
+              var exRes = await fetch(base + '/functions/v1/plaid-exchange', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: 'Bearer ' + sess.access_token,
+                  apikey: anon,
+                },
+                body: JSON.stringify({ organizationId: org, public_token: public_token, institution: inst }),
+              });
+              var exText = await exRes.text();
+              var exJson = {};
+              try { exJson = JSON.parse(exText); } catch (_) {}
+              if (!exRes.ok) {
+                alert('Plaid exchange failed: ' + bizdashDescribeEdgeFnFailure(exRes, exText, exJson));
+                return;
+              }
+              refreshPlaidConnectPanel();
+              refreshConnectionsPanel();
+              renderAll();
+            } catch (err) {
+              alert('Plaid exchange failed. Check console.');
+              console.error(err);
+            }
+          },
+          onExit: function () {},
+        });
+        handler.open();
+      });
+    }
+    if (sync && sync.getAttribute('data-wired-plaid') !== '1') {
+      sync.setAttribute('data-wired-plaid', '1');
+      sync.addEventListener('click', function () {
+        triggerPlaidSync();
+      });
+    }
+    if (disc && disc.getAttribute('data-wired-plaid') !== '1') {
+      disc.setAttribute('data-wired-plaid', '1');
+      disc.addEventListener('click', async function () {
+        var sb = window.supabaseClient;
+        var org = getCurrentOrgId();
+        var sessRes = sb ? await sb.auth.getSession() : null;
+        var sess = sessRes && sessRes.data ? sessRes.data.session : null;
+        if (!sb || !org || !sess || !sess.access_token) {
+          alert('Sign in first.');
+          return;
+        }
+        var base = typeof window.__bizdashSupabaseUrl === 'string' ? window.__bizdashSupabaseUrl.trim().replace(/\/$/, '') : '';
+        var anon = typeof window.__bizdashSupabaseAnonKey === 'string' ? window.__bizdashSupabaseAnonKey.trim() : '';
+        if (!base || !anon) return;
+        if (!confirm('Disconnect Plaid? This stops future imports.')) return;
+        var res = await fetch(base + '/functions/v1/plaid-disconnect', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + sess.access_token,
+            apikey: anon,
+          },
+          body: JSON.stringify({ organizationId: org }),
+        });
+        var t = await res.text();
+        var j = {};
+        try { j = JSON.parse(t); } catch (_) {}
+        if (!res.ok) {
+          alert('Plaid disconnect failed: ' + bizdashDescribeEdgeFnFailure(res, t, j));
+          return;
+        }
+        refreshPlaidConnectPanel();
+        refreshConnectionsPanel();
       });
     }
   }
@@ -8405,6 +8679,10 @@ var incomePowerState = {
     var pgSet = document.getElementById('page-settings');
     if (pgSet && pgSet.classList.contains('on')) renderAutomationSettings();
   }
+
+  window.addEventListener('bizdash:chart-ready', function () {
+    if (state.computed) renderAll();
+  });
 
   function renderPersonableCards() {
     var now = new Date();
@@ -10224,6 +10502,9 @@ var incomePowerState = {
           textHit = hay.indexOf(q) !== -1;
         }
         if (!textHit) return false;
+        if (incomePowerState.unreviewedOnly) {
+          return row.tx && row.tx.reviewStatus === 'unreviewed';
+        }
         return (incomePowerState.filters || []).every(function (rule) {
           return incomeMatchesRule(row, rule);
         });
@@ -10270,11 +10551,17 @@ var incomePowerState = {
             if (col.id === 'amount') return '<td class="tdp">' + fmtCurrency(row.amount) + '</td>';
             return '<td>' + esc(row[col.id]) + '</td>';
           }).join('');
+          var needsReview = tx && tx.source === 'Plaid' && tx.reviewStatus === 'unreviewed';
+          var reviewBtns = needsReview
+            ? ('<button type="button" class="btn btn-p" data-income-review="approve" data-income-review-id="' + tx.id + '" style="margin-right:6px;">Approve</button>' +
+              '<button type="button" class="btn" data-income-review="hide" data-income-review-id="' + tx.id + '" style="margin-right:6px;">Hide</button>')
+            : '';
           return '<tr>' +
             '<td class="selcol"><input type="checkbox" data-income-select="' + esc(row.id) + '"' + (incomePowerState.selected[row.id] ? ' checked' : '') + ' /></td>' +
             colCells +
             '<td style="white-space:nowrap;">' +
               invBadge +
+              reviewBtns +
               (inv
                 ? '<button type="button" class="btn" data-income-invoice-edit="' + tx.id + '" style="margin-right:6px;">Edit invoice</button>'
                 : '<button type="button" class="btn" data-income-invoice-create="' + tx.id + '" style="margin-right:6px;">Create invoice</button>') +
@@ -14626,6 +14913,20 @@ var incomePowerState = {
     var incomeTable = $('income-table');
     if (incomeTable) {
       incomeTable.addEventListener('click', function (ev) {
+        var reviewBtn = ev.target.closest('[data-income-review]');
+        if (reviewBtn) {
+          var kind = reviewBtn.getAttribute('data-income-review');
+          var txId = reviewBtn.getAttribute('data-income-review-id');
+          if (!txId) return;
+          var tx0 = state.transactions.find(function (t) { return t.id === txId; });
+          if (!tx0) return;
+          var next = kind === 'hide' ? 'hidden' : 'approved';
+          tx0.reviewStatus = next;
+          persistTransactionToSupabase(tx0);
+          recomputeAndRender();
+          return;
+        }
+
         var createInvBtn = ev.target.closest('[data-income-invoice-create]');
         if (createInvBtn) {
           var createTxId = createInvBtn.getAttribute('data-income-invoice-create');
@@ -14752,6 +15053,24 @@ var incomePowerState = {
       if (!th || !thead.contains(th)) return;
       ev.preventDefault();
       onHeaderActivate(th);
+    });
+  }
+
+  function wireExpensesReviewButtons() {
+    var expTable = $('expenses-table');
+    if (!expTable || expTable.getAttribute('data-exp-review-wired') === '1') return;
+    expTable.setAttribute('data-exp-review-wired', '1');
+    expTable.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('[data-exp-review]');
+      if (!btn) return;
+      var kind = btn.getAttribute('data-exp-review');
+      var id = btn.getAttribute('data-exp-review-id');
+      if (!id) return;
+      var tx0 = state.transactions.find(function (t) { return t.id === id; });
+      if (!tx0) return;
+      tx0.reviewStatus = kind === 'hide' ? 'hidden' : 'approved';
+      persistTransactionToSupabase(tx0);
+      recomputeAndRender();
     });
   }
 
@@ -15420,7 +15739,7 @@ var incomePowerState = {
           return;
         }
         try {
-          var redirectTo = (window.location.href || '').split('#')[0];
+          var redirectTo = authEmailRedirectTo();
           var res = await supabase.auth.signUp({
             email: email,
             password: password,
@@ -15455,7 +15774,7 @@ var incomePowerState = {
         supabase = window.supabaseClient || supabase;
         if (!supabase) return;
         try {
-          var redirectTo = window.location.origin + (window.location.pathname || '/') + (window.location.search || '');
+          var redirectTo = authOAuthRedirectTo();
           var res = await supabase.auth.signInWithOAuth({
             provider: 'github',
             options: { redirectTo: redirectTo },
@@ -17196,7 +17515,7 @@ var incomePowerState = {
     function buildInviteShareUrl(result) {
       var token = result && result.token ? String(result.token) : '';
       if (token) {
-        return (window.location.origin || '') + '/?invite=' + encodeURIComponent(token);
+        return inviteShareUrl(token);
       }
       return result && result.inviteUrl ? String(result.inviteUrl) : '';
     }
@@ -19747,7 +20066,7 @@ var incomePowerState = {
           return;
         }
         if (act === 'copylink') {
-          var url = window.location.origin + window.location.pathname + '?list=' + encodeURIComponent(lid);
+          var url = (appWebOrigin() || window.location.origin) + window.location.pathname + '?list=' + encodeURIComponent(lid);
           var copyLbl = document.querySelector('[data-ctx-copy-lbl]');
           function flashCopied(ok) {
             if (!copyLbl) return;
@@ -25413,12 +25732,14 @@ var incomePowerState = {
 
   function init() {
     state.filter = { mode: 'all', start: null, end: null };
+    state.expensesUnreviewedOnly = false;
     wireTransactionForm();
     wireCsvImportAndJournalExport();
     wireIncomeExpenseForms();
     wireTimesheet();
     wireDeleteHandlers();
     wireExpensesTableSort();
+    wireExpensesReviewButtons();
     wireCustomersTableSort();
     wireClientForm();
     wireInvoiceModal();
@@ -25439,6 +25760,27 @@ var incomePowerState = {
     wireGoogleOAuthInSettings();
     updateGoogleOAuthRedirectHint();
     wireStripeConnectInSettings();
+    wirePlaidConnectInSettings();
+    (function wireUnreviewedChips() {
+      var btnInc = document.getElementById('income-power-unreviewed');
+      if (btnInc && btnInc.getAttribute('data-wired-unrev') !== '1') {
+        btnInc.setAttribute('data-wired-unrev', '1');
+        btnInc.addEventListener('click', function () {
+          incomePowerState.unreviewedOnly = !incomePowerState.unreviewedOnly;
+          btnInc.classList.toggle('btn-p', !!incomePowerState.unreviewedOnly);
+          renderAll();
+        });
+      }
+      var btnExp = document.getElementById('expenses-unreviewed');
+      if (btnExp && btnExp.getAttribute('data-wired-unrev') !== '1') {
+        btnExp.setAttribute('data-wired-unrev', '1');
+        btnExp.addEventListener('click', function () {
+          state.expensesUnreviewedOnly = !state.expensesUnreviewedOnly;
+          btnExp.classList.toggle('btn-p', !!state.expensesUnreviewedOnly);
+          renderAll();
+        });
+      }
+    })();
     wirePersonableActions();
     wireCloudSyncPanel();
     wireMarketingCampaign();

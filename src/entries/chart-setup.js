@@ -1,13 +1,22 @@
-import { Chart, registerables } from 'chart.js';
+/**
+ * Lazy Chart.js loader — legacy renderers guard on `window.Chart` and listen for `bizdash:chart-ready`.
+ */
+let chartPromise = null;
 
-Chart.register(...registerables);
-window.Chart = Chart;
-
-if (Chart.defaults) {
-  Chart.defaults.font.family =
-    '"Helvetica Now Pro Display Medium", system-ui, -apple-system, sans-serif';
-  /** No canvas draw-in; charts appear with the same page stagger as `.motion-item` cards. */
-  if (Chart.defaults.animation) {
-    Chart.defaults.animation.duration = 0;
-  }
+export function ensureChart() {
+  if (chartPromise) return chartPromise;
+  chartPromise = import('chart.js').then(({ Chart, registerables }) => {
+    Chart.register(...registerables);
+    if (Chart.defaults) {
+      Chart.defaults.font.family =
+        '"Helvetica Now Pro Display Medium", system-ui, -apple-system, sans-serif';
+      if (Chart.defaults.animation) {
+        Chart.defaults.animation.duration = 0;
+      }
+    }
+    window.Chart = Chart;
+    window.dispatchEvent(new CustomEvent('bizdash:chart-ready'));
+    return Chart;
+  });
+  return chartPromise;
 }

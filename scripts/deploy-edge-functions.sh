@@ -22,11 +22,17 @@ FUNCS=(
   deepgram-token
   gmail-send
   integration-worker
+  integration-connection-status
   oauth-google-callback
   oauth-google-start
   oauth-microsoft-callback
   oauth-microsoft-start
   organization-team
+  plaid-disconnect
+  plaid-exchange
+  plaid-link-token
+  plaid-sync
+  plaid-webhook
   stripe-connect-disconnect
   stripe-connect-start
   stripe-webhook

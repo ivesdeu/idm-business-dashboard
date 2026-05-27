@@ -7,20 +7,13 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { authEmailRedirectTo } from '@/lib/appUrl';
 import { cn } from '@/lib/utils';
 
 type Step = 'signin' | 'signup';
 
 const COMPASS_TERMS_URL = 'https://compass.ivesdeu.com/terms';
 const COMPASS_PRIVACY_URL = 'https://compass.ivesdeu.com/privacy';
-
-function authEmailRedirectTo() {
-  try {
-    return (window.location.href || '').split('#')[0];
-  } catch {
-    return `${window.location.origin || ''}/`;
-  }
-}
 
 function readRecoveryFlag(): boolean {
   try {

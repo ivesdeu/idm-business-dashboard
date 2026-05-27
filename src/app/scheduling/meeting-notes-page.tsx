@@ -1,7 +1,8 @@
-import { AudioLines, Copy, Settings2, UserPlus, Volume2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { AudioLines, Copy, RefreshCw, Settings2, Sparkles, UserPlus, Volume2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { InlineRecordingBar } from '@/components/scheduling/InlineRecordingBar';
+import { MeetingSummaryMarkdown } from '@/components/scheduling/MeetingSummaryMarkdown';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -12,7 +13,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useMeetingNote } from '@/lib/scheduling/useMeetingNote';
-import { useTranscription, useTranscriptionReady } from '@/lib/scheduling/useTranscription';
+import {
+  BIZDASH_ORG_CONTEXT_EVENT,
+  useTranscription,
+  useTranscriptionReady,
+} from '@/lib/scheduling/useTranscription';
 
 function getSupabase (): SupabaseClient | null {
   if (typeof window === 'undefined') return null;
@@ -28,10 +33,21 @@ function getOrgId (): string | null {
 }
 
 export function MeetingNotesPage () {
-  const organizationId = getOrgId ();
+  const [organizationId, setOrganizationId] = useState<string | null> (() => getOrgId ());
   const supabase = getSupabase ();
   const transcriptionReady = useTranscriptionReady ();
   const [pageVisible, setPageVisible] = useState (false);
+
+  useEffect (() => {
+    const syncOrg = () => setOrganizationId (getOrgId ());
+    syncOrg ();
+    window.addEventListener (BIZDASH_ORG_CONTEXT_EVENT, syncOrg);
+    const intervalId = window.setInterval (syncOrg, 400);
+    return () => {
+      window.removeEventListener (BIZDASH_ORG_CONTEXT_EVENT, syncOrg);
+      window.clearInterval (intervalId);
+    };
+  }, []);
 
   useEffect (() => {
     const page = document.getElementById ('page-meeting-notes');
@@ -46,6 +62,7 @@ export function MeetingNotesPage () {
   const {
     status: transcriptionStatus,
     transcript,
+    interimText,
     error: transcriptionError,
     duration,
     analyserRef,
@@ -56,7 +73,18 @@ export function MeetingNotesPage () {
     setTranscript,
   } = useTranscription ();
 
-  const { saveError } = useMeetingNote ({
+  const {
+    saveError,
+    rawNotes,
+    summary,
+    actionItems,
+    decisions,
+    topics,
+    summarizing,
+    summaryError,
+    hasSummarized,
+    summarize,
+  } = useMeetingNote ({
     organizationId,
     supabase,
     appointment: null,
@@ -72,6 +100,30 @@ export function MeetingNotesPage () {
     transcriptionStatus === 'recording' ||
     transcriptionStatus === 'paused' ||
     transcriptionStatus === 'requesting';
+
+  const handleStop = useCallback (() => {
+    const captured = interimText
+      ? `${transcript}${transcript ? ' ' : ''}${interimText}`.trim ()
+      : transcript.trim () || rawNotes.trim ();
+    console.info ('[meeting-notes] stop clicked', {
+      capturedLen: captured.length,
+      transcriptLen: transcript.length,
+      interimLen: interimText.length,
+      rawNotesLen: rawNotes.length,
+      organizationId,
+      hasSupabase: !!supabase,
+    });
+    stop ();
+    void summarize (captured || undefined);
+  }, [stop, summarize, transcript, interimText, rawNotes, organizationId, supabase]);
+
+  const hasTranscript = !!(rawNotes.trim () || transcript.trim ());
+  const hasSummaryContent = !!(summary.trim () || actionItems.length || topics.length || decisions.length);
+  const showOnboardingCard = !isActive && !hasTranscript && !hasSummarized;
+
+  const liveTranscript = interimText
+    ? `${rawNotes}${rawNotes ? ' ' : ''}${interimText}`.trim ()
+    : rawNotes;
 
   return (
     <div className="meeting-notes-root mx-auto w-full max-w-[1040px] px-6 py-6">
@@ -96,7 +148,7 @@ export function MeetingNotesPage () {
                   error={transcriptionError}
                   onPause={pause}
                   onResume={resume}
-                  onStop={stop}
+                  onStop={handleStop}
                 />
               ) : (
                 <div className="flex items-center gap-2">
@@ -120,9 +172,9 @@ export function MeetingNotesPage () {
                     }}
                     onClick={() => void start ()}
                     disabled={!transcriptionReady}
-                    aria-label="Start transcribing"
+                    aria-label={hasTranscript ? 'Start a new recording' : 'Start transcribing'}
                   >
-                    Start transcribing
+                    {hasTranscript ? 'Record again' : 'Start transcribing'}
                   </button>
                 </div>
               )}
@@ -151,7 +203,15 @@ export function MeetingNotesPage () {
             </div>
           ) : null}
           <CardDescription className="mt-3 text-sm">
-            Notion AI will summarize the notes and transcript
+            {summarizing
+              ? 'Summarizing your meeting…'
+              : hasSummaryContent
+                ? 'AI summary generated from your transcript.'
+                : isActive
+                  ? 'Listening — your transcript and summary will appear here.'
+                  : hasTranscript
+                    ? 'Your transcript is ready below.'
+                    : 'Notion AI will summarize the notes and transcript'}
           </CardDescription>
           {!isActive && !transcriptionReady && pageVisible ? (
             <p className="mt-2 text-xs text-[var(--text3)]">
@@ -166,49 +226,139 @@ export function MeetingNotesPage () {
           ) : null}
         </CardHeader>
 
-        <CardContent className="space-y-4 pt-0">
-          <div className="rounded-2xl border border-[#cfe0f2] bg-[#edf5ff] px-4 py-3">
-            <p className="text-sm font-semibold text-[#2f5f92]">Choose how you notify others</p>
-            <p className="mt-1 max-w-[920px] text-sm leading-relaxed text-[#3e6e9f]">
-              To let others know you're transcribing, Notion can play an audio message or you can continue to
-              get consent yourself. Set your default for all meetings:
-            </p>
-            <div
-              className="mt-3 flex flex-wrap gap-2"
-            >
-              <button
-                type="button"
-                className="inline-flex h-8 items-center justify-center rounded-xl border border-[#8fb9e3] bg-white px-3 text-sm font-medium text-[#2f5f92] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8fb9e3]"
-                style={{
-                  background: '#ffffff',
-                  backgroundImage: 'none',
-                  borderStyle: 'solid',
-                  WebkitAppearance: 'none',
-                  appearance: 'none',
-                  boxShadow: 'none',
-                  filter: 'none',
-                }}
-              >
-                Get consent myself
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-8 items-center justify-center rounded-xl border border-[#8fb9e3] bg-white px-3 text-sm font-medium text-[#2f5f92] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8fb9e3]"
-                style={{
-                  background: '#ffffff',
-                  backgroundImage: 'none',
-                  borderStyle: 'solid',
-                  WebkitAppearance: 'none',
-                  appearance: 'none',
-                  boxShadow: 'none',
-                  filter: 'none',
-                }}
-              >
-                Automatically play audio
-              </button>
-            </div>
-          </div>
-        </CardContent>
+        {(showOnboardingCard || isActive || hasTranscript || summarizing || summaryError) ? (
+          <CardContent className="space-y-4 pt-0">
+            {showOnboardingCard ? (
+              <div className="rounded-2xl border border-[#cfe0f2] bg-[#edf5ff] px-4 py-3">
+                <p className="text-sm font-semibold text-[#2f5f92]">Choose how you notify others</p>
+                <p className="mt-1 max-w-[920px] text-sm leading-relaxed text-[#3e6e9f]">
+                  To let others know you're transcribing, Notion can play an audio message or you can continue to
+                  get consent yourself. Set your default for all meetings:
+                </p>
+                <div
+                  className="mt-3 flex flex-wrap gap-2"
+                >
+                  <button
+                    type="button"
+                    className="inline-flex h-8 items-center justify-center rounded-xl border border-[#8fb9e3] bg-white px-3 text-sm font-medium text-[#2f5f92] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8fb9e3]"
+                    style={{
+                      background: '#ffffff',
+                      backgroundImage: 'none',
+                      borderStyle: 'solid',
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
+                      boxShadow: 'none',
+                      filter: 'none',
+                    }}
+                  >
+                    Get consent myself
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 items-center justify-center rounded-xl border border-[#8fb9e3] bg-white px-3 text-sm font-medium text-[#2f5f92] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8fb9e3]"
+                    style={{
+                      background: '#ffffff',
+                      backgroundImage: 'none',
+                      borderStyle: 'solid',
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
+                      boxShadow: 'none',
+                      filter: 'none',
+                    }}
+                  >
+                    Automatically play audio
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {(isActive || hasTranscript) ? (
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-[var(--text)]">Transcript</p>
+                  {duration > 0 ? (
+                    <span className="text-xs text-[var(--text3)]">
+                      {Math.floor (duration / 60)}:{String (duration % 60).padStart (2, '0')}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 max-h-[260px] overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-[var(--text2)]">
+                  {liveTranscript
+                    ? liveTranscript
+                    : (
+                      <span className="text-[var(--text3)]">
+                        Listening… start speaking and your words will appear here.
+                      </span>
+                    )}
+                </div>
+              </div>
+            ) : null}
+
+            {summarizing ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3 text-sm text-[var(--text2)]">
+                <Sparkles className="h-4 w-4 text-[#2f5f92]" aria-hidden />
+                <span>Generating AI summary…</span>
+              </div>
+            ) : null}
+
+            {!summarizing && summaryError ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--red)]/30 bg-[var(--red)]/5 px-4 py-3 text-sm text-[var(--red)]">
+                <span>{summaryError}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-xl border-[var(--border)] text-[var(--text2)] shadow-none"
+                  onClick={() => void summarize ()}
+                  disabled={!hasTranscript}
+                >
+                  <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden />
+                  Try again
+                </Button>
+              </div>
+            ) : null}
+
+            {!summarizing && hasSummaryContent ? (
+              <div className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--bg)] px-4 py-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-[#2f5f92]" aria-hidden />
+                  <p className="text-sm font-semibold text-[var(--text)]">AI summary</p>
+                </div>
+                {summary ? (
+                  <MeetingSummaryMarkdown summary={summary} actionItems={actionItems} />
+                ) : null}
+                {!summary && actionItems.length ? (
+                  <MeetingSummaryMarkdown summary="" actionItems={actionItems} />
+                ) : null}
+                {topics.length ? (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text3)]">Topics</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {topics.map ((t) => (
+                        <span
+                          key={t}
+                          className="inline-flex items-center rounded-full bg-[var(--bg3)] px-2.5 py-0.5 text-xs font-medium text-[var(--text2)]"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {decisions.length ? (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text3)]">Key decisions</p>
+                    <ul className="mt-1.5 list-disc space-y-1 pl-5">
+                      {decisions.map ((d) => (
+                        <li key={d} className="text-sm text-[var(--text2)]">{d}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </CardContent>
+        ) : null}
 
         <CardFooter className="flex items-center justify-between gap-4 border-t border-[var(--border)] pt-4">
           <div className="flex items-center gap-4 text-sm text-[var(--text3)]">

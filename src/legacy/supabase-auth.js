@@ -1,6 +1,8 @@
 // supabase-auth.js
 // Supabase auth gate + organization slug routing (path /:slug/…).
 
+import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin } from '../lib/appUrl.js';
+
 (function () {
   'use strict';
 
@@ -1043,10 +1045,12 @@
     if (e1) e1.textContent = '';
     var pref = $('ob-slug-prefix-host');
     if (pref) {
-      var o = '';
-      try {
-        o = window.location.origin || '';
-      } catch (_) {}
+      var o = appWebOrigin();
+      if (!o) {
+        try {
+          o = window.location.origin || '';
+        } catch (_) {}
+      }
       pref.textContent = o ? o + '/' : '/';
     }
   }
@@ -2555,13 +2559,7 @@
     }
     authGateReactRootWired = true;
 
-    function authEmailRedirectTo() {
-      try {
-        return (window.location.href || '').split('#')[0];
-      } catch (_) {
-        return (window.location.origin || '') + '/';
-      }
-    }
+    var authEmailRedirectToLocal = authEmailRedirectTo;
 
     function setSignupEmailDeliverabilityHint(visible) {
       var hint = $('gate-signup-email-hint');
@@ -2594,9 +2592,7 @@
         }
       } catch (_) {}
       try {
-        var path = window.location.pathname || '/';
-        var search = window.location.search || '';
-        var redirectTo = window.location.origin + path + search;
+        var redirectTo = authOAuthRedirectTo();
         var res = await supabase.auth.signInWithOAuth({
           provider: provider,
           options: {
@@ -2704,7 +2700,7 @@
         var out = await supabase.auth.resend({
           type: 'signup',
           email: email,
-          options: { emailRedirectTo: authEmailRedirectTo() },
+          options: { emailRedirectTo: authEmailRedirectToLocal() },
         });
         if (out.error) {
           setGateAuthError(out.error.message || 'Could not resend confirmation email.');
@@ -2730,7 +2726,7 @@
       setGateAuthError('');
       setSignupEmailDeliverabilityHint(false);
       try {
-        var redirectTo = authEmailRedirectTo();
+        var redirectTo = authEmailRedirectToLocal();
         var reset = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectTo });
         if (reset.error) {
           setGateAuthError(reset.error.message || 'Could not send reset email.');

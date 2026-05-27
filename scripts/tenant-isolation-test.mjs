@@ -412,6 +412,47 @@ async function main() {
     },
   );
 
+  await probeTableIsolation(
+    'plaid_accounts',
+    orgAId,
+    orgBId,
+    sessionA.client,
+    sessionB.client,
+    async (_client, _orgId) => {
+      // Accounts are service-role written and user-read. We cannot seed with anon JWT client.
+      // Still verify cross-org reads return no rows for B against A's org filter.
+      skip('plaid_accounts.seed', 'service-role seeded table; skipping insert/update/delete probe');
+      return {
+        id: randomUUID(),
+        crossInsertBody: () => ({
+          id: randomUUID(),
+          organization_id: orgAId,
+          item_id: randomUUID(),
+          plaid_account_id: `acct_${randomUUID()}`,
+          name: 'cross-org-account',
+        }),
+        updatePatch: { name: 'pwned-by-B' },
+        cleanup: async () => {},
+      };
+    },
+  );
+
+  // Service-role only table should never leak to authenticated users.
+  const { data: plaidItemsLeak, error: plaidItemsErr } = await sessionB.client
+    .from('plaid_items')
+    .select('id')
+    .eq('organization_id', orgAId)
+    .limit(1);
+  if (plaidItemsErr) {
+    pass('plaid_items.noLeak', `query error (no data leak): ${plaidItemsErr.code || plaidItemsErr.message}`);
+  } else {
+    assert(
+      !plaidItemsLeak?.length,
+      'plaid_items.empty',
+      plaidItemsLeak?.length ? 'unexpected row returned to user client' : '0 rows',
+    );
+  }
+
   let clientAId = null;
   const clientSeed = await sessionA.client
     .from('clients')

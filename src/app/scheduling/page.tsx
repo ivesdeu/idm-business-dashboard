@@ -307,6 +307,85 @@ export function SchedulingPage () {
     [demoMode, pushToast],
   );
 
+  const handleUpdateAppointment = useCallback (
+    async (
+      id: string,
+      payload: {
+        title: string;
+        clientId: string | null;
+        startTime: string;
+        endTime: string;
+        location: string | null;
+        notes: string | null;
+      },
+    ) => {
+      if (demoMode) {
+        pushToast ({ kind: 'error', message: 'Demo appointments are read-only and are not stored locally.' });
+        throw new Error ('demo-mode');
+      }
+
+      const supabase = getSupabase ();
+      const orgId = getOrgId ();
+      if (!supabase || !orgId) {
+        pushToast ({ kind: 'error', message: 'Sign in and select a workspace to edit appointments.' });
+        throw new Error ('no-session');
+      }
+
+      const { error } = await supabase
+        .from ('appointments')
+        .update ({
+          client_id: payload.clientId,
+          title: payload.title,
+          start_time: payload.startTime,
+          end_time: payload.endTime,
+          location: payload.location,
+          notes: payload.notes,
+        })
+        .eq ('id', id)
+        .eq ('organization_id', orgId);
+
+      if (error) {
+        pushToast ({ kind: 'error', message: error.message });
+        throw error;
+      }
+
+      setRefreshToken ((t) => t + 1);
+      pushToast ({ kind: 'success', message: 'Appointment updated.' });
+    },
+    [demoMode, pushToast],
+  );
+
+  const handleDeleteAppointment = useCallback (
+    async (id: string) => {
+      if (demoMode) {
+        pushToast ({ kind: 'error', message: 'Demo appointments are read-only and are not stored locally.' });
+        throw new Error ('demo-mode');
+      }
+
+      const supabase = getSupabase ();
+      const orgId = getOrgId ();
+      if (!supabase || !orgId) {
+        pushToast ({ kind: 'error', message: 'Sign in and select a workspace to delete appointments.' });
+        throw new Error ('no-session');
+      }
+
+      const { error } = await supabase
+        .from ('appointments')
+        .delete ()
+        .eq ('id', id)
+        .eq ('organization_id', orgId);
+
+      if (error) {
+        pushToast ({ kind: 'error', message: error.message });
+        throw error;
+      }
+
+      setRefreshToken ((t) => t + 1);
+      pushToast ({ kind: 'success', message: 'Appointment deleted.' });
+    },
+    [demoMode, pushToast],
+  );
+
   const handleFormSubmit = useCallback (
     async (payload: {
       title: string;
@@ -512,8 +591,11 @@ export function SchedulingPage () {
             <>
               <CalendarView
                 appointments={appointments}
+                clientOptions={clientOptions}
                 onSelect={(a) => setDetail (a)}
                 onCreateAppointment={demoMode ? undefined : handleFormSubmit}
+                onUpdateAppointment={demoMode ? undefined : handleUpdateAppointment}
+                onDeleteAppointment={demoMode ? undefined : handleDeleteAppointment}
               />
               {appointments.length === 0 ? (
                 <p className="sched-empty-sub" style={{ marginTop: '12px', textAlign: 'center' }}>

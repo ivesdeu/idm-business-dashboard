@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.com.idm.bizdash",
+        "paths": ["/auth/*", "/auth/callback*", "/"]
+      }
+    ]
+  }
+}
+

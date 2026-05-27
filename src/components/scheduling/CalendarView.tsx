@@ -1,22 +1,38 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties, MouseEvent, PointerEvent } from 'react';
-import { Bell, CalendarDays, ChevronLeft, ChevronRight, Clock3, Link2, MapPin, UserRound, X } from 'lucide-react';
-import type { SchedulingAppointment } from '@/components/scheduling/types';
+import {
+  Bell,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Link2,
+  MapPin,
+  Pencil,
+  Trash2,
+  UserRound,
+  X,
+} from 'lucide-react';
+import type { ClientOption, SchedulingAppointment } from '@/components/scheduling/types';
 
 type CalMode = 'month' | 'week';
 
+type AppointmentUpdatePayload = {
+  title: string;
+  clientId: string | null;
+  startTime: string;
+  endTime: string;
+  location: string | null;
+  notes: string | null;
+};
+
 type Props = {
   appointments: SchedulingAppointment[];
+  clientOptions?: ClientOption[];
   onSelect: (a: SchedulingAppointment) => void;
-  onCreateAppointment?: (payload: {
-    title: string;
-    clientId: string | null;
-    startTime: string;
-    endTime: string;
-    location: string | null;
-    notes: string | null;
-    syncToGoogle: boolean;
-  }) => Promise<void>;
+  onCreateAppointment?: (payload: AppointmentUpdatePayload & { syncToGoogle: boolean }) => Promise<void>;
+  onUpdateAppointment?: (id: string, payload: AppointmentUpdatePayload) => Promise<void>;
+  onDeleteAppointment?: (id: string) => Promise<void>;
 };
 
 type PreviewState = {
@@ -143,7 +159,13 @@ function statusPillStyle (s: SchedulingAppointment['status']): CSSProperties {
   return { background: 'var(--neutral-bg)', color: 'var(--text2)' };
 }
 
-export function CalendarView ({ appointments, onCreateAppointment }: Props) {
+export function CalendarView ({
+  appointments,
+  clientOptions,
+  onCreateAppointment,
+  onUpdateAppointment,
+  onDeleteAppointment,
+}: Props) {
   const [mode, setMode] = useState<CalMode> ('month');
   const [cursor, setCursor] = useState (() => new Date ());
   const [preview, setPreview] = useState<PreviewState | null> (null);
@@ -535,7 +557,10 @@ export function CalendarView ({ appointments, onCreateAppointment }: Props) {
       {preview ? (
         <EventPreview
           preview={preview}
+          clientOptions={clientOptions ?? []}
           onClose={() => setPreview (null)}
+          onUpdate={onUpdateAppointment}
+          onDelete={onDeleteAppointment}
           text={text}
           muted={muted}
           hairline={hairline}
@@ -1133,20 +1158,73 @@ function QuickCreatePopover ({
   );
 }
 
+function isoToDateInput (iso: string): string {
+  try {
+    const d = new Date (iso);
+    const y = d.getFullYear ();
+    const m = String (d.getMonth () + 1).padStart (2, '0');
+    const day = String (d.getDate ()).padStart (2, '0');
+    return `${y}-${m}-${day}`;
+  } catch {
+    return '';
+  }
+}
+
+function isoToTimeInput (iso: string): string {
+  try {
+    const d = new Date (iso);
+    const h = String (d.getHours ()).padStart (2, '0');
+    const m = String (d.getMinutes ()).padStart (2, '0');
+    return `${h}:${m}`;
+  } catch {
+    return '';
+  }
+}
+
+function combineLocalDateTime (dateStr: string, timeStr: string): string {
+  const [y, mo, d] = dateStr.split ('-').map (Number);
+  const [hh, mm] = timeStr.split (':').map (Number);
+  const dt = new Date (y, mo - 1, d, hh || 0, mm || 0, 0, 0);
+  return dt.toISOString ();
+}
+
+type EventPreviewMode = 'view' | 'edit' | 'confirm-delete';
+
 function EventPreview ({
   preview,
+  clientOptions,
   onClose,
+  onUpdate,
+  onDelete,
   text,
   muted,
   hairline,
 }: {
   preview: PreviewState;
+  clientOptions: ClientOption[];
   onClose: () => void;
+  onUpdate?: (id: string, payload: AppointmentUpdatePayload) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   text: string;
   muted: string;
   hairline: string;
 }) {
   const appointment = preview.appointment;
+  const canEdit = typeof onUpdate === 'function';
+  const canDelete = typeof onDelete === 'function';
+
+  const [mode, setMode] = useState<EventPreviewMode> ('view');
+  const [title, setTitle] = useState (appointment.title);
+  const [clientId, setClientId] = useState<string | null> (appointment.clientId);
+  const [dateStr, setDateStr] = useState (() => isoToDateInput (appointment.startTime));
+  const [startT, setStartT] = useState (() => isoToTimeInput (appointment.startTime));
+  const [endT, setEndT] = useState (() => isoToTimeInput (appointment.endTime));
+  const [location, setLocation] = useState (appointment.location ?? '');
+  const [notes, setNotes] = useState (appointment.notes ?? '');
+  const [saving, setSaving] = useState (false);
+  const [deleting, setDeleting] = useState (false);
+  const [errorMsg, setErrorMsg] = useState<string | null> (null);
+
   const duration = formatDuration (appointment.startTime, appointment.endTime);
   const lineStyle: CSSProperties = {
     display: 'grid',
@@ -1161,12 +1239,185 @@ function EventPreview ({
     color: 'rgba(0,0,0,0.28)',
     marginTop: '2px',
   };
+  const inputBase: CSSProperties = {
+    width: '100%',
+    border: 'none',
+    outline: 'none',
+    background: 'rgba(0,0,0,0.045)',
+    borderRadius: '6px',
+    color: text,
+    fontSize: '14px',
+    padding: '6px 10px',
+  };
+
+  function startEditing () {
+    setMode ('edit');
+    setTitle (appointment.title);
+    setClientId (appointment.clientId);
+    setDateStr (isoToDateInput (appointment.startTime));
+    setStartT (isoToTimeInput (appointment.startTime));
+    setEndT (isoToTimeInput (appointment.endTime));
+    setLocation (appointment.location ?? '');
+    setNotes (appointment.notes ?? '');
+    setErrorMsg (null);
+  }
+
+  async function handleSave () {
+    if (!onUpdate) return;
+    if (!dateStr || !startT || !endT) {
+      setErrorMsg ('Date, start, and end are required.');
+      return;
+    }
+    const startIso = combineLocalDateTime (dateStr, startT);
+    const endIso = combineLocalDateTime (dateStr, endT);
+    if (new Date (endIso).getTime () <= new Date (startIso).getTime ()) {
+      setErrorMsg ('End time must be after the start time.');
+      return;
+    }
+    setSaving (true);
+    setErrorMsg (null);
+    try {
+      await onUpdate (appointment.id, {
+        title: title.trim () || 'Untitled',
+        clientId,
+        startTime: startIso,
+        endTime: endIso,
+        location: location.trim () || null,
+        notes: notes.trim () || null,
+      });
+      onClose ();
+    } catch (err) {
+      setErrorMsg (err instanceof Error && err.message ? err.message : 'Could not save changes.');
+    } finally {
+      setSaving (false);
+    }
+  }
+
+  async function handleDelete () {
+    if (!onDelete) return;
+    setDeleting (true);
+    setErrorMsg (null);
+    try {
+      await onDelete (appointment.id);
+      onClose ();
+    } catch (err) {
+      setErrorMsg (err instanceof Error && err.message ? err.message : 'Could not delete event.');
+    } finally {
+      setDeleting (false);
+    }
+  }
+
+  const headerActionsView = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      {canEdit ? (
+        <button
+          type="button"
+          aria-label="Edit event"
+          onClick={startEditing}
+          title="Edit"
+          style={{
+            border: 'none',
+            background: 'transparent',
+            color: muted,
+            cursor: 'pointer',
+            padding: '6px',
+            borderRadius: '6px',
+            lineHeight: 0,
+          }}
+        >
+          <Pencil className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+        </button>
+      ) : null}
+      {canDelete ? (
+        <button
+          type="button"
+          aria-label="Delete event"
+          onClick={() => setMode ('confirm-delete')}
+          title="Delete"
+          style={{
+            border: 'none',
+            background: 'transparent',
+            color: muted,
+            cursor: 'pointer',
+            padding: '6px',
+            borderRadius: '6px',
+            lineHeight: 0,
+          }}
+        >
+          <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+        </button>
+      ) : null}
+      <button
+        type="button"
+        aria-label="Close event preview"
+        onClick={onClose}
+        style={{
+          border: 'none',
+          background: 'transparent',
+          color: muted,
+          cursor: 'pointer',
+          padding: '6px',
+          borderRadius: '6px',
+          lineHeight: 0,
+        }}
+      >
+        <X className="h-5 w-5" strokeWidth={1.8} aria-hidden />
+      </button>
+    </div>
+  );
+
+  const headerActionsEdit = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <button
+        type="button"
+        onClick={() => {
+          setMode ('view');
+          setErrorMsg (null);
+        }}
+        disabled={saving}
+        style={{
+          border: `1px solid ${hairline}`,
+          background: 'transparent',
+          color: text,
+          cursor: saving ? 'default' : 'pointer',
+          fontSize: '12px',
+          fontWeight: 500,
+          padding: '5px 10px',
+          borderRadius: '7px',
+          opacity: saving ? 0.6 : 1,
+        }}
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        disabled={saving}
+        style={{
+          border: 'none',
+          borderRadius: '7px',
+          background: 'var(--text)',
+          color: 'var(--bg2)',
+          cursor: saving ? 'default' : 'pointer',
+          fontSize: '12px',
+          fontWeight: 600,
+          opacity: saving ? 0.65 : 1,
+          padding: '5px 10px',
+        }}
+      >
+        {saving ? 'Saving' : 'Save'}
+      </button>
+    </div>
+  );
 
   return (
-    <div
+    <form
       role="dialog"
-      aria-label={`${appointment.title} preview`}
+      aria-label={`${appointment.title} ${mode === 'edit' ? 'editor' : 'preview'}`}
       onMouseDown={(e) => e.stopPropagation ()}
+      onSubmit={(e) => {
+        e.preventDefault ();
+        if (mode === 'edit') void handleSave ();
+      }}
       style={{
         position: 'fixed',
         zIndex: 150,
@@ -1174,100 +1425,274 @@ function EventPreview ({
         top: preview.top,
         width: '360px',
         maxWidth: 'calc(100vw - 32px)',
-        maxHeight: 'calc(100vh - 32px)',
+        maxHeight: `calc(100vh - ${preview.top + 16}px)`,
         overflow: 'auto',
         background: 'rgba(255,255,255,0.98)',
         border: `1px solid ${hairline}`,
         borderRadius: '16px',
         boxShadow: '0 22px 70px rgba(15,23,42,0.18), 0 4px 18px rgba(15,23,42,0.08)',
         color: text,
+        transformOrigin: 'top center',
+        animation: 'calendarQuickCreateIn 150ms cubic-bezier(0.2, 0.8, 0.2, 1)',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px 16px' }}>
-        <div style={{ fontSize: '16px', fontWeight: 600 }}>Event</div>
-        <button
-          type="button"
-          aria-label="Close event preview"
-          onClick={onClose}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            color: muted,
-            cursor: 'pointer',
-            padding: '2px',
-            lineHeight: 0,
-          }}
-        >
-          <X className="h-5 w-5" strokeWidth={1.8} aria-hidden />
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 12px' }}>
+        <div style={{ fontSize: '16px', fontWeight: 600 }}>
+          {mode === 'edit' ? 'Edit event' : mode === 'confirm-delete' ? 'Delete event?' : 'Event'}
+        </div>
+        {mode === 'edit' ? headerActionsEdit : mode === 'view' ? headerActionsView : null}
       </div>
 
-      <div style={{ padding: '20px', borderTop: `1px solid ${hairline}`, fontSize: '18px', fontWeight: 500 }}>
-        {appointment.title}
-      </div>
-
-      <div style={{ padding: '18px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '14px' }}>
-        <div style={lineStyle}>
-          <Clock3 style={iconStyle} strokeWidth={1.8} aria-hidden />
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '15px' }}>
-              <span>{formatTime (appointment.startTime)}</span>
-              <span style={{ color: muted }}>→</span>
-              <span>{formatTime (appointment.endTime)}</span>
-              {duration ? <span style={{ color: muted, fontSize: '13px' }}>{duration}</span> : null}
-            </div>
-            <div style={{ marginTop: '8px', fontSize: '14px' }}>{formatDateLine (appointment.startTime)}</div>
+      {mode === 'confirm-delete' ? (
+        <div style={{ padding: '20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '14px' }}>
+          <div style={{ fontSize: '14px', lineHeight: 1.5 }}>
+            <span style={{ fontWeight: 600 }}>{appointment.title}</span> will be permanently removed from your calendar.
+            This can&apos;t be undone.
           </div>
-        </div>
-
-        <div style={lineStyle}>
-          <UserRound style={iconStyle} strokeWidth={1.8} aria-hidden />
-          <div style={{ fontSize: '14px' }}>
-            {appointment.clientName || 'No client'}
-            <div style={{ color: muted, marginTop: '2px' }}>Participant</div>
-          </div>
-        </div>
-
-        {appointment.location ? (
-          <div style={lineStyle}>
-            <MapPin style={iconStyle} strokeWidth={1.8} aria-hidden />
-            <div style={{ fontSize: '14px', lineHeight: 1.35 }}>{appointment.location}</div>
-          </div>
-        ) : null}
-      </div>
-
-      {appointment.notes ? (
-        <div style={{ padding: '18px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '12px' }}>
-          <div style={lineStyle}>
-            <Link2 style={iconStyle} strokeWidth={1.8} aria-hidden />
-            <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{appointment.notes}</div>
-          </div>
-        </div>
-      ) : null}
-
-      <div style={{ padding: '16px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '14px' }}>
-        <div style={lineStyle}>
-          <CalendarDays style={{ ...iconStyle, color: 'var(--neutral)' }} strokeWidth={1.8} aria-hidden />
-          <div style={{ fontSize: '14px' }}>
-            <span
+          {errorMsg ? <div style={{ color: 'var(--red, #dc2626)', fontSize: '13px' }}>{errorMsg}</div> : null}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setMode ('view');
+                setErrorMsg (null);
+              }}
+              disabled={deleting}
               style={{
-                display: 'inline-block',
-                width: '12px',
-                height: '12px',
-                borderRadius: '4px',
-                background: appointment.status === 'confirmed' ? 'var(--green)' : 'var(--neutral)',
-                marginRight: '10px',
-                verticalAlign: '-1px',
+                border: `1px solid ${hairline}`,
+                background: 'transparent',
+                color: text,
+                cursor: deleting ? 'default' : 'pointer',
+                fontSize: '13px',
+                fontWeight: 500,
+                padding: '6px 12px',
+                borderRadius: '8px',
+                opacity: deleting ? 0.6 : 1,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDelete ()}
+              disabled={deleting}
+              style={{
+                border: 'none',
+                background: 'var(--red, #dc2626)',
+                color: '#fff',
+                cursor: deleting ? 'default' : 'pointer',
+                fontSize: '13px',
+                fontWeight: 600,
+                padding: '6px 12px',
+                borderRadius: '8px',
+                opacity: deleting ? 0.65 : 1,
+              }}
+            >
+              {deleting ? 'Deleting' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      ) : mode === 'edit' ? (
+        <>
+          <div style={{ padding: '0 16px 16px' }}>
+            <input
+              autoFocus
+              aria-label="Event title"
+              placeholder="Title"
+              value={title}
+              onChange={(e) => setTitle (e.target.value)}
+              style={{
+                width: '100%',
+                border: 'none',
+                outline: 'none',
+                borderRadius: '8px',
+                background: 'rgba(0,0,0,0.045)',
+                color: text,
+                fontSize: '18px',
+                fontWeight: 500,
+                padding: '10px 12px',
               }}
             />
-            Workspace calendar
           </div>
-        </div>
-        <div style={lineStyle}>
-          <Bell style={iconStyle} strokeWidth={1.8} aria-hidden />
-          <div style={{ fontSize: '14px', color: muted }}>Reminders</div>
-        </div>
-      </div>
-    </div>
+
+          <div style={{ borderTop: `1px solid ${hairline}`, padding: '16px 18px', display: 'grid', gap: '12px' }}>
+            <div style={lineStyle}>
+              <Clock3 style={iconStyle} strokeWidth={1.8} aria-hidden />
+              <div style={{ display: 'grid', gap: '8px' }}>
+                <input
+                  type="date"
+                  aria-label="Date"
+                  value={dateStr}
+                  onChange={(e) => setDateStr (e.target.value)}
+                  style={inputBase}
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="time"
+                    aria-label="Start time"
+                    value={startT}
+                    onChange={(e) => setStartT (e.target.value)}
+                    style={inputBase}
+                  />
+                  <span style={{ color: muted, fontSize: '13px' }}>→</span>
+                  <input
+                    type="time"
+                    aria-label="End time"
+                    value={endT}
+                    onChange={(e) => setEndT (e.target.value)}
+                    style={inputBase}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {clientOptions.length > 0 ? (
+              <div style={lineStyle}>
+                <UserRound style={iconStyle} strokeWidth={1.8} aria-hidden />
+                <select
+                  aria-label="Client"
+                  value={clientId ?? ''}
+                  onChange={(e) => setClientId (e.target.value || null)}
+                  style={{ ...inputBase, appearance: 'auto', cursor: 'pointer' }}
+                >
+                  <option value="">No client</option>
+                  {clientOptions.map ((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
+            <div style={lineStyle}>
+              <MapPin style={iconStyle} strokeWidth={1.8} aria-hidden />
+              <input
+                aria-label="Location"
+                placeholder="Location"
+                value={location}
+                onChange={(e) => setLocation (e.target.value)}
+                style={inputBase}
+              />
+            </div>
+          </div>
+
+          <div style={{ borderTop: `1px solid ${hairline}`, padding: '16px 18px' }}>
+            <textarea
+              aria-label="Notes"
+              placeholder="Notes"
+              value={notes}
+              onChange={(e) => setNotes (e.target.value)}
+              rows={3}
+              style={{
+                ...inputBase,
+                resize: 'vertical',
+                lineHeight: 1.4,
+                padding: '8px 10px',
+              }}
+            />
+          </div>
+
+          {errorMsg ? (
+            <div style={{ padding: '0 18px 14px', color: 'var(--red, #dc2626)', fontSize: '13px' }}>{errorMsg}</div>
+          ) : null}
+
+          {canDelete ? (
+            <div style={{ borderTop: `1px solid ${hairline}`, padding: '12px 18px', display: 'flex', justifyContent: 'flex-start' }}>
+              <button
+                type="button"
+                onClick={() => setMode ('confirm-delete')}
+                disabled={saving}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--red, #dc2626)',
+                  cursor: saving ? 'default' : 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  padding: '4px 6px',
+                  borderRadius: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+                Delete event
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <div style={{ padding: '18px 20px', borderTop: `1px solid ${hairline}`, fontSize: '18px', fontWeight: 500 }}>
+            {appointment.title}
+          </div>
+
+          <div style={{ padding: '16px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '14px' }}>
+            <div style={lineStyle}>
+              <Clock3 style={iconStyle} strokeWidth={1.8} aria-hidden />
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '15px' }}>
+                  <span>{formatTime (appointment.startTime)}</span>
+                  <span style={{ color: muted }}>→</span>
+                  <span>{formatTime (appointment.endTime)}</span>
+                  {duration ? <span style={{ color: muted, fontSize: '13px' }}>{duration}</span> : null}
+                </div>
+                <div style={{ marginTop: '6px', fontSize: '14px' }}>{formatDateLine (appointment.startTime)}</div>
+              </div>
+            </div>
+
+            <div style={lineStyle}>
+              <UserRound style={iconStyle} strokeWidth={1.8} aria-hidden />
+              <div style={{ fontSize: '14px' }}>
+                {appointment.clientName || 'No client'}
+                <div style={{ color: muted, marginTop: '2px' }}>Participant</div>
+              </div>
+            </div>
+
+            {appointment.location ? (
+              <div style={lineStyle}>
+                <MapPin style={iconStyle} strokeWidth={1.8} aria-hidden />
+                <div style={{ fontSize: '14px', lineHeight: 1.35 }}>{appointment.location}</div>
+              </div>
+            ) : null}
+          </div>
+
+          {appointment.notes ? (
+            <div style={{ padding: '16px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '12px' }}>
+              <div style={lineStyle}>
+                <Link2 style={iconStyle} strokeWidth={1.8} aria-hidden />
+                <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{appointment.notes}</div>
+              </div>
+            </div>
+          ) : null}
+
+          <div style={{ padding: '14px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '12px' }}>
+            <div style={lineStyle}>
+              <CalendarDays style={{ ...iconStyle, color: 'var(--neutral)' }} strokeWidth={1.8} aria-hidden />
+              <div style={{ fontSize: '14px' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '4px',
+                    background: appointment.status === 'confirmed' ? 'var(--green)' : 'var(--neutral)',
+                    marginRight: '10px',
+                    verticalAlign: '-1px',
+                  }}
+                />
+                Workspace calendar
+              </div>
+            </div>
+            <div style={lineStyle}>
+              <Bell style={iconStyle} strokeWidth={1.8} aria-hidden />
+              <div style={{ fontSize: '14px', color: muted }}>Reminders</div>
+            </div>
+          </div>
+        </>
+      )}
+    </form>
   );
 }

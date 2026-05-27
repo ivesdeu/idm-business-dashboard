@@ -1,0 +1,10 @@
+/Users/mark/IDM Business Dashboard/src-tauri/target/release/deps/tauri_plugin_deep_link-69ca528266167bdb.d: /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/lib.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/commands.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/config.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/error.rs
+
+/Users/mark/IDM Business Dashboard/src-tauri/target/release/deps/libtauri_plugin_deep_link-69ca528266167bdb.rlib: /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/lib.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/commands.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/config.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/error.rs
+
+/Users/mark/IDM Business Dashboard/src-tauri/target/release/deps/libtauri_plugin_deep_link-69ca528266167bdb.rmeta: /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/lib.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/commands.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/config.rs /Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/error.rs
+
+/Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/lib.rs:
+/Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/commands.rs:
+/Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/config.rs:
+/Users/mark/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-deep-link-2.4.9/src/error.rs:

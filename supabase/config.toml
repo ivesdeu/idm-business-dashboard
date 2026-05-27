@@ -452,3 +452,19 @@ verify_jwt = false
 
 [functions.stripe-connect-disconnect]
 verify_jwt = false
+
+# Plaid Link + transaction sync (JWT validated inside handler; webhook uses signature verification).
+[functions.plaid-link-token]
+verify_jwt = false
+
+[functions.plaid-exchange]
+verify_jwt = false
+
+[functions.plaid-sync]
+verify_jwt = false
+
+[functions.plaid-disconnect]
+verify_jwt = false
+
+[functions.plaid-webhook]
+verify_jwt = false

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Business Dashboard",
+  "version": "0.1.0",
+  "identifier": "com.idm.bizdash",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Business Dashboard",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "dmg",
+      "msi"
+    ],
+    "icon": [
+      "../public/idm-logo.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "bizdash"
+        ]
+      }
+    },
+    "updater": {
+      "endpoints": [
+        "https://app.example.com/updates/latest.json"
+      ],
+      "pubkey": "RWQ0ziyxVv+6xRn6RiILe6iMqyIdlpo1Fe5mTLI4IOtCEMySEVfnmJa1"
+    }
+  }
+}

@@ -1,5 +1,7 @@
 node_modules/
 .vite/
+src-tauri/*.key
+!src-tauri/*.key.pub
 # Legacy app JS lives under src/legacy/; Vite emits hashed chunks to dist/assets/ only.
 .env
 .env.local

@@ -99,9 +99,36 @@ serveWithEdgeRequestLogging("integration-connection-status", async (req, _ctx) =
     !!stripeRow.charges_enabled &&
     !!stripeRow.payouts_enabled;
 
+  const { count: plaidCount } = await admin
+    .from("plaid_items")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", orgId);
+
+  const { data: plaidLatest } = await admin
+    .from("plaid_items")
+    .select("last_sync_at")
+    .eq("organization_id", orgId)
+    .order("last_sync_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { count: plaidUnreviewed } = await admin
+    .from("transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", orgId)
+    .eq("source", "Plaid")
+    // PostgREST supports json path filters via `metadata->>review_status`.
+    .filter("metadata->>review_status", "eq", "unreviewed");
+
   return json(req, 200, {
     gmail,
     google_calendar,
     stripe: stripe_ready,
+    plaid: {
+      connected: (plaidCount ?? 0) > 0,
+      item_count: plaidCount ?? 0,
+      last_sync_at: (plaidLatest as { last_sync_at?: unknown } | null)?.last_sync_at ?? null,
+      unreviewed_count: plaidUnreviewed ?? 0,
+    },
   });
 });

@@ -35,6 +35,20 @@ export default defineConfig(({ mode }) => {
     target: browserslistToEsbuild(),
     rollupOptions: {
       input: resolve(__dirname, 'index.html'),
+      output: {
+        manualChunks: {
+          supabase: ['@supabase/supabase-js'],
+          charts: ['chart.js'],
+          radix: [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-popover',
+            '@radix-ui/react-tooltip',
+            '@radix-ui/react-checkbox',
+            '@radix-ui/react-label',
+            '@radix-ui/react-slot',
+          ],
+        },
+      },
     },
   },
   server: {
