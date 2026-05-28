@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { CSSProperties, MouseEvent, PointerEvent } from 'react';
+import type { CSSProperties, MouseEvent, PointerEvent, RefObject } from 'react';
 import {
   BellIcon,
   CalendarDaysIcon,
@@ -58,6 +58,37 @@ const APPOINTMENT_COLOR_ORDER: AppointmentColor[] = [
   'teal',
   'slate',
 ];
+
+/**
+ * Portaled popovers don't share a React parent with the calendar, so the calendar's
+ * onMouseDown "click-outside" doesn't fire for clicks elsewhere on the page (sidebar,
+ * top nav, settings). Without this hook the popover stays up forever and z-index 150
+ * absorbs clicks that overlap it. Attach a document-level pointerdown listener while
+ * the popover is mounted, and close on Escape too.
+ */
+function useDismissOnOutside (
+  ref: RefObject<HTMLElement>,
+  onClose: () => void,
+) {
+  useEffect (() => {
+    function handlePointerDown (event: globalThis.PointerEvent | globalThis.MouseEvent) {
+      const node = ref.current;
+      const target = event.target as Node | null;
+      if (!node || !target) return;
+      if (node.contains (target)) return;
+      onClose ();
+    }
+    function handleKey (event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose ();
+    }
+    document.addEventListener ('mousedown', handlePointerDown, true);
+    document.addEventListener ('keydown', handleKey);
+    return () => {
+      document.removeEventListener ('mousedown', handlePointerDown, true);
+      document.removeEventListener ('keydown', handleKey);
+    };
+  }, [ref, onClose]);
+}
 
 function colorPillStyle (color: AppointmentColor): CSSProperties {
   const palette = APPOINTMENT_COLOR_PALETTE[color];
@@ -1143,6 +1174,8 @@ function QuickCreatePopover ({
   const [notes, setNotes] = useState ('');
   const [color, setColor] = useState<AppointmentColor | null> (null);
   const [saving, setSaving] = useState (false);
+  const popoverRef = useRef<HTMLFormElement | null> (null);
+  useDismissOnOutside (popoverRef, onClose);
   const duration = formatDuration (range.startTime, range.endTime);
   const iconStyle: CSSProperties = {
     width: '18px',
@@ -1182,6 +1215,7 @@ function QuickCreatePopover ({
 
   return (
     <form
+      ref={popoverRef}
       role="dialog"
       aria-label="Create event"
       onSubmit={(e) => {
@@ -1433,6 +1467,8 @@ function EventPreview ({
   const [errorMsg, setErrorMsg] = useState<string | null> (null);
   const [quickColorOpen, setQuickColorOpen] = useState (false);
   const [savingQuickColor, setSavingQuickColor] = useState (false);
+  const popoverRef = useRef<HTMLFormElement | null> (null);
+  useDismissOnOutside (popoverRef, onClose);
 
   async function handleQuickColorChange (next: AppointmentColor | null) {
     if (!onUpdate) return;
@@ -1651,6 +1687,7 @@ function EventPreview ({
 
   return (
     <form
+      ref={popoverRef}
       role="dialog"
       aria-label={`${appointment.title} ${mode === 'edit' ? 'editor' : 'preview'}`}
       onMouseDown={(e) => e.stopPropagation ()}

@@ -107,6 +107,44 @@ function writeMeetingNotesPrefs (prefs: MeetingNotesPrefs) {
   } catch (_) {}
 }
 
+/**
+ * The consent-ack button needs explicit inline styles to defeat Safari's native button
+ * chrome (gradient, shadow, appearance), which means Tailwind's :hover/:active classes
+ * never win. Track interaction state in React and apply the background via inline style.
+ */
+function ConsentAckButton ({ onClick }: { onClick: () => void }) {
+  const [hover, setHover] = useState (false);
+  const [active, setActive] = useState (false);
+  const background = active ? '#cfe0f2' : hover ? '#dbeaff' : '#ffffff';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHover (true)}
+      onMouseLeave={() => {
+        setHover (false);
+        setActive (false);
+      }}
+      onMouseDown={() => setActive (true)}
+      onMouseUp={() => setActive (false)}
+      onBlur={() => setActive (false)}
+      className="inline-flex h-8 cursor-pointer items-center justify-center rounded-xl border border-[#8fb9e3] px-3 text-sm font-medium text-[#2f5f92] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8fb9e3]"
+      style={{
+        background,
+        backgroundImage: 'none',
+        borderStyle: 'solid',
+        WebkitAppearance: 'none',
+        appearance: 'none',
+        boxShadow: 'none',
+        filter: 'none',
+        transition: 'background-color 120ms ease',
+      }}
+    >
+      I have received consent to record
+    </button>
+  );
+}
+
 function buildCopyText (params: {
   headerDate: string;
   transcript: string;
@@ -469,22 +507,7 @@ export function MeetingNotesPage () {
                   to dismiss this reminder for future meetings.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={acknowledgeConsent}
-                    className="inline-flex h-8 items-center justify-center rounded-xl border border-[#8fb9e3] bg-white px-3 text-sm font-medium text-[#2f5f92] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8fb9e3]"
-                    style={{
-                      background: '#ffffff',
-                      backgroundImage: 'none',
-                      borderStyle: 'solid',
-                      WebkitAppearance: 'none',
-                      appearance: 'none',
-                      boxShadow: 'none',
-                      filter: 'none',
-                    }}
-                  >
-                    I have received consent to record
-                  </button>
+                  <ConsentAckButton onClick={acknowledgeConsent} />
                 </div>
               </div>
             ) : null}
