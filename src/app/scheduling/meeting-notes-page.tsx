@@ -57,7 +57,7 @@ function readSelectedNoteId (): string | null {
   }
 }
 
-const CONSENT_ACK_STORAGE_KEY = 'meeting-notes:consent-ack:v1';
+const CONSENT_ACK_NOTE_IDS_KEY = 'meeting-notes:consent-ack-note-ids:v1';
 const MEETING_PREFS_STORAGE_KEY = 'meeting-notes:prefs:v1';
 
 type SummaryStyle = 'auto' | 'bullets' | 'actions' | 'decisions';
@@ -67,13 +67,29 @@ type MeetingNotesPrefs = {
   autoSummarizeOnStop: boolean;
 };
 
-function readConsentAcknowledged (): boolean {
-  if (typeof window === 'undefined') return false;
+function readAcknowledgedNoteIds (): Set<string> {
+  if (typeof window === 'undefined') return new Set ();
   try {
-    return localStorage.getItem (CONSENT_ACK_STORAGE_KEY) === '1';
+    const raw = localStorage.getItem (CONSENT_ACK_NOTE_IDS_KEY);
+    if (!raw) return new Set ();
+    const parsed = JSON.parse (raw);
+    if (!Array.isArray (parsed)) return new Set ();
+    return new Set (parsed.map ((x) => String (x)));
   } catch (_) {
-    return false;
+    return new Set ();
   }
+}
+
+function writeAcknowledgedNoteIds (ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem (CONSENT_ACK_NOTE_IDS_KEY, JSON.stringify (Array.from (ids)));
+  } catch (_) {}
+}
+
+function isNoteIdAcknowledged (noteId: string | null): boolean {
+  if (!noteId || noteId === '__new') return false;
+  return readAcknowledgedNoteIds ().has (noteId);
 }
 
 function readMeetingNotesPrefs (): MeetingNotesPrefs {
@@ -192,22 +208,33 @@ export function MeetingNotesPage () {
   const transcriptionReady = useTranscriptionReady ();
   const [pageVisible, setPageVisible] = useState (false);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null> (() => readSelectedNoteId ());
-  const [consentAcknowledged, setConsentAcknowledged] = useState<boolean> (() => readConsentAcknowledged ());
+  const [consentAcknowledged, setConsentAcknowledged] = useState<boolean> (() =>
+    isNoteIdAcknowledged (readSelectedNoteId ()),
+  );
   const [prefs, setPrefs] = useState<MeetingNotesPrefs> (() => readMeetingNotesPrefs ());
   const [copyState, setCopyState] = useState<'idle' | 'copied'> ('idle');
 
-  const acknowledgeConsent = useCallback (() => {
+  /**
+   * Consent ack is tracked per-note id so that creating or switching to a new meeting note
+   * always re-prompts (per the privacy disclosure). The selected note may be `__new` until
+   * the row is inserted — that case is treated as unacknowledged.
+   */
+  const acknowledgeConsentForNote = useCallback ((noteId: string | null) => {
     setConsentAcknowledged (true);
-    try {
-      localStorage.setItem (CONSENT_ACK_STORAGE_KEY, '1');
-    } catch (_) {}
+    if (!noteId || noteId === '__new') return;
+    const ids = readAcknowledgedNoteIds ();
+    if (ids.has (noteId)) return;
+    ids.add (noteId);
+    writeAcknowledgedNoteIds (ids);
   }, []);
 
-  const resetConsent = useCallback (() => {
+  const resetConsentForNote = useCallback ((noteId: string | null) => {
     setConsentAcknowledged (false);
-    try {
-      localStorage.removeItem (CONSENT_ACK_STORAGE_KEY);
-    } catch (_) {}
+    if (!noteId || noteId === '__new') return;
+    const ids = readAcknowledgedNoteIds ();
+    if (!ids.has (noteId)) return;
+    ids.delete (noteId);
+    writeAcknowledgedNoteIds (ids);
   }, []);
 
   const setSummaryStyle = useCallback ((summaryStyle: SummaryStyle) => {
@@ -324,6 +351,14 @@ export function MeetingNotesPage () {
       try { refresh (); } catch (_) {}
     }
   }, [note?.id, selectedNoteId]);
+
+  /**
+   * Re-prompt for consent whenever the active meeting note changes. Each note tracks its
+   * own acknowledgment; `__new` is always unacknowledged until the user clicks the button.
+   */
+  useEffect (() => {
+    setConsentAcknowledged (isNoteIdAcknowledged (selectedNoteId));
+  }, [selectedNoteId]);
 
   const now = new Date ();
   const headerDate = `@${now.toLocaleDateString (undefined, { weekday: 'long' })} ${now.toLocaleTimeString ([], { hour: 'numeric', minute: '2-digit' })}`;
@@ -514,7 +549,7 @@ export function MeetingNotesPage () {
                   to dismiss this reminder for future meetings.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <ConsentAckButton onClick={acknowledgeConsent} />
+                  <ConsentAckButton onClick={() => acknowledgeConsentForNote (selectedNoteId)} />
                 </div>
               </div>
             ) : null}
@@ -628,7 +663,7 @@ export function MeetingNotesPage () {
               {consentAcknowledged ? (
                 <button
                   type="button"
-                  onClick={resetConsent}
+                  onClick={() => resetConsentForNote (selectedNoteId)}
                   className="ml-1 inline-flex items-center text-[#2f5f92] underline decoration-dotted underline-offset-4 hover:decoration-solid"
                 >
                   Reset consent prompt
