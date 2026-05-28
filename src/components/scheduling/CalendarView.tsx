@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, MouseEvent, PointerEvent, RefObject } from 'react';
 import {
@@ -276,6 +276,30 @@ export function CalendarView ({
   const [cursor, setCursor] = useState (() => new Date ());
   const [preview, setPreview] = useState<PreviewState | null> (null);
   const [quickCreate, setQuickCreate] = useState<QuickCreateState | null> (null);
+
+  const dismissFloatingUi = useCallback (() => {
+    setPreview (null);
+    setQuickCreate (null);
+  }, []);
+
+  useEffect (() => {
+    function onDismiss () {
+      dismissFloatingUi ();
+    }
+    window.addEventListener ('bizdash-dismiss-floating-ui', onDismiss);
+    return () => window.removeEventListener ('bizdash-dismiss-floating-ui', onDismiss);
+  }, [dismissFloatingUi]);
+
+  useEffect (() => {
+    const page = document.getElementById ('page-scheduling');
+    if (!page) return;
+    const obs = new MutationObserver (() => {
+      if (!page.classList.contains ('on')) dismissFloatingUi ();
+    });
+    obs.observe (page, { attributes: true, attributeFilter: ['class'] });
+    if (!page.classList.contains ('on')) dismissFloatingUi ();
+    return () => obs.disconnect ();
+  }, [dismissFloatingUi]);
 
   const monthYearLabel = useMemo (() => {
     return cursor.toLocaleDateString (undefined, { month: 'long', year: 'numeric' });

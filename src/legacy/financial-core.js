@@ -25924,10 +25924,39 @@ var incomePowerState = {
     wireSidebarChrome();
     wireModalBackdropDismissAll();
 
+    /**
+     * Tear down invisible full-viewport layers (chrome menu backdrop, icon picker, calendar
+     * popovers) that sit above #app-shell and block sidebar clicks even when not visible.
+     */
+    function bizDashDismissFloatingUi() {
+      try {
+        window.dispatchEvent(new CustomEvent('bizdash-dismiss-floating-ui'));
+      } catch (_) {}
+      if (typeof window.closeSidebarChromeMenu === 'function') window.closeSidebarChromeMenu();
+      if (typeof window.closeQuickActionsModal === 'function') window.closeQuickActionsModal();
+      if (typeof window.bizDashIconPickerClose === 'function') window.bizDashIconPickerClose();
+    }
+    window.bizDashDismissFloatingUi = bizDashDismissFloatingUi;
+
+    if (!window.__bizdashEscapeDismissWired) {
+      window.__bizdashEscapeDismissWired = true;
+      document.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Escape') return;
+        bizDashDismissFloatingUi();
+        if (typeof window.bizDashHideDashboardDataLoading === 'function') {
+          window.bizDashHideDashboardDataLoading();
+        }
+      });
+    }
+
     // Simple page navigation wiring to replace the original bundle's nav().
     // Exposed globally so existing onclick="nav('dashboard', this)" continues to work.
     var lastNavPageId = null;
     window.nav = function (pageId, el) {
+      bizDashDismissFloatingUi();
+      if (typeof window.bizDashHideDashboardDataLoading === 'function') {
+        window.bizDashHideDashboardDataLoading();
+      }
       document.body.classList.remove('mobile-nav-open');
       if (pageId && pageId !== lastNavPageId) {
         scrollAppContentToTop();

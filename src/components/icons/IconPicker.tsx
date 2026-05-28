@@ -148,6 +148,9 @@ export function IconPickerOverlay(opts: IconPickerOpenOptions) {
         background: 'transparent',
       }}
       aria-hidden
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
         ref={panelRef}

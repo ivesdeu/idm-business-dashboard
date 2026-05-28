@@ -88,14 +88,28 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin } from '../lib/a
     return document.getElementById(id);
   }
 
+  /** Failsafe so a hung init cannot leave the loading veil blocking the whole shell forever. */
+  var DASHBOARD_DATA_LOADING_MAX_MS = 45000;
+
   /** Full-screen overlay on #app-shell while initDataFromSupabase hydrates cloud data and branding. */
   function bizDashShowDashboardDataLoading() {
     var el = $('dashboard-data-loading');
     var app = $('app-shell');
     if (el) el.classList.add('on');
     if (app) app.setAttribute('aria-busy', 'true');
+    if (window.__bizdashDashboardLoadingTimer) {
+      clearTimeout(window.__bizdashDashboardLoadingTimer);
+    }
+    window.__bizdashDashboardLoadingTimer = setTimeout(function () {
+      window.__bizdashDashboardLoadingTimer = null;
+      bizDashHideDashboardDataLoading();
+    }, DASHBOARD_DATA_LOADING_MAX_MS);
   }
   function bizDashHideDashboardDataLoading() {
+    if (window.__bizdashDashboardLoadingTimer) {
+      clearTimeout(window.__bizdashDashboardLoadingTimer);
+      window.__bizdashDashboardLoadingTimer = null;
+    }
     var el = $('dashboard-data-loading');
     var app = $('app-shell');
     if (el) el.classList.remove('on');
