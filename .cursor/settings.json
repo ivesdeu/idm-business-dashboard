@@ -1,0 +1,34 @@
+{
+  "plugins": {
+    "encore": {
+      "enabled": true
+    },
+    "figma": {
+      "enabled": true
+    },
+    "vercel": {
+      "enabled": true
+    },
+    "supabase": {
+      "enabled": true
+    },
+    "databricks-skills": {
+      "enabled": true
+    },
+    "shadcn": {
+      "enabled": true
+    },
+    "firecrawl": {
+      "enabled": true
+    },
+    "redis-development": {
+      "enabled": true
+    },
+    "compound-engineering": {
+      "enabled": true
+    },
+    "atlassian": {
+      "enabled": true
+    }
+  }
+}

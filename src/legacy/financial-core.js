@@ -5374,6 +5374,9 @@ var incomePowerState = {
       !isH('performance') || !isH('retention') || !isH('insights') || !isH('marketing');
     setSbNavDisplay(document.getElementById('nav-lbl-analytics'), !showAnalyticsLabel);
     applySidebarNavOrder(sb);
+    if (typeof window.ensureSidebarDirectNavListeners === 'function') {
+      window.ensureSidebarDirectNavListeners();
+    }
   }
 
   function setSidebarPageHidden(navId, hidden) {
@@ -25923,6 +25926,27 @@ var incomePowerState = {
     wireQuickActionsPalette();
     wireSidebarChrome();
     wireModalBackdropDismissAll();
+
+    /**
+     * Safety net: a stray capture-phase listener / blocked delegated click handler can leave
+     * sidebar `.ni[data-nav]` items unresponsive even when nothing visible is wrong. Wire a
+     * direct click on each so the sidebar never depends solely on document delegation.
+     */
+    function ensureSidebarDirectNavListeners() {
+      var items = document.querySelectorAll('.ni[data-nav]');
+      items.forEach(function (el) {
+        if (el.getAttribute('data-direct-nav-wired') === '1') return;
+        el.setAttribute('data-direct-nav-wired', '1');
+        el.addEventListener('click', function (ev) {
+          var page = el.getAttribute('data-nav');
+          if (!page) return;
+          if (el.hasAttribute('data-nav-prevent-default')) ev.preventDefault();
+          if (typeof window.nav === 'function') window.nav(page, el);
+        });
+      });
+    }
+    window.ensureSidebarDirectNavListeners = ensureSidebarDirectNavListeners;
+    ensureSidebarDirectNavListeners();
 
     /**
      * Tear down invisible full-viewport layers (chrome menu backdrop, icon picker, calendar

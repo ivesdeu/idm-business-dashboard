@@ -203,6 +203,13 @@ export function MeetingNotesPage () {
     } catch (_) {}
   }, []);
 
+  const resetConsent = useCallback (() => {
+    setConsentAcknowledged (false);
+    try {
+      localStorage.removeItem (CONSENT_ACK_STORAGE_KEY);
+    } catch (_) {}
+  }, []);
+
   const setSummaryStyle = useCallback ((summaryStyle: SummaryStyle) => {
     setPrefs ((prev) => {
       const next = { ...prev, summaryStyle };
@@ -616,7 +623,18 @@ export function MeetingNotesPage () {
 
         <CardFooter className="flex flex-col items-stretch gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0 flex-1 text-sm text-[var(--text3)]">
-            <span className="block leading-snug">By starting, you confirm everyone being transcribed has given consent.</span>
+            <span className="block leading-snug">
+              By starting, you confirm everyone being transcribed has given consent.{' '}
+              {consentAcknowledged ? (
+                <button
+                  type="button"
+                  onClick={resetConsent}
+                  className="ml-1 inline-flex items-center text-[#2f5f92] underline decoration-dotted underline-offset-4 hover:decoration-solid"
+                >
+                  Reset consent prompt
+                </button>
+              ) : null}
+            </span>
           </div>
           <div className="flex items-center justify-end gap-2 text-[var(--text3)]">
             <Button
