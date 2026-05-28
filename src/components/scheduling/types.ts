@@ -22,6 +22,8 @@ export type AssemblyAiStreamingMessage = {
 export type MeetingActionItem = {
   task: string;
   owner: string;
+  /** Resolved org-member UUID when AI is confident; null otherwise. */
+  ownerUserId: string | null;
   dueDate: string | null;
   completed: boolean;
 };
@@ -62,6 +64,21 @@ export type MeetingNote = {
   updatedAt: string;
 };
 
+/**
+ * Color category slugs for event pills. Map to design tokens in CalendarView.
+ * `null` means "use the default accent" (existing behavior).
+ */
+export type AppointmentColor =
+  | 'blue'
+  | 'green'
+  | 'red'
+  | 'amber'
+  | 'purple'
+  | 'rose'
+  | 'slate'
+  | 'teal'
+  | 'pink';
+
 /** Unified row for calendar, list, and sync stubs. */
 export type SchedulingAppointment = {
   id: string;
@@ -75,6 +92,7 @@ export type SchedulingAppointment = {
   status: AppointmentStatus;
   googleCalendarEventId: string | null;
   syncedAt: string | null;
+  color: AppointmentColor | null;
 };
 
 export type ClientOption = { id: string; label: string };

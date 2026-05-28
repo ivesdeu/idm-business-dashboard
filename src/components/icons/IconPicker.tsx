@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import * as Lucide from 'lucide-react';
+import type { ComponentType, SVGProps } from 'react';
+import * as HeroOutline from '@heroicons/react/24/outline';
+import * as HeroSolid from '@heroicons/react/24/solid';
 import {
   BLACK_WHITE_TOKEN,
   DEFAULT_ICON_STYLE,
   ICON_PICKER_EMOJIS,
-  ICON_PICKER_LUCIDE_KEYS,
+  ICON_PICKER_HEROICONS_KEYS,
   brandingColorTokenFromAccentHex,
-  effectiveIconStrokeWidth,
-  formatLucideIconKey,
+  formatHeroIconKey,
   isEmojiIcon,
   parseStoredIcon,
+  resolveHeroiconsVariant,
   resolveIconColor,
   type IconStyle,
 } from '@/lib/iconBranding';
+import { heroiconsPascal } from '@/lib/heroiconAlias';
 
 export type IconPickerCommit = {
   icon: string | null;
@@ -30,15 +33,9 @@ export type IconPickerOpenOptions = {
   onClose: () => void;
 };
 
-function pascalFromKebab(kebab: string): string {
-  return kebab
-    .split('-')
-    .filter(Boolean)
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-    .join('');
-}
+type HeroIconComponent = ComponentType<SVGProps<SVGSVGElement> & { title?: string; titleId?: string }>;
 
-function LucideGlyph({
+function HeroGlyph({
   name,
   brandingToken,
   iconStyle,
@@ -49,16 +46,19 @@ function LucideGlyph({
   iconStyle: IconStyle;
   size?: number;
 }) {
-  const pascal = pascalFromKebab(name);
-  const Cmp = (Lucide as Record<string, React.ComponentType<Record<string, unknown>>>)[pascal];
+  const pascal = heroiconsPascal(name);
+  const variant = resolveHeroiconsVariant(brandingToken, iconStyle, name);
+  const lib = variant === 'outline'
+    ? (HeroOutline as Record<string, HeroIconComponent>)
+    : (HeroSolid as Record<string, HeroIconComponent>);
+  const Cmp = lib[pascal];
   if (!Cmp) return <span style={{ fontSize: 11, color: 'var(--text3)' }}>?</span>;
   const color = resolveIconColor(brandingToken);
-  const strokeW = effectiveIconStrokeWidth(brandingToken, iconStyle, formatLucideIconKey(name));
   return (
     <Cmp
-      size={size}
+      width={size}
+      height={size}
       color={color}
-      strokeWidth={strokeW}
       aria-hidden
     />
   );
@@ -71,9 +71,9 @@ export function IconPickerOverlay(opts: IconPickerOpenOptions) {
   const [tab, setTab] = useState<'icons' | 'emoji'>(() => (parsed.kind === 'emoji' ? 'emoji' : 'icons'));
   const [search, setSearch] = useState('');
   const [draftIcon, setDraftIcon] = useState<string>(() => {
-    if (parsed.kind === 'lucide') return formatLucideIconKey(parsed.value);
+    if (parsed.kind === 'icon') return formatHeroIconKey(parsed.value);
     if (parsed.kind === 'emoji') return parsed.value;
-    return formatLucideIconKey(ICON_PICKER_LUCIDE_KEYS[0] || 'layout-dashboard');
+    return formatHeroIconKey(ICON_PICKER_HEROICONS_KEYS[0] || 'squares-2x2');
   });
   const [draftStyle, setDraftStyle] = useState<IconStyle>(() =>
     (initialIconStyle === 'outlined' ? 'outlined' : DEFAULT_ICON_STYLE) as IconStyle,
@@ -110,10 +110,10 @@ export function IconPickerOverlay(opts: IconPickerOpenOptions) {
     return { left, top, width: w };
   }, [anchorEl]);
 
-  const filteredLucide = useMemo(() => {
+  const filteredHero = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return [...ICON_PICKER_LUCIDE_KEYS];
-    return ICON_PICKER_LUCIDE_KEYS.filter((k) => k.includes(q));
+    if (!q) return [...ICON_PICKER_HEROICONS_KEYS];
+    return ICON_PICKER_HEROICONS_KEYS.filter((k) => k.includes(q));
   }, [search]);
 
   const filteredEmoji = useMemo(() => {
@@ -235,8 +235,8 @@ export function IconPickerOverlay(opts: IconPickerOpenOptions) {
           }}
         >
           {tab === 'icons'
-            ? filteredLucide.map((k) => {
-                const key = formatLucideIconKey(k);
+            ? filteredHero.map((k) => {
+                const key = formatHeroIconKey(k);
                 const on = draftIcon === key;
                 return (
                   <button
@@ -258,7 +258,7 @@ export function IconPickerOverlay(opts: IconPickerOpenOptions) {
                       cursor: 'pointer',
                     }}
                   >
-                    <LucideGlyph name={k} brandingToken={brandingToken} iconStyle={draftStyle} size={18} />
+                    <HeroGlyph name={k} brandingToken={brandingToken} iconStyle={draftStyle} size={18} />
                   </button>
                 );
               })

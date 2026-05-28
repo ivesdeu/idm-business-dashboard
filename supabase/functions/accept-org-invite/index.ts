@@ -52,53 +52,95 @@ serveWithEdgeRequestLogging("accept-org-invite", async (req, _ctx) => {
   const user = userData.user;
   const emailLower = user.email.trim().toLowerCase();
 
+  // Try per-email invite first.
   const { data: inv, error: invErr } = await admin
     .from("organization_invitations")
     .select("id, organization_id, email, role, expires_at, accepted_at")
     .eq("token", token)
     .maybeSingle();
 
-  if (invErr || !inv) {
-    return json(req, 404, { error: "Invitation not found" });
-  }
-  const row = inv as {
-    id: string;
-    organization_id: string;
-    email: string;
-    role: string;
-    expires_at: string;
-    accepted_at: string | null;
-  };
-  if (row.accepted_at) {
-    return json(req, 400, { error: "Invitation already used" });
-  }
-  if (new Date(row.expires_at).getTime() < Date.now()) {
-    return json(req, 400, { error: "Invitation expired" });
-  }
-  if (row.email.trim().toLowerCase() !== emailLower) {
-    return json(req, 403, { error: "Signed in as a different email than the invite" });
+  if (!invErr && inv) {
+    const row = inv as {
+      id: string;
+      organization_id: string;
+      email: string;
+      role: string;
+      expires_at: string;
+      accepted_at: string | null;
+    };
+    if (row.accepted_at) {
+      return json(req, 400, { error: "Invitation already used" });
+    }
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      return json(req, 400, { error: "Invitation expired" });
+    }
+    if (row.email.trim().toLowerCase() !== emailLower) {
+      return json(req, 403, { error: "Signed in as a different email than the invite" });
+    }
+
+    const { error: memErr } = await admin.from("organization_members").upsert(
+      {
+        organization_id: row.organization_id,
+        user_id: user.id,
+        role: row.role,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "organization_id,user_id" },
+    );
+    if (memErr) {
+      return json(req, 400, { error: memErr.message });
+    }
+
+    await admin
+      .from("organization_invitations")
+      .update({ accepted_at: new Date().toISOString() })
+      .eq("id", row.id);
+
+    const { data: org } = await admin
+      .from("organizations")
+      .select("slug")
+      .eq("id", row.organization_id)
+      .maybeSingle();
+    const slug = (org as { slug?: string } | null)?.slug || "";
+
+    return json(req, 200, { ok: true, organizationId: row.organization_id, slug });
   }
 
-  const { error: memErr } = await admin.from("organization_members").upsert(
-    {
-      organization_id: row.organization_id,
-      user_id: user.id,
-      role: row.role,
-      created_at: new Date().toISOString(),
-    },
-    { onConflict: "organization_id,user_id" },
-  );
-  if (memErr) {
-    return json(req, 400, { error: memErr.message });
+  // Fall back to shared org link. Reusable, no email match required, gated by `enabled`.
+  const { data: shared } = await admin
+    .from("organization_shared_invites")
+    .select("organization_id, role, enabled")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (shared) {
+    const sharedRow = shared as { organization_id: string; role: string; enabled: boolean };
+    if (!sharedRow.enabled) {
+      return json(req, 400, { error: "This invite link has been turned off by a workspace admin." });
+    }
+
+    const { error: memErr } = await admin.from("organization_members").upsert(
+      {
+        organization_id: sharedRow.organization_id,
+        user_id: user.id,
+        role: sharedRow.role,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "organization_id,user_id" },
+    );
+    if (memErr) {
+      return json(req, 400, { error: memErr.message });
+    }
+
+    const { data: org } = await admin
+      .from("organizations")
+      .select("slug")
+      .eq("id", sharedRow.organization_id)
+      .maybeSingle();
+    const slug = (org as { slug?: string } | null)?.slug || "";
+
+    return json(req, 200, { ok: true, organizationId: sharedRow.organization_id, slug, shared: true });
   }
 
-  await admin
-    .from("organization_invitations")
-    .update({ accepted_at: new Date().toISOString() })
-    .eq("id", row.id);
-
-  const { data: org } = await admin.from("organizations").select("slug").eq("id", row.organization_id).maybeSingle();
-  const slug = (org as { slug?: string } | null)?.slug || "";
-
-  return json(req, 200, { ok: true, organizationId: row.organization_id, slug });
+  return json(req, 404, { error: "Invitation not found" });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
-import { ArrowLeft, Lock, Mail } from 'lucide-react';
+import { ArrowLeftIcon, LockClosedIcon, EnvelopeIcon } from '@heroicons/react/24/outline';
 
 import { authFormDefaultGooglePrimary, authFormDefaultSecondaryGithub } from '@/components/ui/sign-in-1';
 import { Button } from '@/components/ui/button';
@@ -282,7 +282,7 @@ export function AuthLoginGate() {
                 Email
               </Label>
               <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
-                <Mail className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <EnvelopeIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <Input
                   id="gate-email"
                   type="email"
@@ -298,7 +298,7 @@ export function AuthLoginGate() {
                 Password
               </Label>
               <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
-                <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <LockClosedIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <Input
                   id="gate-password"
                   type="password"
@@ -318,7 +318,7 @@ export function AuthLoginGate() {
                 Confirm password
               </Label>
               <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
-                <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <LockClosedIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <Input
                   id="gate-confirm-password"
                   type="password"
@@ -431,7 +431,7 @@ export function AuthLoginGate() {
               className="inline-flex items-center gap-1.5 self-start rounded-lg border-0 bg-transparent px-0 py-1 text-[13px] font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/12 focus-visible:ring-offset-2"
               onClick={() => setStep('signin')}
             >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
+              <ArrowLeftIcon className="h-4 w-4" aria-hidden />
               Back to sign in
             </button>
 
@@ -497,7 +497,7 @@ export function AuthLoginGate() {
                   Email
                 </Label>
                 <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
-                  <Mail className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <EnvelopeIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     id="gate-signup-modal-email"
                     type="email"
@@ -514,7 +514,7 @@ export function AuthLoginGate() {
                   Password
                 </Label>
                 <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
-                  <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <LockClosedIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     id="gate-signup-modal-password"
                     type="password"
@@ -531,7 +531,7 @@ export function AuthLoginGate() {
                   Confirm password
                 </Label>
                 <div className="flex h-11 items-center gap-2.5 rounded-lg border border-solid border-neutral-200/90 bg-neutral-50/60 px-3 transition-colors focus-within:border-neutral-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-ring/12">
-                  <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <LockClosedIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     id="gate-signup-modal-confirm"
                     type="password"

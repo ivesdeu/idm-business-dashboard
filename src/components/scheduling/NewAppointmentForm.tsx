@@ -1,5 +1,27 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { ClientOption, SchedulingAppointment } from '@/components/scheduling/types';
+import { XMarkIcon } from '@heroicons/react/24/outline';
+import type {
+  AppointmentColor,
+  ClientOption,
+  SchedulingAppointment,
+} from '@/components/scheduling/types';
+
+type AppointmentColorPalette = {
+  label: string;
+  solid: string;
+};
+
+const FORM_APPOINTMENT_COLORS: { color: AppointmentColor; palette: AppointmentColorPalette }[] = [
+  { color: 'blue', palette: { label: 'Blue', solid: '#3b82f6' } },
+  { color: 'green', palette: { label: 'Green', solid: '#10b981' } },
+  { color: 'amber', palette: { label: 'Amber', solid: '#f59e0b' } },
+  { color: 'red', palette: { label: 'Red', solid: '#ef4444' } },
+  { color: 'rose', palette: { label: 'Rose', solid: '#f43f5e' } },
+  { color: 'pink', palette: { label: 'Pink', solid: '#ec4899' } },
+  { color: 'purple', palette: { label: 'Purple', solid: '#8b5cf6' } },
+  { color: 'teal', palette: { label: 'Teal', solid: '#14b8a6' } },
+  { color: 'slate', palette: { label: 'Slate', solid: '#64748b' } },
+];
 
 function isoToDateInput (iso: string): string {
   try {
@@ -42,6 +64,7 @@ type Props = {
     endTime: string;
     location: string | null;
     notes: string | null;
+    color: AppointmentColor | null;
     syncToGoogle: boolean;
   }) => Promise<void>;
   onCancelEdit: () => void;
@@ -55,6 +78,7 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
   const [endT, setEndT] = useState ('10:00');
   const [location, setLocation] = useState ('');
   const [notes, setNotes] = useState ('');
+  const [color, setColor] = useState<AppointmentColor | null> (null);
   const [syncToGoogle, setSyncToGoogle] = useState (false);
   const [submitting, setSubmitting] = useState (false);
 
@@ -67,6 +91,7 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
       setEndT (isoToTimeInput (initial.endTime));
       setLocation (initial.location ?? '');
       setNotes (initial.notes ?? '');
+      setColor (initial.color ?? null);
       setSyncToGoogle (false);
       return;
     }
@@ -78,6 +103,7 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
     setEndT ('10:00');
     setLocation ('');
     setNotes ('');
+    setColor (null);
     setSyncToGoogle (false);
   }, [initial]);
 
@@ -95,6 +121,7 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
         endTime,
         location: location.trim () || null,
         notes: notes.trim () || null,
+        color,
         syncToGoogle,
       });
       if (!initial) {
@@ -102,6 +129,7 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
         setClientId ('');
         setLocation ('');
         setNotes ('');
+        setColor (null);
         setSyncToGoogle (false);
       }
     } finally {
@@ -184,6 +212,67 @@ export function NewAppointmentForm ({ clientOptions, demoMode, initial, onSubmit
         <div className="fgp">
           <span className="fl">Notes</span>
           <textarea className="fi" rows={3} value={notes} onChange={(e) => setNotes (e.target.value)} disabled={demoMode} />
+        </div>
+        <div className="fgp">
+          <span className="fl">
+            Color <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(optional)</span>
+          </span>
+          <div
+            role="radiogroup"
+            aria-label="Event color"
+            style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={color == null}
+              aria-label="No color"
+              onClick={() => setColor (null)}
+              disabled={demoMode}
+              title="No color"
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                border: `1px ${color == null ? 'solid' : 'dashed'} ${color == null ? 'var(--text)' : 'var(--border)'}`,
+                padding: 0,
+                background: 'var(--bg2)',
+                color: 'var(--text3)',
+                cursor: demoMode ? 'default' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 0,
+              }}
+            >
+              <XMarkIcon style={{ width: 12, height: 12 }} aria-hidden />
+            </button>
+            {FORM_APPOINTMENT_COLORS.map (({ color: c, palette }) => {
+              const selected = color === c;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={palette.label}
+                  title={palette.label}
+                  onClick={() => setColor (c)}
+                  disabled={demoMode}
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    border: selected ? '2px solid var(--text)' : '1px solid rgba(0,0,0,0.08)',
+                    padding: 0,
+                    background: palette.solid,
+                    cursor: demoMode ? 'default' : 'pointer',
+                    boxShadow: selected ? '0 0 0 2px rgba(0,0,0,0.08)' : 'none',
+                  }}
+                />
+              );
+            })}
+          </div>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem', color: 'var(--text2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={syncToGoogle} onChange={(e) => setSyncToGoogle (e.target.checked)} disabled={demoMode} />

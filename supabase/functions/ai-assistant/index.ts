@@ -7,6 +7,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { serveWithEdgeRequestLogging } from "../_shared/withEdgeRequestLogging.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
+import { runAdvisorExecuteAction } from "./tools/advisorExecute.ts";
+import { runAdvisorQuery } from "./tools/advisorQuery.ts";
 
 type AdvisorTask =
   | "daily_brief"
@@ -14,19 +16,34 @@ type AdvisorTask =
   | "variance_explain"
   | "weekly_recap"
   | "meeting_summary"
+  | "advisor_query"
+  | "advisor_execute_action"
+  | "weekly_status_draft"
   | "general";
 
 type MeetingSummaryPayload = {
   summary: string;
-  action_items: Array<{ task: string; owner: string; due_date: string | null }>;
+  action_items: Array<{
+    task: string;
+    owner: string;
+    owner_user_id: string | null;
+    due_date: string | null;
+  }>;
   key_decisions: string[];
   topics: string[];
+};
+
+type AdvisorExecuteActionBody = {
+  id: string;
+  type: string;
+  payload: Record<string, unknown>;
 };
 
 type RequestBody = {
   organizationId?: string;
   task?: AdvisorTask;
   message?: string;
+  action?: AdvisorExecuteActionBody;
   context?: Record<string, unknown>;
   constraints?: Record<string, unknown>;
   healthCheck?: boolean;
@@ -132,6 +149,8 @@ const ALLOWED_CONTEXT_KEYS = new Set([
   "contactRequest",
   "clientsDigest",
   "workspaceListsDigest",
+  "effectiveTimezone",
+  "last_entities",
 ]);
 const ALLOWED_CONSTRAINTS_KEYS = new Set(["maxBullets", "tone"]);
 
@@ -186,7 +205,9 @@ function normalizeTask(task?: string): AdvisorTask {
     task === "followup_draft" ||
     task === "variance_explain" ||
     task === "weekly_recap" ||
-    task === "meeting_summary"
+    task === "meeting_summary" ||
+    task === "advisor_query" ||
+    task === "advisor_execute_action"
   ) {
     return task;
   }
@@ -204,12 +225,17 @@ function parseMeetingSummaryPayload(value: unknown): MeetingSummaryPayload | nul
       const task = clampText(raw.task, 500);
       if (!task) continue;
       const owner = clampText(raw.owner, 200);
+      const ownerUserRaw = raw.owner_user_id;
+      const owner_user_id =
+        typeof ownerUserRaw === "string" && /^[0-9a-f-]{36}$/i.test(ownerUserRaw.trim())
+          ? ownerUserRaw.trim()
+          : null;
       const dueRaw = raw.due_date;
       const due_date =
         dueRaw === null || dueRaw === undefined
           ? null
           : clampText(dueRaw, 32) || null;
-      action_items.push({ task, owner, due_date });
+      action_items.push({ task, owner, owner_user_id, due_date });
     }
   }
   const key_decisions = Array.isArray(value.key_decisions)
@@ -658,21 +684,54 @@ const MEETING_SUMMARY_MARKDOWN_RULES =
   "Do NOT put Action Items inside summary. " +
   "Omit empty sections. Prefer 4–8 substantive sections. Past tense, concise professional tone.";
 
-function meetingAnthropicPrompts(message: string) {
+type OrgRosterEntry = { user_id: string; display_name: string; email: string };
+
+function formatRosterForPrompt(roster: OrgRosterEntry[]): string {
+  if (!roster.length) return "No org roster available.";
+  return roster
+    .map((m) => `- ${m.user_id}: ${m.display_name}${m.email ? ` <${m.email}>` : ""}`)
+    .join("\n");
+}
+
+function meetingAnthropicPrompts(message: string, roster: OrgRosterEntry[]) {
+  const rosterBlock = formatRosterForPrompt(roster);
   const systemPrompt =
     "You are a meeting intelligence assistant embedded in a professional CRM. " +
     "Return ONLY valid JSON (no markdown code fences, no commentary outside JSON). " +
     "Required keys: " +
     "summary (string, Markdown with ### sections and - bullets per rules below), " +
-    "action_items (array of { task, owner, due_date } where due_date is YYYY-MM-DD or null; every follow-up task belongs here), " +
+    "action_items (array of { task, owner, owner_user_id, due_date } where due_date is YYYY-MM-DD or null; every follow-up task belongs here), " +
+    "owner is a human-readable name; owner_user_id is the UUID from the org roster below when you are confident, otherwise null. " +
     "key_decisions (array of strings, optional highlights not already in summary), " +
     "topics (array of short topic labels, 3-6 words each, optional). " +
+    "Org member roster (use only these UUIDs for owner_user_id):\n" +
+    rosterBlock +
+    "\n" +
     MEETING_SUMMARY_MARKDOWN_RULES;
   return { systemPrompt, userPrompt: message };
 }
 
-async function callAnthropicMeetingSummary(anthropicApiKey: string, message: string): Promise<MeetingSummaryPayload> {
-  const { systemPrompt, userPrompt } = meetingAnthropicPrompts(message);
+async function loadOrgRoster(
+  supabase: ReturnType<typeof createClient>,
+  orgId: string,
+): Promise<OrgRosterEntry[]> {
+  const { data, error } = await supabase.rpc("org_members_roster", { p_org: orgId });
+  if (error || !Array.isArray(data)) return [];
+  return data
+    .map((row: Record<string, unknown>) => ({
+      user_id: String(row.user_id || ""),
+      display_name: String(row.display_name || ""),
+      email: String(row.email || ""),
+    }))
+    .filter((m) => m.user_id && /^[0-9a-f-]{36}$/i.test(m.user_id));
+}
+
+async function callAnthropicMeetingSummary(
+  anthropicApiKey: string,
+  message: string,
+  roster: OrgRosterEntry[],
+): Promise<MeetingSummaryPayload> {
+  const { systemPrompt, userPrompt } = meetingAnthropicPrompts(message, roster);
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -1021,9 +1080,58 @@ serveWithEdgeRequestLogging("ai-assistant", async (req, _ctx) => {
 
   const task = normalizeTask(body.task);
   const message = String(body.message || "").trim();
-  if (!message) return jsonResponse(req, 400, { error: "message is required." });
+  if (!message && task !== "advisor_execute_action") {
+    return jsonResponse(req, 400, { error: "message is required." });
+  }
   const context = body.context && typeof body.context === "object" ? body.context : {};
   const constraints = body.constraints && typeof body.constraints === "object" ? body.constraints : {};
+
+  if (task === "advisor_execute_action") {
+    if (body.stream === true) {
+      return jsonResponse(req, 400, { error: "advisor_execute_action does not support stream." });
+    }
+    const action = body.action;
+    if (!action || typeof action !== "object" || !action.type) {
+      return jsonResponse(req, 400, { error: "action with type and payload is required." });
+    }
+    const effectiveTimezone =
+      typeof context.effectiveTimezone === "string" && context.effectiveTimezone.trim()
+        ? String(context.effectiveTimezone).trim()
+        : "America/New_York";
+    const claims = claimsData.claims as Record<string, unknown>;
+    try {
+      const result = await runAdvisorExecuteAction(
+        userClient,
+        body.organizationId,
+        userId,
+        claims,
+        {
+          id: String(action.id || crypto.randomUUID()),
+          type: String(action.type),
+          payload:
+            action.payload && typeof action.payload === "object"
+              ? (action.payload as Record<string, unknown>)
+              : {},
+        },
+        effectiveTimezone,
+        {
+          authHeader,
+          supabaseUrl,
+          anonKey: supabaseAnonKey,
+        },
+      );
+      return jsonResponse(req, result.ok ? 200 : 422, result as unknown as Record<string, unknown>);
+    } catch (err) {
+      const details = err instanceof Error ? err.message : "Unknown error";
+      return jsonResponse(req, 422, {
+        ok: false,
+        summary_human: `Could not apply that change. ${details}`,
+        summary_voice: "Sorry, that change failed.",
+        error: details,
+      });
+    }
+  }
+
   if (!anthropicApiKey) {
     if (task === "meeting_summary") {
       return meetingSummaryResponse(req, meetingSummaryStub(message), {
@@ -1031,8 +1139,69 @@ serveWithEdgeRequestLogging("ai-assistant", async (req, _ctx) => {
         apiConnected: false,
       });
     }
+    if (task === "advisor_query") {
+      return jsonResponse(req, 200, {
+        title: null,
+        bullets: [],
+        actions: [],
+        draft:
+          "Live advisor lookups require ANTHROPIC_API_KEY. Sign in to a workspace with AI configured to query your calendar, clients, and finances.",
+        structuredData: null,
+        proposal: null,
+        crmProposal: null,
+        taskProposal: null,
+        clientNoteProposal: null,
+        workspaceListProposal: null,
+        workspaceListEditProposal: null,
+        meta: { provider: "stub", apiConnected: false, toolCalls: [] },
+      });
+    }
     const stub = buildStubPayload(task, message, context);
     return jsonResponse(req, 200, stub);
+  }
+
+  if (task === "advisor_query") {
+    if (body.stream === true) {
+      return jsonResponse(req, 400, { error: "advisor_query does not support stream." });
+    }
+    try {
+      const effectiveTimezone =
+        typeof context.effectiveTimezone === "string" && context.effectiveTimezone.trim()
+          ? String(context.effectiveTimezone).trim()
+          : "America/New_York";
+      const lastEntities =
+        context.last_entities && typeof context.last_entities === "object"
+          ? (context.last_entities as Record<string, unknown>)
+          : undefined;
+      const claims = claimsData.claims as Record<string, unknown>;
+      const result = await runAdvisorQuery(
+        anthropicApiKey,
+        userClient,
+        body.organizationId,
+        userId,
+        claims,
+        message,
+        effectiveTimezone,
+        lastEntities as import("./tools/context.ts").LastEntities | undefined,
+      );
+      return jsonResponse(req, 200, result as unknown as Record<string, unknown>);
+    } catch (err) {
+      const details = err instanceof Error ? err.message : "Unknown error";
+      return jsonResponse(req, 200, {
+        title: null,
+        bullets: [],
+        actions: [],
+        draft: `I couldn't complete that lookup. ${details}`,
+        structuredData: null,
+        proposal: null,
+        crmProposal: null,
+        taskProposal: null,
+        clientNoteProposal: null,
+        workspaceListProposal: null,
+        workspaceListEditProposal: null,
+        meta: { provider: "anthropic", apiConnected: true, toolCalls: [], degraded: true, details },
+      });
+    }
   }
 
   if (task === "meeting_summary") {
@@ -1040,7 +1209,8 @@ serveWithEdgeRequestLogging("ai-assistant", async (req, _ctx) => {
       return jsonResponse(req, 400, { error: "meeting_summary does not support stream." });
     }
     try {
-      const meeting = await callAnthropicMeetingSummary(anthropicApiKey, message);
+      const roster = await loadOrgRoster(userClient, body.organizationId);
+      const meeting = await callAnthropicMeetingSummary(anthropicApiKey, message, roster);
       return meetingSummaryResponse(req, meeting, { provider: "anthropic", apiConnected: true });
     } catch (err) {
       const details = err instanceof Error ? err.message : "Unknown Anthropic error";

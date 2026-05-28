@@ -3,7 +3,12 @@ import type { MeetingActionItem } from '@/components/scheduling/types';
 
 export type AdvisorMeetingSummaryPayload = {
   summary: string;
-  action_items: Array<{ task: string; owner: string; due_date: string | null }>;
+  action_items: Array<{
+    task: string;
+    owner: string;
+    owner_user_id?: string | null;
+    due_date: string | null;
+  }>;
   key_decisions: string[];
   topics: string[];
 };
@@ -16,13 +21,27 @@ function safeJsonParse<T> (raw: string): T | null {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseOwnerUserId (value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim ();
+  return UUID_RE.test (trimmed) ? trimmed : null;
+}
+
 export function normalizeActionItems (
-  arr: Array<{ task: string; owner: string; due_date: string | null }>,
+  arr: Array<{
+    task: string;
+    owner: string;
+    owner_user_id?: string | null;
+    due_date: string | null;
+  }>,
 ): MeetingActionItem[] {
   return (arr || [])
     .map ((item) => ({
       task: String (item.task || '').trim (),
       owner: String (item.owner || '').trim (),
+      ownerUserId: parseOwnerUserId (item.owner_user_id),
       dueDate: item.due_date ? String (item.due_date) : null,
       completed: false,
     }))
@@ -75,12 +94,21 @@ type CallAdvisorOptions = {
   attendees: string;
   transcript: string;
   manualNotes: string;
+  summaryStyle?: 'auto' | 'bullets' | 'actions' | 'decisions';
 };
 
 export async function callAdvisorForMeetingSummary (
   options: CallAdvisorOptions,
 ): Promise<AdvisorMeetingSummaryPayload> {
-  const { supabase, organizationId, title, attendees, transcript, manualNotes } = options;
+  const {
+    supabase,
+    organizationId,
+    title,
+    attendees,
+    transcript,
+    manualNotes,
+    summaryStyle = 'auto',
+  } = options;
   const sessionRes = await supabase.auth.getSession ();
   const accessToken = sessionRes.data.session?.access_token || '';
   const base = typeof window !== 'undefined'
@@ -99,7 +127,17 @@ export async function callAdvisorForMeetingSummary (
     throw new Error ('Sign in again to summarize this meeting.');
   }
 
+  const styleHint =
+    summaryStyle === 'bullets'
+      ? 'Format requirement: terse bullet recap, max 8 bullets, no narrative prose.'
+      : summaryStyle === 'actions'
+        ? 'Format requirement: return only action items in action_items; leave summary, topics, key_decisions empty.'
+        : summaryStyle === 'decisions'
+          ? 'Format requirement: return only key decisions in key_decisions; leave summary, action_items, topics empty.'
+          : '';
+
   const message =
+    (styleHint ? `${styleHint}\n\n` : '') +
     `Meeting: ${title}\n` +
     `Attendees: ${attendees || '(not specified)'}\n` +
     `Transcript:\n${transcript || '(empty)'}\n\n` +

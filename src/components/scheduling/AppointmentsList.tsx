@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import type { SchedulingAppointment } from '@/components/scheduling/types';
 import { SyncBadge } from '@/components/scheduling/SyncBadge';
 
@@ -186,7 +186,7 @@ export function AppointmentsList ({
                       onClick={() => void onSync (a)}
                       disabled={syncLoadingId === a.id}
                     >
-                      {syncLoadingId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                      {syncLoadingId === a.id ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
                       Sync
                     </button>
                   </div>

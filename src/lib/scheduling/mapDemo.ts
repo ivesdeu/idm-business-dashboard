@@ -14,5 +14,6 @@ export function schedulingAppointmentFromDemoSeed (s: DemoAppointmentSeed): Sche
     status: s.status,
     googleCalendarEventId: s.googleCalendarEventId ?? null,
     syncedAt: s.syncedAtIso ?? null,
+    color: null,
   };
 }

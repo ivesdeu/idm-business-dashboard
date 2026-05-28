@@ -9,9 +9,27 @@ type Action =
   | "remove"
   | "invite"
   | "pending_invites"
-  | "revoke_invite";
+  | "revoke_invite"
+  | "shared_link_get"
+  | "shared_link_rotate"
+  | "shared_link_set_enabled"
+  | "shared_link_set_role";
 
 const ROLES = new Set(["owner", "admin", "member", "viewer"]);
+const SHARED_INVITE_ROLES = new Set(["admin", "member", "viewer"]);
+
+function generateInviteToken() {
+  // 32-byte URL-safe-ish token (hex from two UUIDs is plenty of entropy and avoids URL escaping).
+  return (
+    crypto.randomUUID().replace(/-/g, "") +
+    crypto.randomUUID().replace(/-/g, "")
+  );
+}
+
+function buildSharedInviteUrl(token: string) {
+  const appBase = (Deno.env.get("APP_BASE_URL") || "http://localhost:5173").replace(/\/$/, "");
+  return `${appBase}/?invite=${encodeURIComponent(token)}`;
+}
 
 function json(req: Request, status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -270,6 +288,131 @@ serveWithEdgeRequestLogging("organization-team", async (req, _ctx) => {
       .is("accepted_at", null);
     if (error) return json(req, 400, { error: error.message });
     return json(req, 200, { ok: true });
+  }
+
+  // Shared invite link actions -------------------------------------------------
+
+  // Auto-provision a disabled row the first time an admin opens the panel so the
+  // toggle has something to flip without forcing a separate "create" step.
+  async function ensureSharedInviteRow() {
+    const { data, error } = await admin
+      .from("organization_shared_invites")
+      .select("token, enabled, role, created_at, updated_at")
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) return data as { token: string; enabled: boolean; role: string; created_at: string; updated_at: string };
+    const row = {
+      organization_id: organizationId,
+      token: generateInviteToken(),
+      enabled: false,
+      role: "member",
+      created_by: user.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const { error: insErr } = await admin.from("organization_shared_invites").insert(row);
+    if (insErr) throw new Error(insErr.message);
+    return row;
+  }
+
+  if (action === "shared_link_get") {
+    try {
+      const row = await ensureSharedInviteRow();
+      return json(req, 200, {
+        ok: true,
+        token: row.token,
+        enabled: row.enabled,
+        role: row.role,
+        url: buildSharedInviteUrl(row.token),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+    } catch (e) {
+      return json(req, 500, { error: e instanceof Error ? e.message : "Could not load shared link" });
+    }
+  }
+
+  if (action === "shared_link_rotate") {
+    try {
+      await ensureSharedInviteRow();
+      const next = generateInviteToken();
+      const { data, error } = await admin
+        .from("organization_shared_invites")
+        .update({
+          token: next,
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("organization_id", organizationId)
+        .select("token, enabled, role, created_at, updated_at")
+        .maybeSingle();
+      if (error || !data) return json(req, 500, { error: error?.message || "Could not rotate link" });
+      const row = data as { token: string; enabled: boolean; role: string; created_at: string; updated_at: string };
+      return json(req, 200, {
+        ok: true,
+        token: row.token,
+        enabled: row.enabled,
+        role: row.role,
+        url: buildSharedInviteUrl(row.token),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+    } catch (e) {
+      return json(req, 500, { error: e instanceof Error ? e.message : "Could not rotate link" });
+    }
+  }
+
+  if (action === "shared_link_set_enabled") {
+    const enabled = payload.enabled === true;
+    try {
+      await ensureSharedInviteRow();
+      const { data, error } = await admin
+        .from("organization_shared_invites")
+        .update({ enabled, updated_at: new Date().toISOString() })
+        .eq("organization_id", organizationId)
+        .select("token, enabled, role")
+        .maybeSingle();
+      if (error || !data) return json(req, 500, { error: error?.message || "Could not update link" });
+      const row = data as { token: string; enabled: boolean; role: string };
+      return json(req, 200, {
+        ok: true,
+        token: row.token,
+        enabled: row.enabled,
+        role: row.role,
+        url: buildSharedInviteUrl(row.token),
+      });
+    } catch (e) {
+      return json(req, 500, { error: e instanceof Error ? e.message : "Could not update link" });
+    }
+  }
+
+  if (action === "shared_link_set_role") {
+    const role = String(payload.role || "").trim();
+    if (!SHARED_INVITE_ROLES.has(role)) {
+      return json(req, 400, { error: "role must be admin, member, or viewer" });
+    }
+    try {
+      await ensureSharedInviteRow();
+      const { data, error } = await admin
+        .from("organization_shared_invites")
+        .update({ role, updated_at: new Date().toISOString() })
+        .eq("organization_id", organizationId)
+        .select("token, enabled, role")
+        .maybeSingle();
+      if (error || !data) return json(req, 500, { error: error?.message || "Could not update role" });
+      const row = data as { token: string; enabled: boolean; role: string };
+      return json(req, 200, {
+        ok: true,
+        token: row.token,
+        enabled: row.enabled,
+        role: row.role,
+        url: buildSharedInviteUrl(row.token),
+      });
+    } catch (e) {
+      return json(req, 500, { error: e instanceof Error ? e.message : "Could not update role" });
+    }
   }
 
   return json(req, 400, { error: "Unknown action" });

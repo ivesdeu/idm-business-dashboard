@@ -16,11 +16,12 @@ function json(req: Request, status: number, payload: Record<string, unknown>) {
 function flagsFromScopes(scopes: string | null | undefined) {
   const s = (scopes || "").toLowerCase();
   if (!s.trim()) {
-    return { gmail: true, google_calendar: true };
+    return { gmail: true, google_calendar: true, google_calendar_write: true };
   }
   return {
     gmail: s.includes("gmail."),
     google_calendar: s.includes("calendar"),
+    google_calendar_write: s.includes("calendar.events"),
   };
 }
 
@@ -79,10 +80,12 @@ serveWithEdgeRequestLogging("integration-connection-status", async (req, _ctx) =
 
   let gmail = false;
   let google_calendar = false;
+  let google_calendar_write = false;
   if (cred) {
     const f = flagsFromScopes(cred.scopes as string | undefined);
     gmail = f.gmail;
     google_calendar = f.google_calendar;
+    google_calendar_write = f.google_calendar_write;
   }
 
   const { data: stripeRow, error: stripeErr } = await userClient
@@ -123,6 +126,7 @@ serveWithEdgeRequestLogging("integration-connection-status", async (req, _ctx) =
   return json(req, 200, {
     gmail,
     google_calendar,
+    google_calendar_write,
     stripe: stripe_ready,
     plaid: {
       connected: (plaidCount ?? 0) > 0,

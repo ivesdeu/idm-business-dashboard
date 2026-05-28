@@ -466,7 +466,7 @@
     },
   ];
 
-  /** Lucide-style keys for template picker cards (SVG in financial-core); emoji kept for sidebar / legacy. */
+  /** Heroicons kebab keys for template picker cards (SVG in financial-core); emoji kept for sidebar / legacy. */
   var LIST_TPL_ICON_BY_ID = {
     'tpl-tasks-tracker': 'tasks',
     'tpl-projects': 'kanban',

@@ -34,8 +34,11 @@ If you set **`GOOGLE_REDIRECT_URI`** in Supabase secrets, it must match one of t
    - `https://www.googleapis.com/auth/userinfo.email`
    - `https://www.googleapis.com/auth/gmail.readonly`
    - `https://www.googleapis.com/auth/gmail.send`
-   - `https://www.googleapis.com/auth/calendar.readonly`  
-   Narrow or widen with secret **`GOOGLE_OAUTH_SCOPES`** (space-separated). For example, you can drop `gmail.readonly` or `calendar.readonly` if your deployment does not need them.
+   - `https://www.googleapis.com/auth/calendar.events` (create/update events and send attendee invites via `sendUpdates`)  
+   Narrow or widen with secret **`GOOGLE_OAUTH_SCOPES`** (space-separated).  
+   **After upgrading from `calendar.readonly`:** existing users must reconnect Google once in **Settings → Connections** so the new scope is granted.
+
+**Advisor schedule-and-invite** uses edge function `google-calendar-events` (insert/patch/delete). The scheduling UI checkbox also calls this function via `src/lib/googleCalendar.ts`.
 
 ## Supabase invoke URL pattern
 
@@ -94,7 +97,20 @@ supabase functions deploy oauth-google-start oauth-google-callback gmail-send in
 
 ## Send email (Emails tab)
 
-After Google is connected for the workspace, the dashboard calls **`gmail-send`** with the same `Authorization` + `apikey` headers as other Edge invokes. POST JSON body: `organization_id` (UUID), `to` (single recipient email), `subject`, `body` (plain text). The function loads `integration_credentials` with the **service role**, refreshes the Google access token if needed, and calls Gmail **`users.messages.send`**. No extra secrets beyond **`GOOGLE_CLIENT_ID`** / **`GOOGLE_CLIENT_SECRET`** (already required for OAuth). Deploy **`gmail-send`** whenever you change its code.
+After Google is connected for the workspace, the dashboard calls **`gmail-send`** with the same `Authorization` + `apikey` headers as other Edge invokes.
+
+POST JSON body (rich composer):
+
+- `organization_id` (UUID, required)
+- `to`, `cc`, `bcc` — string arrays (legacy: single string `to` + `body` still works)
+- `subject` (required)
+- `html_body` and/or `body` / `plain_body`
+- `attachments` — `[{ storage_path, filename, mime_type, content_id? }]` (files in private bucket **`email-attachments`**, path `{org_id}/{user_id}/…`)
+- `thread_id`, `in_reply_to`, `references` — optional threading headers
+
+The function loads `integration_credentials` with the **service role**, refreshes the Google access token if needed, builds multipart MIME when HTML/CC/BCC/attachments are present, and calls Gmail **`users.messages.send`**. Deploy **`gmail-send`** whenever you change its code.
+
+Apply migration [`20260528130000_email_compose.sql`](../supabase/migrations/20260528130000_email_compose.sql) for `email_signatures`, `email_drafts`, and the **`email-attachments`** storage bucket.
 
 ## Cron / schedules
 

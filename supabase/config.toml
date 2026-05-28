@@ -434,6 +434,10 @@ verify_jwt = false
 [functions.gmail-send]
 verify_jwt = false
 
+# Google Calendar event insert/patch/delete (calendar.events scope; sendUpdates for invites).
+[functions.google-calendar-events]
+verify_jwt = false
+
 # Returns booleans for Gmail / Calendar / Stripe readiness (no secrets).
 [functions.integration-connection-status]
 verify_jwt = false

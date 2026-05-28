@@ -21,6 +21,7 @@ FUNCS=(
   assemblyai-token
   deepgram-token
   gmail-send
+  google-calendar-events
   integration-worker
   integration-connection-status
   oauth-google-callback

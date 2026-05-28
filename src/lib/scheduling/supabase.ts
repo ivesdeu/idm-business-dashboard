@@ -1,4 +1,5 @@
 import type {
+  AppointmentColor,
   MeetingActionItem,
   MeetingNote,
   MeetingNoteAttendee,
@@ -18,9 +19,30 @@ export type AppointmentRow = {
   status: string;
   google_calendar_event_id: string | null;
   synced_at: string | null;
+  color: string | null;
   created_at: string;
   updated_at: string;
 };
+
+const APPOINTMENT_COLORS: ReadonlySet<AppointmentColor> = new Set ([
+  'blue',
+  'green',
+  'red',
+  'amber',
+  'purple',
+  'rose',
+  'slate',
+  'teal',
+  'pink',
+]);
+
+function parseAppointmentColor (value: unknown): AppointmentColor | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim ().toLowerCase ();
+  return APPOINTMENT_COLORS.has (trimmed as AppointmentColor)
+    ? (trimmed as AppointmentColor)
+    : null;
+}
 
 export type MeetingNoteRow = {
   id: string;
@@ -68,6 +90,7 @@ export function rowToSchedulingAppointment (
     status,
     googleCalendarEventId: row.google_calendar_event_id,
     syncedAt: row.synced_at,
+    color: parseAppointmentColor (row.color),
   };
 }
 
@@ -85,6 +108,14 @@ function parseAttendees (value: unknown): MeetingNoteAttendee[] {
     .filter ((item): item is MeetingNoteAttendee => !!item);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseOwnerUserId (value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim ();
+  return UUID_RE.test (trimmed) ? trimmed : null;
+}
+
 function parseActionItems (value: unknown): MeetingActionItem[] {
   if (!Array.isArray (value)) return [];
   return value
@@ -93,6 +124,8 @@ function parseActionItems (value: unknown): MeetingActionItem[] {
       const rec = item as Record<string, unknown>;
       const task = typeof rec.task === 'string' ? rec.task.trim () : '';
       const owner = typeof rec.owner === 'string' ? rec.owner.trim () : '';
+      const ownerUserId =
+        parseOwnerUserId (rec.owner_user_id) ?? parseOwnerUserId (rec.ownerUserId);
       const dueDate = typeof rec.due_date === 'string'
         ? rec.due_date
         : typeof rec.dueDate === 'string'
@@ -100,7 +133,7 @@ function parseActionItems (value: unknown): MeetingActionItem[] {
           : null;
       const completed = rec.completed === true;
       if (!task) return null;
-      return { task, owner, dueDate, completed };
+      return { task, owner, ownerUserId, dueDate, completed };
     })
     .filter ((item): item is MeetingActionItem => !!item);
 }

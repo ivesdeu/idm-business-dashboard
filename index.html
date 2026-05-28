@@ -2323,8 +2323,11 @@
   }
 
   /* KPI */
-  .kg { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
-  .kg-dash { grid-template-columns:repeat(5,minmax(0,1fr)); }
+  .kg { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:24px; }
+  .kg-dash { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+  @media (max-width: 1180px) {
+    .kg { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+  }
   .kc { background:var(--bg2); border:1px solid var(--border); border-radius:var(--rl); padding:20px 22px; box-shadow:none; }
   .kc.hi { background:var(--coral-bg); border-color:var(--coral-border-mid); }
   .kc.hi .kl { color:var(--text2); }
@@ -2567,7 +2570,7 @@
   .lists-th-txt { vertical-align: middle; }
   .bizdash-ico-ph { font-size: 12px; opacity: 0.45; line-height: 1; }
   .bizdash-ico-emoji { font-size: 15px; line-height: 1; display: inline-block; }
-  .bizdash-ico-outlined .bizdash-ico-lucide { opacity: 0.86; }
+  .bizdash-ico-outlined .bizdash-ico-heroicon { opacity: 0.86; }
   #customers-table tbody tr.crm-row:hover { background: var(--bg3, rgba(127,127,127,0.08)); }
   #customers-table tbody tr.crm-row-selected { background: var(--bg3, rgba(127,127,127,0.12)); }
   #customers-table .crm-cell-err { outline: 2px solid var(--red); outline-offset: -2px; }
@@ -2686,29 +2689,6 @@
     align-items: center;
     gap: 14px;
   }
-  #page-emails.emails-hub .eml-help {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    border: none;
-    background: transparent;
-    font-family: inherit;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text2);
-    cursor: pointer;
-    border-radius: 6px;
-  }
-  #page-emails.emails-hub .eml-help:hover {
-    background: var(--bg3);
-    color: var(--text);
-  }
-  #page-emails.emails-hub .eml-help svg {
-    width: 18px;
-    height: 18px;
-    color: var(--text3);
-  }
   #page-emails.emails-hub .eml-btn-compose {
     display: inline-flex;
     align-items: center;
@@ -2782,46 +2762,6 @@
     font-size: 15px;
     line-height: 1.5;
     color: var(--text2);
-  }
-  #page-emails.emails-hub .eml-learn {
-    margin-top: auto;
-    padding-top: 36px;
-  }
-  #page-emails.emails-hub .eml-learn-lbl {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text3);
-    margin-bottom: 10px;
-  }
-  #page-emails.emails-hub .eml-learn-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    padding: 16px 18px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--bg3);
-    font-size: 14px;
-    line-height: 1.5;
-    color: var(--text2);
-  }
-  #page-emails.emails-hub .eml-learn-ic {
-    width: 40px;
-    height: 40px;
-    flex-shrink: 0;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text3);
-  }
-  #page-emails.emails-hub .eml-learn-ic svg {
-    width: 20px;
-    height: 20px;
   }
   @media (max-width: 640px) {
     #page-emails.emails-hub .eml-shell {
@@ -7055,7 +6995,7 @@
       overflow-x: hidden;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
-      padding-bottom: 76px;
+      padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
     }
 
     #app-shell.on ~ .mobile-actions {
@@ -7065,19 +7005,24 @@
       right: 0;
       bottom: 0;
       z-index: 45;
-      flex-wrap: wrap;
-      gap: 6px;
-      padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+      flex-wrap: nowrap;
+      gap: 4px;
+      padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
       background: rgba(255, 255, 255, 0.94);
       border-top: 1px solid var(--border);
       backdrop-filter: blur(8px);
-      justify-content: center;
+      justify-content: stretch;
     }
     #app-shell.on ~ .mobile-actions .btn {
-      font-size: 12px;
-      padding: 7px 12px;
-      flex: 1 1 auto;
+      font-size: 11px;
+      padding: 7px 6px;
+      flex: 1 1 0;
       min-width: 0;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    #app-shell.on ~ .mobile-actions .btn-p {
+      flex: 1.3 1 0;
     }
 
     .pg { padding: 24px 16px 20px; }
@@ -7146,6 +7091,49 @@
     .spend-toolbar { flex-direction: column; align-items: stretch; gap: 12px; }
     .spend-toolbar-right { flex-wrap: wrap; justify-content: flex-start; }
     .spend-kpi-row { grid-template-columns: 1fr; }
+
+    /* Card section header (".sh") — stack title + actions on narrow screens so the
+       action group can't squeeze the title down to a sliver / break it per-letter. */
+    .sh {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+    .sh > .hr,
+    .sh > div:last-child:not(:first-child) {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    .sh .btn { flex: 0 1 auto; }
+
+    /* Lists detail: header stacks, title gets full width, and we don't let
+       overflow-wrap: anywhere apply since the column is full-width here. */
+    .lists-detail-sh {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .lists-detail-actions {
+      width: 100%;
+      justify-content: flex-start;
+      gap: 6px;
+    }
+    .lists-detail-actions .fi {
+      flex: 1 1 140px;
+      min-width: 0;
+    }
+    #lists-view-detail #lists-detail-title {
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+
+    /* Transaction-log style header buttons should breathe across the row, not
+       cluster in a narrow column. */
+    .sh .hr[style*="flex-wrap:wrap"] .btn,
+    .sh .hr[style*="flex-wrap: wrap"] .btn {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .btn,
@@ -7391,10 +7379,10 @@
 <img id="sb-brand-img" class="bizdash-brand-asset-holder" alt="" decoding="async" aria-hidden="true" />
 <div id="app-invite-flash" style="display:none;margin:0;padding:10px 14px;font-size:13px;line-height:1.45;color:var(--text);background:var(--bg3);border-bottom:1px solid var(--border);"></div>
 <div class="mobile-topbar">
-  <button type="button" id="btn-mobile-menu" class="mobile-menu-btn" aria-label="Open navigation" onclick="document.body.classList.toggle('mobile-nav-open')"><span></span></button>
+  <button type="button" id="btn-mobile-menu" class="mobile-menu-btn" aria-label="Open navigation"><span></span></button>
   <div class="mobile-topbar-title" id="mobile-title">Business Performance</div>
 </div>
-<div class="mobile-nav-overlay" id="mobile-nav-overlay" onclick="document.body.classList.remove('mobile-nav-open')"></div>
+<div class="mobile-nav-overlay" id="mobile-nav-overlay"></div>
 <div class="sb">
   <div class="sb-chrome">
     <button type="button" class="sb-ws-row" id="btn-sb-workspace-switch" aria-label="Switch workspace">
@@ -7431,28 +7419,37 @@
   </div>
   <nav class="sb-nav">
     <div class="nav-lbl" id="nav-lbl-overview">Overview</div>
-    <div class="ni active" data-nav="dashboard" onclick="nav('dashboard',this)">
+    <div class="ni active" data-nav="dashboard">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Dashboard
     </div>
-    <div class="ni" data-nav="customers" onclick="nav('customers',this)">
+    <div class="ni" data-nav="customers">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/></svg>Customers
     </div>
-    <div class="ni" data-nav="scheduling" onclick="nav('scheduling',this)">
+    <div class="ni" data-nav="scheduling">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>Calendar
     </div>
-    <div class="ni" data-nav="meeting-notes" onclick="nav('meeting-notes',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v2"/><path d="M8 9v8"/><path d="M12 6v12"/><path d="M16 9v8"/><path d="M20 12v2"/></svg>Meeting Notes
+    <div class="nav-lbl" id="nav-lbl-meeting-notes">Meeting Notes</div>
+    <div class="lists-sb-wrap" id="mnotes-sb-wrap">
+      <button type="button" class="lists-sb-toggle" id="mnotes-sb-toggle" aria-expanded="true" aria-controls="mnotes-sb-panel">
+        <svg class="lists-sb-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        Meeting Notes
+      </button>
+      <div class="lists-sb-panel" id="mnotes-sb-panel">
+        <button type="button" class="lists-sb-new" id="mnotes-btn-sidebar-new">+ New note</button>
+        <div class="lists-sb-items" id="mnotes-sb-items"></div>
+        <button type="button" class="lists-sb-browse" id="mnotes-sb-browse">Browse all</button>
+      </div>
     </div>
-    <div class="ni" data-nav="emails" onclick="nav('emails',this)">
+    <div class="ni" data-nav="emails">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>Emails
     </div>
-    <div class="ni" data-nav="revenue" onclick="nav('revenue',this)">
+    <div class="ni" data-nav="revenue">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Income
     </div>
-    <div class="ni" data-nav="expenses" onclick="nav('expenses',this)">
+    <div class="ni" data-nav="expenses">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>Expenses
     </div>
-    <div class="ni" data-nav="timesheet" onclick="nav('timesheet',this)">
+    <div class="ni" data-nav="timesheet">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>Timesheet
     </div>
     <div class="nav-lbl" id="nav-lbl-lists">Lists</div>
@@ -7467,41 +7464,38 @@
         <button type="button" class="lists-sb-browse" id="lists-sb-browse">Browse all</button>
       </div>
     </div>
-    <div class="nav-lbl" id="nav-lbl-chats">Chats</div>
+    <div class="nav-lbl" id="nav-lbl-chats">Advisor</div>
     <div class="lists-sb-wrap" id="chats-sb-wrap">
       <button type="button" class="lists-sb-toggle" id="chats-sb-toggle" aria-expanded="true" aria-controls="chats-sb-panel">
         <svg class="lists-sb-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-        Chats
+        Advisor
       </button>
       <div class="lists-sb-panel" id="chats-sb-panel">
         <button type="button" class="lists-sb-new" id="chats-btn-sidebar-new">+ New chat</button>
         <div class="lists-sb-items" id="chats-sb-items"></div>
-        <button type="button" class="lists-sb-browse" id="chats-sb-browse">Open Advisor</button>
+        <button type="button" class="lists-sb-browse" id="chats-sb-browse">Browse all</button>
       </div>
     </div>
-    <div class="ni" data-nav="chat" onclick="nav('chat',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></svg>Advisor
-    </div>
     <div class="nav-lbl" id="nav-lbl-analytics">Analytics</div>
-    <div class="ni" data-nav="performance" onclick="nav('performance',this)">
+    <div class="ni" data-nav="performance">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>Performance
     </div>
-    <div class="ni" data-nav="retention" onclick="nav('retention',this)">
+    <div class="ni" data-nav="retention">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>Retention
     </div>
-    <div class="ni" data-nav="insights" onclick="nav('insights',this)">
+    <div class="ni" data-nav="insights">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>Insights
     </div>
     <!-- Hidden in internal-mode via .nav-public-facing (route/page kept). -->
-    <div class="ni nav-public-facing" data-nav="marketing" onclick="nav('marketing',this)">
+    <div class="ni nav-public-facing" data-nav="marketing">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>Marketing
     </div>
   </nav>
   <div class="sb-foot">
-    <div class="ni" data-nav="team" onclick="nav('team',this)">
+    <div class="ni" data-nav="team">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Your team
     </div>
-    <div class="ni" data-nav="settings" onclick="nav('settings',this)">
+    <div class="ni" data-nav="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>Settings
     </div>
   </div>
@@ -7568,7 +7562,7 @@
     </div>
     <div class="g2">
       <div class="card">
-        <div class="sh"><div class="st">Accounts Receivable</div><button type="button" class="btn" onclick="nav('revenue')">View all →</button></div>
+        <div class="sh"><div class="st">Accounts Receivable</div><button type="button" class="btn" data-nav="revenue">View all →</button></div>
         <div id="dash-ar-empty" style="font-size:13px;color:var(--text3);padding:8px 0;">
           <div>No receivables yet.</div>
           <p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Help me understand who owes money and how to follow up on receivables.">Draft with Advisor</button></p>
@@ -7702,10 +7696,6 @@
           </button>
         </div>
         <div class="eml-topbar-right">
-          <button type="button" class="eml-help" data-eml-help aria-label="Learn more about emails">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
-            Help
-          </button>
           <button type="button" class="eml-btn-compose" data-eml-compose aria-label="Compose email">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
             Compose email
@@ -7758,42 +7748,11 @@
           </div>
         </div>
       </div>
-      <div class="eml-learn">
-        <div class="eml-learn-lbl">Learn more</div>
-        <div class="eml-learn-card">
-          <div class="eml-learn-ic" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-          </div>
-          <div>Email sync, People and Company records</div>
-        </div>
-      </div>
     </div>
   </div>
 
-  <!-- Gmail compose (Emails tab) -->
-  <div class="mo eml-compose-pop" id="eml-compose-modal" role="dialog" aria-modal="true" aria-labelledby="eml-compose-title" onclick="if (event.target === this) this.classList.remove('on')">
-    <div class="md eml-compose-md" onclick="event.stopPropagation()">
-      <div class="mt" id="eml-compose-title">Compose email</div>
-      <p class="eml-compose-hint" id="eml-compose-hint">Sends from your connected Gmail account for this workspace. Connect Google under <strong>Settings → Connections</strong> if you have not yet.</p>
-      <p class="eml-compose-err" id="eml-compose-err" style="display:none;"></p>
-      <div class="fg" style="margin-bottom:14px;">
-        <div class="fgp" style="grid-column:1/-1;">
-          <label class="fl" for="eml-compose-template">Template</label>
-          <select class="fi" id="eml-compose-template" style="max-width:100%;">
-            <option value="">— Load template —</option>
-          </select>
-        </div>
-        <div class="fgp" style="grid-column:1/-1;"><label class="fl" for="eml-compose-to">To</label><input class="fi" id="eml-compose-to" type="email" autocomplete="email" placeholder="name@example.com" /></div>
-        <div class="fgp" style="grid-column:1/-1;"><label class="fl" for="eml-compose-subject">Subject</label><input class="fi" id="eml-compose-subject" type="text" autocomplete="off" placeholder="Subject" /></div>
-        <div class="fgp" style="grid-column:1/-1;"><label class="fl" for="eml-compose-body">Message</label><textarea class="fi" id="eml-compose-body" rows="8" placeholder="Write your message…" style="min-height:140px;resize:vertical;"></textarea></div>
-      </div>
-      <div class="mf eml-compose-actions" style="border-top:none;padding-top:0;margin-top:0;flex-wrap:wrap;gap:8px;">
-        <button type="button" class="btn" id="eml-compose-cancel">Cancel</button>
-        <button type="button" class="btn" id="eml-compose-save-template" title="Save subject, message, and To as a reusable template for this workspace">Save as template</button>
-        <button type="button" class="btn btn-p" id="eml-compose-send">Send</button>
-      </div>
-    </div>
-  </div>
+  <!-- Email compose React island (src/entries/email-compose-react-mount.tsx) -->
+  <div id="email-compose-react-root" hidden aria-hidden="true"></div>
 
   <!-- INCOME (revenue records) -->
   <div class="pg" id="page-revenue">
@@ -7958,7 +7917,7 @@
           <div class="st">Budget vs. Actual</div>
           <div class="ss" id="bva-month-label">This month</div>
         </div>
-        <a href="#" class="btn" style="font-size:11px;padding:4px 12px;" onclick="window.nav('settings');return false;">Set budgets →</a>
+        <a href="#" class="btn" style="font-size:11px;padding:4px 12px;" data-nav="settings" data-nav-prevent-default>Set budgets →</a>
       </div>
       <div id="budget-vs-actual">
         <div style="font-size:13px;color:var(--text3);padding:4px 0;">Loading…</div>
@@ -8484,7 +8443,7 @@
                   </div>
                   <div class="fgp" style="grid-column:1/-1;">
                     <span class="fl">Icon</span>
-                    <p class="settings-ws-hint">Upload an image, choose a Lucide-style icon, or paste an emoji. This icon appears in the sidebar and workspace switcher for everyone in this workspace.</p>
+                    <p class="settings-ws-hint">Upload an image, choose a Heroicons icon, or paste an emoji. This icon appears in the sidebar and workspace switcher for everyone in this workspace.</p>
                     <p id="setting-ws-icon-role-hint" class="settings-ws-hint" hidden style="margin-top:2px;">Only workspace owners and admins can change this icon.</p>
                     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
                       <input type="file" id="setting-ws-icon-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
@@ -8829,41 +8788,34 @@
                   <div>
                     <div class="settings-ws-section-title" style="margin-bottom:8px;border:none;padding:0;">Add members via link</div>
                     <p class="settings-acct-row-meta" style="margin:0;">
-                      Only people with permission to invite members to this workspace can view this link. You can also
-                      <button type="button" class="settings-people-inline-link" id="settings-people-regen-link">generate a new link</button>.
+                      Anyone with this link can join this workspace as a <span id="settings-people-invite-role-label">member</span>. You can
+                      <button type="button" class="settings-people-inline-link" id="settings-people-regen-link">generate a new link</button>
+                      at any time, which invalidates the old one.
                     </p>
                   </div>
                   <div class="settings-people-invite-actions">
                     <button type="button" class="btn settings-people-copy-btn" id="settings-people-copy-link">Copy link</button>
                     <label class="settings-ws-switch" title="Invite link enabled">
-                      <input type="checkbox" id="settings-people-invite-enabled" checked />
+                      <input type="checkbox" id="settings-people-invite-enabled" />
                       <span class="settings-ws-switch-ui" aria-hidden="true"></span>
                     </label>
                   </div>
                 </div>
+                <p id="settings-people-invite-status" class="settings-acct-row-meta" style="margin:10px 0 0;font-size:11px;color:var(--text3);"></p>
               </div>
 
               <div class="settings-people-toolbar-row">
                 <div class="settings-people-pills" role="tablist" aria-label="People categories">
-                  <button type="button" class="settings-people-pill on" role="tab" aria-selected="true" id="settings-people-tab-guests" data-people-sub="guests">Guests</button>
-                  <button type="button" class="settings-people-pill" role="tab" aria-selected="false" id="settings-people-tab-members" data-people-sub="members">Members <span class="settings-people-count" id="settings-people-members-count">0</span></button>
-                  <button type="button" class="settings-people-pill" role="tab" aria-selected="false" id="settings-people-tab-groups" data-people-sub="groups">Groups</button>
-                  <button type="button" class="settings-people-pill" role="tab" aria-selected="false" id="settings-people-tab-contacts" data-people-sub="contacts">Contacts</button>
+                  <button type="button" class="settings-people-pill on" role="tab" aria-selected="true" id="settings-people-tab-members" data-people-sub="members">Members <span class="settings-people-count" id="settings-people-members-count">0</span></button>
                 </div>
                 <div class="settings-people-toolbar-right">
                   <button type="button" class="settings-people-icon-btn" id="settings-people-search-trigger" title="Search members" aria-label="Search members">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                   </button>
-                  <div class="settings-people-dropdown-wrap">
-                    <button type="button" class="btn btn-p settings-people-add-btn" id="settings-people-add-main" aria-expanded="false" aria-haspopup="true" aria-controls="settings-people-add-menu">
-                      Add members
-                      <svg class="settings-people-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-                    </button>
-                    <div class="settings-people-dropdown" id="settings-people-add-menu" hidden role="menu">
-                      <button type="button" role="menuitem" class="settings-people-menu-item" data-people-add-act="team">Invite by email (Your team)</button>
-                      <button type="button" role="menuitem" class="settings-people-menu-item" data-people-add-act="team">Open Your team</button>
-                    </div>
-                  </div>
+                  <button type="button" class="btn btn-p settings-people-add-btn" id="settings-people-add-main" aria-expanded="false" aria-controls="settings-people-invite-form">
+                    Add members
+                    <svg class="settings-people-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
                 </div>
               </div>
 
@@ -8871,17 +8823,27 @@
                 <input type="search" class="fi" id="settings-people-search-input" placeholder="Search members…" autocomplete="off" aria-label="Search members" />
               </div>
 
-              <div class="settings-people-sub" id="settings-people-sub-guests" data-people-sub-panel="guests">
-                <div class="settings-people-dashed">
-                  <div class="settings-people-empty">
-                    <svg class="settings-people-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>
-                    <p class="settings-people-empty-title">No guests yet</p>
-                    <button type="button" class="btn" id="settings-people-import-contacts">Import contacts</button>
+              <div id="settings-people-invite-form" class="card" hidden style="margin-bottom:14px;">
+                <div class="settings-ws-section-title" style="margin-bottom:10px;border:none;padding:0;">Invite by email</div>
+                <p class="settings-acct-row-meta" style="margin:0 0 12px;">We'll generate a one-time link the invitee can use to join. They'll need to sign in with the email below.</p>
+                <div class="fg">
+                  <div class="fgp"><label class="fl">Email</label><input type="email" class="fi" id="settings-people-invite-email" placeholder="name@example.com" autocomplete="off" /></div>
+                  <div class="fgp"><label class="fl">Role</label>
+                    <select class="fi" id="settings-people-invite-role-select">
+                      <option value="admin">Admin</option>
+                      <option value="member" selected>Member</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
                   </div>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-p" id="settings-people-invite-send">Send invite</button>
+                  <button type="button" class="btn" id="settings-people-invite-cancel">Cancel</button>
+                  <span id="settings-people-invite-msg" class="settings-acct-row-meta" style="margin:0;font-size:12px;"></span>
                 </div>
               </div>
 
-              <div class="settings-people-sub" id="settings-people-sub-members" data-people-sub-panel="members" hidden>
+              <div class="settings-people-sub" id="settings-people-sub-members" data-people-sub-panel="members">
                 <div class="settings-people-dashed settings-people-members-wrap">
                   <p id="settings-people-members-hint" class="settings-acct-row-meta" style="padding:12px 16px;margin:0;"></p>
                   <div style="overflow:auto;">
@@ -8899,23 +8861,9 @@
                 </div>
               </div>
 
-              <div class="settings-people-sub" id="settings-people-sub-groups" data-people-sub-panel="groups" hidden>
-                <div class="settings-people-dashed">
-                  <div class="settings-people-empty">
-                    <p class="settings-people-empty-title">No groups yet</p>
-                    <p class="settings-acct-row-meta" style="margin:0;max-width:28rem;">Groups help you organize people. Use Your team to add workspace members first.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="settings-people-sub" id="settings-people-sub-contacts" data-people-sub-panel="contacts" hidden>
-                <div class="settings-people-dashed">
-                  <div class="settings-people-empty">
-                    <p class="settings-people-empty-title">No contacts imported</p>
-                    <p class="settings-acct-row-meta" style="margin:0;max-width:28rem;">Import contacts from your team directory on the Your team page.</p>
-                    <button type="button" class="btn" id="settings-people-open-team-from-contacts" style="margin-top:14px;">Open Your team</button>
-                  </div>
-                </div>
+              <div id="settings-people-pending-card" class="card" hidden style="margin-top:14px;">
+                <div class="settings-ws-section-title" style="margin-bottom:10px;border:none;padding:0;">Pending invites</div>
+                <div id="settings-people-pending-body"></div>
               </div>
             </div>
           </div>
@@ -9617,8 +9565,8 @@
 </div>
 
 <!-- Non-functional action notice -->
-<div class="mo stub-pop" id="stubFeatureModal" onclick="if (event.target === this) this.classList.remove('on')">
-  <div class="md" onclick="event.stopPropagation()">
+<div class="mo stub-pop" id="stubFeatureModal" data-modal-backdrop-dismiss="stubFeatureModal">
+  <div class="md">
     <div class="mt" id="stubFeatureTitle">Coming soon</div>
     <p class="stub-body" id="stubFeatureBody">This action is not available in this version yet.</p>
     <div class="mf" style="border-top:none;padding-top:0;margin-top:0;">
@@ -9629,7 +9577,7 @@
 
 <!-- Account: change email -->
 <div class="mo" id="accountEmailModal">
-  <div class="md" style="max-width:420px;" onclick="event.stopPropagation()">
+  <div class="md" style="max-width:420px;">
     <div class="mt">Change email</div>
     <p style="font-size:12px;color:var(--text3);line-height:1.5;margin:0 0 12px;">We’ll send a confirmation link if your project requires email verification.</p>
     <div class="fg" style="grid-template-columns:1fr;gap:10px;">
@@ -9644,7 +9592,7 @@
 </div>
 <!-- Account: add / change password -->
 <div class="mo" id="accountPasswordModal">
-  <div class="md" style="max-width:420px;" onclick="event.stopPropagation()">
+  <div class="md" style="max-width:420px;">
     <div class="mt" id="account-password-modal-title">Set password</div>
     <p style="font-size:12px;color:var(--text3);line-height:1.5;margin:0 0 12px;" id="account-password-modal-hint">Choose a strong password. You can still use Google or GitHub sign-in if you have those connected.</p>
     <div class="fg" style="grid-template-columns:1fr;gap:10px;">
@@ -9660,7 +9608,7 @@
 </div>
 <!-- Account: delete -->
 <div class="mo" id="accountDeleteModal">
-  <div class="md" style="max-width:440px;" onclick="event.stopPropagation()">
+  <div class="md" style="max-width:440px;">
     <div class="mt">Delete account</div>
     <p style="font-size:13px;color:var(--text2);line-height:1.5;margin:0 0 12px;">This permanently removes your login. Workspace data may remain for other members; contact a workspace owner if you need records exported first.</p>
     <div class="fgp"><label class="fl">Type <strong>DELETE</strong> to confirm</label><input class="fi" id="account-delete-confirm-input" type="text" autocomplete="off" placeholder="DELETE" /></div>
@@ -10106,14 +10054,14 @@
   </div>
 </div>
 
-<!-- Workspace icon picker (Lucide via Iconify API) -->
+<!-- Workspace icon picker (Heroicons via Iconify API) -->
 <div class="mo ws-icon-mo" id="workspaceIconPickerModal" aria-hidden="true" role="presentation">
   <div class="md ws-icon-md" role="dialog" aria-modal="true" aria-labelledby="ws-icon-picker-title">
     <div class="ws-icon-md-head">
       <h2 class="ws-icon-md-title" id="ws-icon-picker-title">Choose workspace icon</h2>
       <button type="button" class="btn" id="ws-icon-picker-close" aria-label="Close">Close</button>
     </div>
-    <input type="search" class="fi ws-icon-picker-search" id="ws-icon-picker-search" placeholder="Search icons (e.g. mail, folder)…" autocomplete="off" aria-label="Search Lucide icons" />
+    <input type="search" class="fi ws-icon-picker-search" id="ws-icon-picker-search" placeholder="Search icons (e.g. envelope, folder)…" autocomplete="off" aria-label="Search Heroicons" />
     <p id="ws-icon-picker-status" aria-live="polite"></p>
     <div id="ws-icon-picker-grid" role="list"></div>
     <div class="ws-icon-md-foot">
@@ -10372,29 +10320,13 @@
 </div>
 
 <div class="mobile-actions">
-  <button type="button" class="btn" onclick="(function(el){ if(el) el.click(); })(document.getElementById('btn-add-client'))">+ Client</button>
-  <button type="button" class="btn" onclick="(function(el){ if(el) el.click(); })(document.getElementById('btn-add-project'))">+ Project</button>
-  <button type="button" class="btn" onclick="(function(el){ if(el) el.click(); })(document.getElementById('btn-add-expense'))">+ Expense</button>
-  <button type="button" class="btn" onclick="(function(el){ if(el) el.click(); })(document.getElementById('btn-add-time'))">+ Time</button>
-  <button type="button" class="btn btn-p" onclick="(function(el){ if(el) el.click(); })(document.getElementById('btn-add-income'))">+ Income</button>
+  <button type="button" class="btn" data-proxy-click="btn-add-client">+ Client</button>
+  <button type="button" class="btn" data-proxy-click="btn-add-project">+ Project</button>
+  <button type="button" class="btn" data-proxy-click="btn-add-expense">+ Expense</button>
+  <button type="button" class="btn" data-proxy-click="btn-add-time">+ Time</button>
+  <button type="button" class="btn btn-p" data-proxy-click="btn-add-income">+ Income</button>
 </div>
 
-<script>
-  (function () {
-    var closeBtn = document.getElementById('btn-close-input');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', function () {
-        document.getElementById('inputModal').classList.remove('on');
-      });
-    }
-    var applyBtn = document.getElementById('btn-apply-input');
-    if (applyBtn) {
-      applyBtn.addEventListener('click', function () {
-        if (window.updateData) window.updateData();
-      });
-    }
-  })();
-</script>
 <div id="icon-picker-root"></div>
 <script type="module" src="/src/entries/bootstrap.js"></script>
 </body>

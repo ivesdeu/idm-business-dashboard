@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Sparkles, X } from 'lucide-react';
+import { SparklesIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { MeetingSummaryMarkdown } from '@/components/scheduling/MeetingSummaryMarkdown';
 import { RecordingBar } from '@/components/scheduling/RecordingBar';
 import type { MeetingActionItem, MeetingNote, SchedulingAppointment } from '@/components/scheduling/types';
@@ -28,13 +28,27 @@ function emptyMeetingActionItems (): MeetingActionItem[] {
   return [];
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseOwnerUserId (value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim ();
+  return UUID_RE.test (trimmed) ? trimmed : null;
+}
+
 function normalizeActionItems (
-  arr: Array<{ task: string; owner: string; due_date: string | null }>,
+  arr: Array<{
+    task: string;
+    owner: string;
+    owner_user_id?: string | null;
+    due_date: string | null;
+  }>,
 ): MeetingActionItem[] {
   return (arr || [])
     .map ((item) => ({
       task: String (item.task || '').trim (),
       owner: String (item.owner || '').trim (),
+      ownerUserId: parseOwnerUserId (item.owner_user_id),
       dueDate: item.due_date ? String (item.due_date) : null,
       completed: false,
     }))
@@ -369,6 +383,7 @@ export function MeetingNotePanel ({
           action_items: normalizedActionItems.map ((x) => ({
             task: x.task,
             owner: x.owner,
+            owner_user_id: x.ownerUserId,
             due_date: x.dueDate,
             completed: x.completed,
           })),
@@ -402,7 +417,7 @@ export function MeetingNotePanel ({
             <p className="text-xs text-[var(--text3)]">Meeting note intelligence</p>
           </div>
           <button type="button" className="btn inline-flex items-center gap-2" onClick={closeWithGuard}>
-            <X className="h-4 w-4" aria-hidden />
+            <XMarkIcon className="h-4 w-4" aria-hidden />
             Close
           </button>
         </div>
@@ -483,7 +498,7 @@ export function MeetingNotePanel ({
                   onClick={() => void summarizeWithAdvisor ()}
                   disabled={summarizing || !organizationId}
                 >
-                  <Sparkles className="h-4 w-4" aria-hidden />
+                  <SparklesIcon className="h-4 w-4" aria-hidden />
                   {summarizing ? 'Summarizing…' : hasSummarized ? 'Regenerate' : 'Summarize with Advisor'}
                 </button>
                 {advisorError ? <p className="mt-2 text-xs text-[var(--red)]">{advisorError}</p> : null}

@@ -84,6 +84,7 @@ export type PlaidLinkTokenCreateResponse = {
 };
 
 export async function linkTokenCreate(params: {
+  client_name: string;
   client_user_id: string;
   webhook?: string | null;
   products: string[];
@@ -91,12 +92,20 @@ export async function linkTokenCreate(params: {
   language?: string;
 }): Promise<PlaidResponse<PlaidLinkTokenCreateResponse>> {
   return await plaidFetch("/link/token/create", {
+    client_name: params.client_name,
     user: { client_user_id: params.client_user_id },
     products: params.products,
     country_codes: params.country_codes,
     language: params.language ?? "en",
     webhook: params.webhook ?? undefined,
   });
+}
+
+/** Plaid requires client_name (max 30 chars) — shown in Link. */
+export function readPlaidClientName(): string {
+  const fromEnv = (Deno.env.get("PLAID_CLIENT_NAME") ?? "").trim();
+  const name = fromEnv || "Compass";
+  return name.length > 30 ? name.slice(0, 30) : name;
 }
 
 export type PlaidItemPublicTokenExchangeResponse = {

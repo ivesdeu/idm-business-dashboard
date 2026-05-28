@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { CheckIcon, EllipsisHorizontalIcon, TrashIcon } from '@heroicons/react/24/outline';
 import {
   CUSTOMERS_COLUMN_DEFS,
   defaultPillColorForOption,
@@ -317,7 +317,7 @@ function CrmPillOptionEditorPopover({
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => void onDelete()}
           >
-            <Trash2 className="h-4 w-4 shrink-0 text-neutral-500" strokeWidth={1.75} aria-hidden />
+            <TrashIcon className="h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
             Delete
           </button>
           <div className="mx-3 my-2 h-px bg-neutral-100" />
@@ -338,7 +338,7 @@ function CrmPillOptionEditorPopover({
             <span className={cn('h-4 w-4 shrink-0 rounded-lg', PILL_SWATCH[row.key])} aria-hidden />
             <span className="min-w-0 flex-1">{row.label}</span>
             {activeColor === row.key ? (
-              <Check className="h-4 w-4 shrink-0 text-neutral-800" strokeWidth={2.2} aria-hidden />
+              <CheckIcon className="h-4 w-4 shrink-0 text-neutral-800" aria-hidden />
             ) : null}
           </button>
         ))}
@@ -528,7 +528,7 @@ function CrmSelectPortalMenu({
                           });
                         }}
                       >
-                        <MoreHorizontal className="h-4 w-4" strokeWidth={2} aria-hidden />
+                        <EllipsisHorizontalIcon className="h-4 w-4" aria-hidden />
                       </button>
                     </div>
                     );

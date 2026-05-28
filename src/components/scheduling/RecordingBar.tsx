@@ -1,4 +1,4 @@
-import { Mic, Pause, Play, Square } from 'lucide-react';
+import { MicrophoneIcon, PauseIcon, PlayIcon, StopIcon } from '@heroicons/react/24/solid';
 import type { TranscriptionStatus } from '@/components/scheduling/types';
 
 type RecordingBarProps = {
@@ -38,7 +38,7 @@ export function RecordingBar ({
           onClick={onStart}
           disabled={!workspaceReady}
         >
-          <Mic className="h-4 w-4" aria-hidden />
+          <MicrophoneIcon className="h-4 w-4" aria-hidden />
           Start Recording
         </button>
         <p className="mt-2 text-xs text-[var(--text3)]">
@@ -75,19 +75,19 @@ export function RecordingBar ({
         <span className="text-sm font-medium text-[var(--text)]">{isRequesting ? 'Preparing recorder…' : mmss (duration)}</span>
         {isRecording ? (
           <button type="button" className="btn inline-flex items-center gap-2" onClick={onPause}>
-            <Pause className="h-4 w-4" aria-hidden />
+            <PauseIcon className="h-4 w-4" aria-hidden />
             Pause
           </button>
         ) : null}
         {isPaused ? (
           <button type="button" className="btn inline-flex items-center gap-2" onClick={onResume}>
-            <Play className="h-4 w-4" aria-hidden />
+            <PlayIcon className="h-4 w-4" aria-hidden />
             Resume
           </button>
         ) : null}
         {(isRecording || isPaused || isRequesting) ? (
           <button type="button" className="btn inline-flex items-center gap-2" onClick={onStop}>
-            <Square className="h-4 w-4" aria-hidden />
+            <StopIcon className="h-4 w-4" aria-hidden />
             Stop
           </button>
         ) : null}

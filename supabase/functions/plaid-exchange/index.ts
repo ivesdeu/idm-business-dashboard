@@ -140,7 +140,7 @@ serveWithEdgeRequestLogging("plaid-exchange", async (req, _ctx) => {
 
   // Initial backfill using cursor-less sync.
   let cursor: string | null = null;
-  let totalUpserted = 0;
+  let totalInserted = 0;
   let loops = 0;
 
   while (loops < 12) {
@@ -150,47 +150,61 @@ serveWithEdgeRequestLogging("plaid-exchange", async (req, _ctx) => {
     const data = syncRes.data;
     cursor = data.next_cursor;
 
-    const rows: Array<Record<string, unknown>> = [];
+    const candidates: Array<{ pid: string; row: Record<string, unknown> }> = [];
     for (const tx of [...(data.added || []), ...(data.modified || [])]) {
       const pfcPrimary = tx.personal_finance_category?.primary ?? null;
       const category = mapPlaidPfcPrimaryToLedgerCategory(pfcPrimary, tx.amount);
       const amt = Math.abs(Number(tx.amount || 0) || 0);
       const desc = cleanText(tx.merchant_name) || cleanText(tx.name) || "Plaid transaction";
-      rows.push({
-        id: crypto.randomUUID(),
-        organization_id: organizationId,
-        user_id: user.id,
-        date: tx.date,
-        category,
-        amount: amt,
-        description: desc,
-        source: "Plaid",
-        metadata: {
-          plaid_transaction_id: tx.transaction_id,
-          plaid_account_id: tx.account_id,
-          pending: !!tx.pending,
-          inflow: isInflow(tx.amount),
-          pfc_primary: pfcPrimary,
-          pfc_detailed: tx.personal_finance_category?.detailed ?? null,
-          review_status: "unreviewed",
+      const pid = String(tx.transaction_id || "");
+      if (!pid) continue;
+      candidates.push({
+        pid,
+        row: {
+          id: crypto.randomUUID(),
+          organization_id: organizationId,
+          user_id: user.id,
+          date: tx.date,
+          category,
+          amount: amt,
+          description: desc,
+          source: "Plaid",
+          metadata: {
+            plaid_transaction_id: pid,
+            plaid_account_id: tx.account_id,
+            pending: !!tx.pending,
+            inflow: isInflow(tx.amount),
+            pfc_primary: pfcPrimary,
+            pfc_detailed: tx.personal_finance_category?.detailed ?? null,
+            review_status: "unreviewed",
+          },
         },
-        updated_at: new Date().toISOString(),
       });
     }
 
-    if (rows.length) {
-      const { error: upErr } = await admin.from("transactions").upsert(rows, {
-        onConflict: "organization_id,(metadata->>'plaid_transaction_id')",
-        ignoreDuplicates: false,
-      });
-      if (upErr) {
-        // Fall back: insert without explicit onConflict if PostgREST rejects expression onConflict.
-        const { error: insertErr } = await admin.from("transactions").insert(rows);
-        if (insertErr) {
-          return json(req, 500, { error: "Failed to upsert Plaid transactions.", details: insertErr.message });
-        }
+    if (candidates.length) {
+      // Skip any plaid_transaction_ids already imported for this org (dedupe).
+      const pids = candidates.map((c) => c.pid);
+      const { data: existing } = await admin
+        .from("transactions")
+        .select("metadata")
+        .eq("organization_id", organizationId)
+        .in("metadata->>plaid_transaction_id", pids);
+
+      const seen = new Set<string>();
+      for (const r of (existing || []) as Array<{ metadata?: Record<string, unknown> }>) {
+        const p = String(r?.metadata?.plaid_transaction_id || "");
+        if (p) seen.add(p);
       }
-      totalUpserted += rows.length;
+
+      const toInsert = candidates.filter((c) => !seen.has(c.pid)).map((c) => c.row);
+      if (toInsert.length) {
+        const { error: insertErr } = await admin.from("transactions").insert(toInsert);
+        if (insertErr) {
+          return json(req, 500, { error: "Failed to insert Plaid transactions.", details: insertErr.message });
+        }
+        totalInserted += toInsert.length;
+      }
     }
 
     if (!data.has_more) break;
@@ -205,7 +219,7 @@ serveWithEdgeRequestLogging("plaid-exchange", async (req, _ctx) => {
   return json(req, 200, {
     plaid_item_id: itemId,
     accounts: (accts.data.accounts || []).length,
-    transactions_upserted: totalUpserted,
+    transactions_inserted: totalInserted,
   });
 });
 

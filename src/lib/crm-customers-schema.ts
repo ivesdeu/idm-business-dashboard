@@ -44,7 +44,7 @@ export const CRM_COMM_STYLE_OPTS = ['Concise', 'Detailed', 'Formal', 'Casual', '
 export const CRM_PRIORITY_OPTS = ['Low', 'Medium', 'High'] as const;
 
 /** Built-in CRM client statuses (always shown; not stored in `project_statuses`). */
-export const CRM_STATUS_BASE = ['Lead', 'Active', 'Inactive', 'Churned'] as const;
+export const CRM_STATUS_BASE = ['Lead', 'Active', 'At risk', 'Inactive', 'Churned'] as const;
 
 export function crmStatusSelectOptionsFromProjects(projectStatuses: string[]): string[] {
   const seen: Record<string, true> = {};
@@ -85,6 +85,7 @@ export function defaultPillColorForOption(selectKey: string, label: string): Crm
   if (selectKey === 'status') {
     if (/\b(done|closed|won|complete)\b/.test(t) || t === 'inactive') return 'green';
     if (/\b(progress|active|working)\b/.test(t)) return 'blue';
+    if (/\b(at\s*risk|risk)\b/.test(t)) return 'orange';
     if (/\b(block|churn|lost|cancel)\b/.test(t)) return 'red';
     if (/\b(not\s*started|lead|draft|new)\b/.test(t)) return 'gray';
     return 'blue';

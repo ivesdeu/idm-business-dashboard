@@ -1,4 +1,5 @@
 import './supabase-vendor.js';
+import './inline-handlers.js';
 import '../legacy/workspace-list-templates.js';
 import '../legacy/financial-core.js';
 import { mountAuthLoginGate } from './auth-login-react-mount.tsx';
@@ -34,6 +35,7 @@ const islandLoaders = {
   'meeting-notes': () => import('./meeting-notes-react-mount.tsx').then((m) => m.mountMeetingNotesPage()),
   customers: () => import('./crm-table-react-mount.tsx').then((m) => m.mountCrmCustomersTable()),
   chat: () => import('./advisor-react-mount.tsx').then((m) => m.mountAdvisorReactComposer()),
+  emails: () => import('./email-compose-react-mount.tsx').then((m) => m.mountEmailCompose()),
 };
 
 const islandLoaded = new Set();
@@ -98,6 +100,10 @@ scheduleIdle(() => {
 
 scheduleIdle(() => {
   import('./icon-picker-mount.tsx').then((m) => m.mountIconPicker());
+});
+
+scheduleIdle(() => {
+  import('./voice-agent-react-mount.tsx').then((m) => m.mountVoiceAgent());
 });
 
 /** Advisor React island — mount after legacy `wireDashboardAssistant` defines `bizDashAdvisorGetComposerApi`. */

@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Calendar as CalendarIcon, LayoutList, PlusCircle } from 'lucide-react';
+import { CalendarIcon, QueueListIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
 import { AppointmentDetailDrawer } from '@/components/scheduling/AppointmentDetailDrawer';
 import { AppointmentsList } from '@/components/scheduling/AppointmentsList';
 import { CalendarView } from '@/components/scheduling/CalendarView';
 import { GoogleCalendarModal } from '@/components/scheduling/GoogleCalendarModal';
 import { NewAppointmentForm } from '@/components/scheduling/NewAppointmentForm';
-import type { ClientOption, SchedulingAppointment, SchedulingToast } from '@/components/scheduling/types';
+import type {
+  AppointmentColor,
+  ClientOption,
+  SchedulingAppointment,
+  SchedulingToast,
+} from '@/components/scheduling/types';
 import { isDemoMode } from '@/lib/demoMode';
 import { syncToGoogleCalendar } from '@/lib/googleCalendar';
 import { getSchedulingMockAppointments } from '@/lib/mockData/appointments';
@@ -317,6 +322,7 @@ export function SchedulingPage () {
         endTime: string;
         location: string | null;
         notes: string | null;
+        color: AppointmentColor | null;
       },
     ) => {
       if (demoMode) {
@@ -340,6 +346,7 @@ export function SchedulingPage () {
           end_time: payload.endTime,
           location: payload.location,
           notes: payload.notes,
+          color: payload.color,
         })
         .eq ('id', id)
         .eq ('organization_id', orgId);
@@ -394,6 +401,7 @@ export function SchedulingPage () {
       endTime: string;
       location: string | null;
       notes: string | null;
+      color?: AppointmentColor | null;
       syncToGoogle: boolean;
     }) => {
       if (demoMode) {
@@ -429,6 +437,7 @@ export function SchedulingPage () {
             end_time: payload.endTime,
             location: payload.location,
             notes: payload.notes,
+            color: payload.color ?? null,
           })
           .eq ('id', editTarget.id)
           .eq ('organization_id', orgId);
@@ -488,6 +497,7 @@ export function SchedulingPage () {
         end_time: payload.endTime,
         location: payload.location,
         notes: payload.notes,
+        color: payload.color ?? null,
         status: 'pending' as const,
       };
 
@@ -559,7 +569,7 @@ export function SchedulingPage () {
           className={`btn spend-ctype sched-tab-btn${subView === 'calendar' ? ' on' : ''}`}
           onClick={() => setSubView ('calendar')}
         >
-          <CalendarIcon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+          <CalendarIcon className="h-4 w-4 shrink-0" aria-hidden />
           Calendar
         </button>
         <button
@@ -567,7 +577,7 @@ export function SchedulingPage () {
           className={`btn spend-ctype sched-tab-btn${subView === 'list' ? ' on' : ''}`}
           onClick={() => setSubView ('list')}
         >
-          <LayoutList className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+          <QueueListIcon className="h-4 w-4 shrink-0" aria-hidden />
           Appointments
         </button>
         <button
@@ -578,7 +588,7 @@ export function SchedulingPage () {
             setSubView ('new');
           }}
         >
-          <PlusCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+          <PlusCircleIcon className="h-4 w-4 shrink-0" aria-hidden />
           New appointment
         </button>
       </nav>

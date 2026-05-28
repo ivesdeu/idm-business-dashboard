@@ -121,48 +121,62 @@ serveWithEdgeRequestLogging("plaid-sync", async (req, _ctx) => {
       const data = syncRes.data;
       cursor = data.next_cursor;
 
-      const rows: Array<Record<string, unknown>> = [];
+      const candidates: Array<{ pid: string; row: Record<string, unknown> }> = [];
       for (const tx of [...(data.added || []), ...(data.modified || [])]) {
         const pfcPrimary = tx.personal_finance_category?.primary ?? null;
         const category = mapPlaidPfcPrimaryToLedgerCategory(pfcPrimary, tx.amount);
         const amt = Math.abs(Number(tx.amount || 0) || 0);
         const desc =
           cleanText(tx.merchant_name) || cleanText(tx.name) || "Plaid transaction";
-        rows.push({
-          id: crypto.randomUUID(),
-          organization_id: orgId,
-          user_id: connectedBy,
-          date: tx.date,
-          category,
-          amount: amt,
-          description: desc,
-          source: "Plaid",
-          metadata: {
-            plaid_transaction_id: tx.transaction_id,
-            plaid_account_id: tx.account_id,
-            pending: !!tx.pending,
-            inflow: isInflow(tx.amount),
-            pfc_primary: pfcPrimary,
-            pfc_detailed: tx.personal_finance_category?.detailed ?? null,
-            review_status: "unreviewed",
+        const pid = String(tx.transaction_id || "");
+        if (!pid) continue;
+        candidates.push({
+          pid,
+          row: {
+            id: crypto.randomUUID(),
+            organization_id: orgId,
+            user_id: connectedBy,
+            date: tx.date,
+            category,
+            amount: amt,
+            description: desc,
+            source: "Plaid",
+            metadata: {
+              plaid_transaction_id: pid,
+              plaid_account_id: tx.account_id,
+              pending: !!tx.pending,
+              inflow: isInflow(tx.amount),
+              pfc_primary: pfcPrimary,
+              pfc_detailed: tx.personal_finance_category?.detailed ?? null,
+              review_status: "unreviewed",
+            },
           },
-          updated_at: new Date().toISOString(),
         });
       }
 
-      if (rows.length) {
-        const { error: upErr } = await admin.from("transactions").upsert(rows, {
-          onConflict: "organization_id,(metadata->>'plaid_transaction_id')",
-        });
-        if (upErr) {
-          // Fallback insert (may error if duplicates are present).
-          const { error: insErr } = await admin.from("transactions").insert(rows);
+      if (candidates.length) {
+        const pids = candidates.map((c) => c.pid);
+        const { data: existing } = await admin
+          .from("transactions")
+          .select("metadata")
+          .eq("organization_id", orgId)
+          .in("metadata->>plaid_transaction_id", pids);
+
+        const seen = new Set<string>();
+        for (const r of (existing || []) as Array<{ metadata?: Record<string, unknown> }>) {
+          const p = String(r?.metadata?.plaid_transaction_id || "");
+          if (p) seen.add(p);
+        }
+
+        const toInsert = candidates.filter((c) => !seen.has(c.pid)).map((c) => c.row);
+        if (toInsert.length) {
+          const { error: insErr } = await admin.from("transactions").insert(toInsert);
           if (insErr) {
             await admin.from("plaid_items").update({ last_error: insErr.message, updated_at: new Date().toISOString() }).eq("id", rowId);
             break;
           }
+          totalUpserted += toInsert.length;
         }
-        totalUpserted += rows.length;
       }
 
       if (!data.has_more) {

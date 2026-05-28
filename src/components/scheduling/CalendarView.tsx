@@ -1,19 +1,20 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CSSProperties, MouseEvent, PointerEvent } from 'react';
 import {
-  Bell,
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  Link2,
-  MapPin,
-  Pencil,
-  Trash2,
-  UserRound,
-  X,
-} from 'lucide-react';
-import type { ClientOption, SchedulingAppointment } from '@/components/scheduling/types';
+  BellIcon,
+  CalendarDaysIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  LinkIcon,
+  MapPinIcon,
+  PencilIcon,
+  TrashIcon,
+  UserIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
+import type { AppointmentColor, ClientOption, SchedulingAppointment } from '@/components/scheduling/types';
 
 type CalMode = 'month' | 'week';
 
@@ -24,7 +25,48 @@ type AppointmentUpdatePayload = {
   endTime: string;
   location: string | null;
   notes: string | null;
+  color: AppointmentColor | null;
 };
+
+type AppointmentColorPalette = {
+  label: string;
+  solid: string;
+  background: string;
+  foreground: string;
+};
+
+const APPOINTMENT_COLOR_PALETTE: Record<AppointmentColor, AppointmentColorPalette> = {
+  blue: { label: 'Blue', solid: '#3b82f6', background: '#dbeafe', foreground: '#1d4ed8' },
+  green: { label: 'Green', solid: '#10b981', background: '#d1fae5', foreground: '#047857' },
+  red: { label: 'Red', solid: '#ef4444', background: '#fee2e2', foreground: '#b91c1c' },
+  amber: { label: 'Amber', solid: '#f59e0b', background: '#fef3c7', foreground: '#b45309' },
+  purple: { label: 'Purple', solid: '#8b5cf6', background: '#ede9fe', foreground: '#6d28d9' },
+  rose: { label: 'Rose', solid: '#f43f5e', background: '#ffe4e6', foreground: '#be123c' },
+  slate: { label: 'Slate', solid: '#64748b', background: '#e2e8f0', foreground: '#334155' },
+  teal: { label: 'Teal', solid: '#14b8a6', background: '#ccfbf1', foreground: '#0f766e' },
+  pink: { label: 'Pink', solid: '#ec4899', background: '#fce7f3', foreground: '#be185d' },
+};
+
+const APPOINTMENT_COLOR_ORDER: AppointmentColor[] = [
+  'blue',
+  'green',
+  'amber',
+  'red',
+  'rose',
+  'pink',
+  'purple',
+  'teal',
+  'slate',
+];
+
+function colorPillStyle (color: AppointmentColor): CSSProperties {
+  const palette = APPOINTMENT_COLOR_PALETTE[color];
+  return { background: palette.background, color: palette.foreground };
+}
+
+function colorDot (color: AppointmentColor | null): string {
+  return color ? APPOINTMENT_COLOR_PALETTE[color].solid : 'var(--neutral, #64748b)';
+}
 
 type Props = {
   appointments: SchedulingAppointment[];
@@ -39,6 +81,7 @@ type PreviewState = {
   appointment: SchedulingAppointment;
   left: number;
   top: number;
+  width: number;
 };
 
 type QuickCreateState = {
@@ -62,6 +105,23 @@ const HOUR_HEIGHT = 56;
 const WEEK_GUTTER_WIDTH = 56;
 const SNAP_MINUTES = 15;
 const MIN_SELECTION_MINUTES = 30;
+const CAL_MODE_STORAGE_KEY = 'scheduling:calendar-view-mode:v1';
+
+function readPersistedCalMode (): CalMode {
+  if (typeof window === 'undefined') return 'month';
+  try {
+    const raw = window.localStorage.getItem (CAL_MODE_STORAGE_KEY);
+    if (raw === 'month' || raw === 'week') return raw;
+  } catch (_) {}
+  return 'month';
+}
+
+function writePersistedCalMode (mode: CalMode) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem (CAL_MODE_STORAGE_KEY, mode);
+  } catch (_) {}
+}
 
 function startOfWeekSunday (d: Date): Date {
   const x = new Date (d);
@@ -159,6 +219,17 @@ function statusPillStyle (s: SchedulingAppointment['status']): CSSProperties {
   return { background: 'var(--neutral-bg)', color: 'var(--text2)' };
 }
 
+/**
+ * Visual style for an event pill. Cancelled events are always struck through
+ * with a neutral background, otherwise an explicit color category wins
+ * over the default status palette so users can group events visually.
+ */
+function eventPillStyle (a: SchedulingAppointment): CSSProperties {
+  if (a.status === 'cancelled') return statusPillStyle ('cancelled');
+  if (a.color) return colorPillStyle (a.color);
+  return statusPillStyle (a.status);
+}
+
 export function CalendarView ({
   appointments,
   clientOptions,
@@ -166,7 +237,11 @@ export function CalendarView ({
   onUpdateAppointment,
   onDeleteAppointment,
 }: Props) {
-  const [mode, setMode] = useState<CalMode> ('month');
+  const [mode, setModeState] = useState<CalMode> (() => readPersistedCalMode ());
+  const setMode = (next: CalMode) => {
+    setModeState (next);
+    writePersistedCalMode (next);
+  };
   const [cursor, setCursor] = useState (() => new Date ());
   const [preview, setPreview] = useState<PreviewState | null> (null);
   const [quickCreate, setQuickCreate] = useState<QuickCreateState | null> (null);
@@ -236,23 +311,48 @@ export function CalendarView ({
   function openPreview (appointment: SchedulingAppointment, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation ();
     const rect = event.currentTarget.getBoundingClientRect ();
-    const width = 360;
-    const left = clamp (rect.left + rect.width / 2 - width / 2, 16, window.innerWidth - width - 16);
-    const estimatedHeight = Math.min (520, window.innerHeight - 32);
-    const top = clamp (rect.top + 18, 16, Math.max (16, window.innerHeight - estimatedHeight - 16));
-    setPreview ({ appointment, left, top });
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+    const width = Math.min (380, Math.max (260, viewportW - 24));
+    const maxLeft = Math.max (12, viewportW - width - 12);
+    const left = clamp (rect.left + rect.width / 2 - width / 2, 12, maxLeft);
+    const estimatedHeight = Math.min (520, viewportH - 32);
+    const top = clamp (rect.top + 18, 16, Math.max (16, viewportH - estimatedHeight - 16));
+    setPreview ({ appointment, left, top, width });
     setQuickCreate (null);
   }
 
   function openQuickCreate (range: { startTime: string; endTime: string }, anchor: { x: number; y: number }) {
-    const width = 360;
-    const estimatedHeight = Math.min (620, window.innerHeight - 32);
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+    const width = Math.min (360, Math.max (240, viewportW - 32));
+    const maxLeft = Math.max (16, viewportW - width - 16);
+    const estimatedHeight = Math.min (620, viewportH - 32);
     setPreview (null);
     setQuickCreate ({
       ...range,
-      left: clamp (anchor.x - width / 2, 16, window.innerWidth - width - 16),
-      top: clamp (anchor.y - 96, 16, Math.max (16, window.innerHeight - estimatedHeight - 16)),
+      left: clamp (anchor.x - width / 2, 16, maxLeft),
+      top: clamp (anchor.y - 96, 16, Math.max (16, viewportH - estimatedHeight - 16)),
     });
+  }
+
+  /**
+   * Double-click a month-grid cell to spawn the quick-create popover for that day,
+   * pre-populated with a 9–10 AM range. Honors the cell's text selection prevention
+   * and stops the dblclick from re-triggering preview when it bubbles up.
+   */
+  function openMonthCellQuickCreate (day: Date, event: MouseEvent<HTMLDivElement>) {
+    if (!onCreateAppointment) return;
+    event.preventDefault ();
+    event.stopPropagation ();
+    const start = new Date (day);
+    start.setHours (9, 0, 0, 0);
+    const end = new Date (start);
+    end.setHours (10, 0, 0, 0);
+    openQuickCreate (
+      { startTime: start.toISOString (), endTime: end.toISOString () },
+      { x: event.clientX, y: event.clientY },
+    );
   }
 
   function goPrev () {
@@ -358,10 +458,10 @@ export function CalendarView ({
           </button>
           <div style={{ display: 'inline-flex', gap: '2px' }}>
             <button type="button" aria-label="Previous" style={iconBtn} onClick={goPrev}>
-              <ChevronLeft className="h-4 w-4" strokeWidth={2} aria-hidden />
+              <ChevronLeftIcon className="h-4 w-4" aria-hidden />
             </button>
             <button type="button" aria-label="Next" style={iconBtn} onClick={goNext}>
-              <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+              <ChevronRightIcon className="h-4 w-4" aria-hidden />
             </button>
           </div>
         </div>
@@ -392,56 +492,7 @@ export function CalendarView ({
             </div>
           ))}
         </div>
-      ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `${WEEK_GUTTER_WIDTH}px repeat(7, minmax(0, 1fr))`,
-            borderTop: `1px solid ${hairline}`,
-            borderBottom: `1px solid ${hairline}`,
-          }}
-        >
-          <div style={{ borderRight: `1px solid ${hairline}` }} />
-          {weekDays.map ((day, idx) => {
-            const today = isTodayLocal (day);
-            return (
-              <div
-                key={day.toISOString ()}
-                style={{
-                  padding: '8px 8px 7px',
-                  borderRight: idx < 6 ? `1px solid ${hairline}` : 'none',
-                  textAlign: 'center',
-                  color: muted,
-                }}
-              >
-                <div style={{ fontSize: '11px', fontWeight: 500 }}>{WEEKDAYS[day.getDay ()]}</div>
-                <div style={{ marginTop: '2px', fontSize: '11px', fontWeight: 500 }}>
-                  {today ? (
-                    <span
-                      aria-label="Today"
-                      style={{
-                        display: 'inline-flex',
-                        minWidth: '19px',
-                        height: '18px',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: '4px',
-                        background: 'var(--red)',
-                        color: '#fff',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {day.getDate ()}
-                    </span>
-                  ) : (
-                    <span>{MONTHS_SHORT[day.getMonth ()]} {day.getDate ()}</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      ) : null}
 
       {mode === 'month' ? (
         <div
@@ -472,7 +523,16 @@ export function CalendarView ({
             const numWeight = today ? 600 : 500;
 
             return (
-              <div key={idx} style={cellStyle}>
+              <div
+                key={idx}
+                style={{
+                  ...cellStyle,
+                  cursor: onCreateAppointment ? 'copy' : 'default',
+                  userSelect: 'none',
+                }}
+                onDoubleClick={onCreateAppointment ? (e) => openMonthCellQuickCreate (cell.date, e) : undefined}
+                title={onCreateAppointment ? 'Double-click to add event' : undefined}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', minHeight: '22px' }}>
                   {today ? (
                     <span
@@ -512,6 +572,7 @@ export function CalendarView ({
                       key={a.id}
                       type="button"
                       onClick={(e) => openPreview (a, e)}
+                      onDoubleClick={(e) => e.stopPropagation ()}
                       style={{
                         textAlign: 'left',
                         border: 'none',
@@ -524,7 +585,7 @@ export function CalendarView ({
                         textOverflow: 'ellipsis',
                         cursor: 'pointer',
                         lineHeight: 1.4,
-                        ...statusPillStyle (a.status),
+                        ...eventPillStyle (a),
                       }}
                     >
                       <span style={{ opacity: 0.75, marginRight: '4px' }}>{formatTime (a.startTime)}</span>
@@ -554,32 +615,38 @@ export function CalendarView ({
         />
       )}
 
-      {preview ? (
-        <EventPreview
-          preview={preview}
-          clientOptions={clientOptions ?? []}
-          onClose={() => setPreview (null)}
-          onUpdate={onUpdateAppointment}
-          onDelete={onDeleteAppointment}
-          text={text}
-          muted={muted}
-          hairline={hairline}
-        />
-      ) : null}
+      {preview && typeof document !== 'undefined'
+        ? createPortal (
+            <EventPreview
+              preview={preview}
+              clientOptions={clientOptions ?? []}
+              onClose={() => setPreview (null)}
+              onUpdate={onUpdateAppointment}
+              onDelete={onDeleteAppointment}
+              text={text}
+              muted={muted}
+              hairline={hairline}
+            />,
+            document.body,
+          )
+        : null}
 
-      {quickCreate && onCreateAppointment ? (
-        <QuickCreatePopover
-          range={quickCreate}
-          text={text}
-          muted={muted}
-          hairline={hairline}
-          onClose={() => setQuickCreate (null)}
-          onCreate={async (payload) => {
-            await onCreateAppointment (payload);
-            setQuickCreate (null);
-          }}
-        />
-      ) : null}
+      {quickCreate && onCreateAppointment && typeof document !== 'undefined'
+        ? createPortal (
+            <QuickCreatePopover
+              range={quickCreate}
+              text={text}
+              muted={muted}
+              hairline={hairline}
+              onClose={() => setQuickCreate (null)}
+              onCreate={async (payload) => {
+                await onCreateAppointment (payload);
+                setQuickCreate (null);
+              }}
+            />,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -629,6 +696,10 @@ function WeekTimeGrid ({
   function timedStyle (a: SchedulingAppointment): CSSProperties {
     if (a.status === 'cancelled') {
       return { background: 'rgba(228,228,231,0.55)', color: muted, borderLeft: '3px solid var(--text3)', textDecoration: 'line-through' };
+    }
+    if (a.color) {
+      const palette = APPOINTMENT_COLOR_PALETTE[a.color];
+      return { background: palette.background, color: palette.foreground, borderLeft: `3px solid ${palette.solid}` };
     }
     return { background: 'rgba(56,189,248,0.18)', color: '#23637b', borderLeft: '3px solid #38bdf8' };
   }
@@ -717,7 +788,57 @@ function WeekTimeGrid ({
   }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `${WEEK_GUTTER_WIDTH}px repeat(7, minmax(132px, 1fr))`,
+          minWidth: '980px',
+          borderTop: `1px solid ${hairline}`,
+          borderBottom: `1px solid ${hairline}`,
+        }}
+      >
+        <div style={{ borderRight: `1px solid ${hairline}` }} />
+        {weekDays.map ((day, idx) => {
+          const today = isTodayLocal (day);
+          return (
+            <div
+              key={`hdr-${day.toISOString ()}`}
+              style={{
+                padding: '8px 8px 7px',
+                borderRight: idx < 6 ? `1px solid ${hairline}` : 'none',
+                textAlign: 'center',
+                color: muted,
+              }}
+            >
+              <div style={{ fontSize: '11px', fontWeight: 500 }}>{WEEKDAYS[day.getDay ()]}</div>
+              <div style={{ marginTop: '2px', fontSize: '11px', fontWeight: 500 }}>
+                {today ? (
+                  <span
+                    aria-label="Today"
+                    style={{
+                      display: 'inline-flex',
+                      minWidth: '19px',
+                      height: '18px',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '4px',
+                      background: 'var(--red)',
+                      color: '#fff',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {day.getDate ()}
+                  </span>
+                ) : (
+                  <span>{MONTHS_SHORT[day.getMonth ()]} {day.getDate ()}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <div
         style={{
           display: 'grid',
@@ -760,8 +881,6 @@ function WeekTimeGrid ({
                 style={{
                   border: 'none',
                   borderRadius: '4px',
-                  background: 'rgba(34,197,94,0.2)',
-                  color: '#2f7d48',
                   cursor: 'pointer',
                   fontSize: '10px',
                   fontWeight: 500,
@@ -771,6 +890,9 @@ function WeekTimeGrid ({
                   textAlign: 'left',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
+                  ...(a.color
+                    ? { background: APPOINTMENT_COLOR_PALETTE[a.color].background, color: APPOINTMENT_COLOR_PALETTE[a.color].foreground }
+                    : { background: 'rgba(34,197,94,0.2)', color: '#2f7d48' }),
                 }}
               >
                 {a.title}
@@ -782,6 +904,7 @@ function WeekTimeGrid ({
 
       <div
         style={{
+          position: 'relative',
           display: 'grid',
           gridTemplateColumns: `${WEEK_GUTTER_WIDTH}px repeat(7, minmax(132px, 1fr))`,
           minWidth: '980px',
@@ -824,6 +947,22 @@ function WeekTimeGrid ({
           ) : null}
         </div>
 
+        {showNowLine && weekDays.some (isTodayLocal) ? (
+          <div
+            aria-label="Current time"
+            style={{
+              position: 'absolute',
+              top: nowTop,
+              left: `${WEEK_GUTTER_WIDTH}px`,
+              right: 0,
+              height: '1px',
+              background: 'var(--red)',
+              pointerEvents: 'none',
+              zIndex: 3,
+            }}
+          />
+        ) : null}
+
         {weekDays.map ((day, idx) => {
           const today = isTodayLocal (day);
           return (
@@ -852,21 +991,6 @@ function WeekTimeGrid ({
                   }}
                 />
               ))}
-
-              {today && showNowLine ? (
-                <div
-                  aria-label="Current time"
-                  style={{
-                    position: 'absolute',
-                    top: nowTop,
-                    left: 0,
-                    right: 0,
-                    height: '1px',
-                    background: 'var(--red)',
-                    zIndex: 2,
-                  }}
-                />
-              ) : null}
 
               {drag && drag.dayIndex === idx && drag.moved ? (
                 <div
@@ -918,6 +1042,78 @@ function WeekTimeGrid ({
   );
 }
 
+function AppointmentColorPicker ({
+  value,
+  onChange,
+  hairline,
+  muted,
+}: {
+  value: AppointmentColor | null;
+  onChange: (next: AppointmentColor | null) => void;
+  hairline: string;
+  muted: string;
+}) {
+  const swatchSize = 22;
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Event color"
+      style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={value == null}
+        aria-label="No color"
+        onClick={() => onChange (null)}
+        title="No color"
+        style={{
+          width: swatchSize,
+          height: swatchSize,
+          borderRadius: '50%',
+          border: `1px ${value == null ? 'solid' : 'dashed'} ${value == null ? 'var(--text)' : hairline}`,
+          padding: 0,
+          background: '#ffffff',
+          color: muted,
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          lineHeight: 0,
+          boxShadow: value == null ? '0 0 0 2px rgba(0,0,0,0.06)' : 'none',
+        }}
+      >
+        <XMarkIcon style={{ width: 12, height: 12 }} aria-hidden />
+      </button>
+      {APPOINTMENT_COLOR_ORDER.map ((c) => {
+        const palette = APPOINTMENT_COLOR_PALETTE[c];
+        const selected = value === c;
+        return (
+          <button
+            key={c}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={palette.label}
+            title={palette.label}
+            onClick={() => onChange (c)}
+            style={{
+              width: swatchSize,
+              height: swatchSize,
+              borderRadius: '50%',
+              border: selected ? `2px solid var(--text)` : '1px solid rgba(0,0,0,0.08)',
+              padding: 0,
+              background: palette.solid,
+              cursor: 'pointer',
+              boxShadow: selected ? '0 0 0 2px rgba(0,0,0,0.08)' : 'none',
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function QuickCreatePopover ({
   range,
   onClose,
@@ -935,6 +1131,7 @@ function QuickCreatePopover ({
     endTime: string;
     location: string | null;
     notes: string | null;
+    color: AppointmentColor | null;
     syncToGoogle: boolean;
   }) => Promise<void>;
   text: string;
@@ -944,6 +1141,7 @@ function QuickCreatePopover ({
   const [title, setTitle] = useState ('');
   const [location, setLocation] = useState ('');
   const [notes, setNotes] = useState ('');
+  const [color, setColor] = useState<AppointmentColor | null> (null);
   const [saving, setSaving] = useState (false);
   const duration = formatDuration (range.startTime, range.endTime);
   const iconStyle: CSSProperties = {
@@ -974,6 +1172,7 @@ function QuickCreatePopover ({
         endTime: range.endTime,
         location: location.trim () || null,
         notes: notes.trim () || null,
+        color,
         syncToGoogle: false,
       });
     } finally {
@@ -1011,7 +1210,7 @@ function QuickCreatePopover ({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '17px', fontWeight: 600 }}>
           Event
-          <ChevronRight style={{ width: '14px', height: '14px', color: muted, transform: 'rotate(90deg)' }} aria-hidden />
+          <ChevronRightIcon style={{ width: '14px', height: '14px', color: muted, transform: 'rotate(90deg)' }} aria-hidden />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
@@ -1037,7 +1236,7 @@ function QuickCreatePopover ({
             onClick={onClose}
             style={{ border: 'none', background: 'transparent', color: muted, cursor: 'pointer', padding: 0, lineHeight: 0 }}
           >
-            <X className="h-5 w-5" strokeWidth={1.8} aria-hidden />
+            <XMarkIcon className="h-5 w-5" aria-hidden />
           </button>
         </div>
       </div>
@@ -1065,7 +1264,7 @@ function QuickCreatePopover ({
 
       <div style={{ borderTop: `1px solid ${hairline}`, padding: '18px', display: 'grid', gap: '14px' }}>
         <div style={rowStyle}>
-          <Clock3 style={iconStyle} strokeWidth={1.8} aria-hidden />
+          <ClockIcon style={iconStyle} aria-hidden />
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '17px' }}>
               <span>{formatTime (range.startTime)}</span>
@@ -1085,19 +1284,19 @@ function QuickCreatePopover ({
 
       <div style={{ borderTop: `1px solid ${hairline}`, padding: '18px', display: 'grid', gap: '16px' }}>
         <div style={rowStyle}>
-          <UserRound style={iconStyle} strokeWidth={1.8} aria-hidden />
+          <UserIcon style={iconStyle} aria-hidden />
           <div style={placeholderStyle}>Participants</div>
         </div>
         <div style={rowStyle}>
-          <CalendarDays style={iconStyle} strokeWidth={1.8} aria-hidden />
+          <CalendarDaysIcon style={iconStyle} aria-hidden />
           <div style={placeholderStyle}>Conferencing</div>
         </div>
         <div style={rowStyle}>
-          <Link2 style={{ ...iconStyle, opacity: 0.5 }} strokeWidth={1.8} aria-hidden />
+          <LinkIcon style={{ ...iconStyle, opacity: 0.5 }} aria-hidden />
           <div style={{ ...placeholderStyle, opacity: 0.55 }}>Add AI meeting notes</div>
         </div>
         <div style={rowStyle}>
-          <MapPin style={iconStyle} strokeWidth={1.8} aria-hidden />
+          <MapPinIcon style={iconStyle} aria-hidden />
           <input
             aria-label="Location"
             placeholder="Location"
@@ -1138,16 +1337,23 @@ function QuickCreatePopover ({
 
       <div style={{ borderTop: `1px solid ${hairline}`, padding: '18px', display: 'grid', gap: '16px' }}>
         <div style={{ ...rowStyle, alignItems: 'center' }}>
-          <span style={{ width: '14px', height: '14px', borderRadius: '4px', background: '#38bdf8', marginLeft: '2px' }} />
-          <div style={{ fontSize: '15px' }}>Workspace calendar</div>
+          <span
+            style={{
+              width: '14px',
+              height: '14px',
+              borderRadius: '4px',
+              background: colorDot (color),
+              marginLeft: '2px',
+            }}
+          />
+          <div style={{ fontSize: '15px' }}>Color</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 1fr', gap: '12px', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: '12px', alignItems: 'center' }}>
           <span />
-          <div style={{ fontSize: '15px' }}>Busy</div>
-          <div style={{ fontSize: '15px' }}>Default visibility</div>
+          <AppointmentColorPicker value={color} onChange={setColor} hairline={hairline} muted={muted} />
         </div>
         <div style={rowStyle}>
-          <Bell style={iconStyle} strokeWidth={1.8} aria-hidden />
+          <BellIcon style={iconStyle} aria-hidden />
           <div>
             <div style={placeholderStyle}>Reminders</div>
             <div style={{ marginTop: '14px', fontSize: '14px' }}>30 min before</div>
@@ -1221,23 +1427,55 @@ function EventPreview ({
   const [endT, setEndT] = useState (() => isoToTimeInput (appointment.endTime));
   const [location, setLocation] = useState (appointment.location ?? '');
   const [notes, setNotes] = useState (appointment.notes ?? '');
+  const [color, setColor] = useState<AppointmentColor | null> (appointment.color);
   const [saving, setSaving] = useState (false);
   const [deleting, setDeleting] = useState (false);
   const [errorMsg, setErrorMsg] = useState<string | null> (null);
+  const [quickColorOpen, setQuickColorOpen] = useState (false);
+  const [savingQuickColor, setSavingQuickColor] = useState (false);
+
+  async function handleQuickColorChange (next: AppointmentColor | null) {
+    if (!onUpdate) return;
+    setSavingQuickColor (true);
+    setErrorMsg (null);
+    try {
+      await onUpdate (appointment.id, {
+        title: appointment.title,
+        clientId: appointment.clientId,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+        location: appointment.location ?? null,
+        notes: appointment.notes ?? null,
+        color: next,
+      });
+      setColor (next);
+      setQuickColorOpen (false);
+    } catch (err) {
+      setErrorMsg (err instanceof Error && err.message ? err.message : 'Could not update color.');
+    } finally {
+      setSavingQuickColor (false);
+    }
+  }
 
   const duration = formatDuration (appointment.startTime, appointment.endTime);
   const lineStyle: CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: '24px 1fr',
-    gap: '12px',
+    gridTemplateColumns: '22px minmax(0, 1fr)',
+    gap: '10px',
     alignItems: 'start',
     color: text,
+  };
+  const lineValueStyle: CSSProperties = {
+    minWidth: 0,
+    wordBreak: 'break-word',
+    overflowWrap: 'anywhere',
   };
   const iconStyle: CSSProperties = {
     width: '18px',
     height: '18px',
     color: 'rgba(0,0,0,0.28)',
     marginTop: '2px',
+    flexShrink: 0,
   };
   const inputBase: CSSProperties = {
     width: '100%',
@@ -1259,6 +1497,7 @@ function EventPreview ({
     setEndT (isoToTimeInput (appointment.endTime));
     setLocation (appointment.location ?? '');
     setNotes (appointment.notes ?? '');
+    setColor (appointment.color);
     setErrorMsg (null);
   }
 
@@ -1284,6 +1523,7 @@ function EventPreview ({
         endTime: endIso,
         location: location.trim () || null,
         notes: notes.trim () || null,
+        color,
       });
       onClose ();
     } catch (err) {
@@ -1325,7 +1565,7 @@ function EventPreview ({
             lineHeight: 0,
           }}
         >
-          <Pencil className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+          <PencilIcon className="h-4 w-4" aria-hidden />
         </button>
       ) : null}
       {canDelete ? (
@@ -1344,7 +1584,7 @@ function EventPreview ({
             lineHeight: 0,
           }}
         >
-          <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+          <TrashIcon className="h-4 w-4" aria-hidden />
         </button>
       ) : null}
       <button
@@ -1361,7 +1601,7 @@ function EventPreview ({
           lineHeight: 0,
         }}
       >
-        <X className="h-5 w-5" strokeWidth={1.8} aria-hidden />
+        <XMarkIcon className="h-5 w-5" aria-hidden />
       </button>
     </div>
   );
@@ -1423,10 +1663,12 @@ function EventPreview ({
         zIndex: 150,
         left: preview.left,
         top: preview.top,
-        width: '360px',
-        maxWidth: 'calc(100vw - 32px)',
+        width: `${preview.width}px`,
+        maxWidth: 'calc(100vw - 24px)',
         maxHeight: `calc(100vh - ${preview.top + 16}px)`,
         overflow: 'auto',
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word',
         background: 'rgba(255,255,255,0.98)',
         border: `1px solid ${hairline}`,
         borderRadius: '16px',
@@ -1517,7 +1759,7 @@ function EventPreview ({
 
           <div style={{ borderTop: `1px solid ${hairline}`, padding: '16px 18px', display: 'grid', gap: '12px' }}>
             <div style={lineStyle}>
-              <Clock3 style={iconStyle} strokeWidth={1.8} aria-hidden />
+              <ClockIcon style={iconStyle} aria-hidden />
               <div style={{ display: 'grid', gap: '8px' }}>
                 <input
                   type="date"
@@ -1548,7 +1790,7 @@ function EventPreview ({
 
             {clientOptions.length > 0 ? (
               <div style={lineStyle}>
-                <UserRound style={iconStyle} strokeWidth={1.8} aria-hidden />
+                <UserIcon style={iconStyle} aria-hidden />
                 <select
                   aria-label="Client"
                   value={clientId ?? ''}
@@ -1566,7 +1808,7 @@ function EventPreview ({
             ) : null}
 
             <div style={lineStyle}>
-              <MapPin style={iconStyle} strokeWidth={1.8} aria-hidden />
+              <MapPinIcon style={iconStyle} aria-hidden />
               <input
                 aria-label="Location"
                 placeholder="Location"
@@ -1574,6 +1816,25 @@ function EventPreview ({
                 onChange={(e) => setLocation (e.target.value)}
                 style={inputBase}
               />
+            </div>
+
+            <div style={lineStyle}>
+              <span
+                aria-hidden
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '4px',
+                  background: colorDot (color),
+                  marginTop: '4px',
+                  marginLeft: '2px',
+                  border: color ? 'none' : `1px solid ${hairline}`,
+                }}
+              />
+              <div>
+                <div style={{ fontSize: '13px', color: muted, marginBottom: '6px' }}>Color</div>
+                <AppointmentColorPicker value={color} onChange={setColor} hairline={hairline} muted={muted} />
+              </div>
             </div>
           </div>
 
@@ -1617,7 +1878,7 @@ function EventPreview ({
                   gap: '6px',
                 }}
               >
-                <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+                <TrashIcon className="h-4 w-4" aria-hidden />
                 Delete event
               </button>
             </div>
@@ -1625,15 +1886,25 @@ function EventPreview ({
         </>
       ) : (
         <>
-          <div style={{ padding: '18px 20px', borderTop: `1px solid ${hairline}`, fontSize: '18px', fontWeight: 500 }}>
+          <div
+            style={{
+              padding: '18px 18px',
+              borderTop: `1px solid ${hairline}`,
+              fontSize: '18px',
+              fontWeight: 500,
+              wordBreak: 'break-word',
+              overflowWrap: 'anywhere',
+              lineHeight: 1.3,
+            }}
+          >
             {appointment.title}
           </div>
 
-          <div style={{ padding: '16px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '14px' }}>
+          <div style={{ padding: '16px 18px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '14px' }}>
             <div style={lineStyle}>
-              <Clock3 style={iconStyle} strokeWidth={1.8} aria-hidden />
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '15px' }}>
+              <ClockIcon style={iconStyle} aria-hidden />
+              <div style={lineValueStyle}>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: '8px', rowGap: '2px', fontSize: '15px' }}>
                   <span>{formatTime (appointment.startTime)}</span>
                   <span style={{ color: muted }}>→</span>
                   <span>{formatTime (appointment.endTime)}</span>
@@ -1644,8 +1915,8 @@ function EventPreview ({
             </div>
 
             <div style={lineStyle}>
-              <UserRound style={iconStyle} strokeWidth={1.8} aria-hidden />
-              <div style={{ fontSize: '14px' }}>
+              <UserIcon style={iconStyle} aria-hidden />
+              <div style={{ ...lineValueStyle, fontSize: '14px' }}>
                 {appointment.clientName || 'No client'}
                 <div style={{ color: muted, marginTop: '2px' }}>Participant</div>
               </div>
@@ -1653,42 +1924,115 @@ function EventPreview ({
 
             {appointment.location ? (
               <div style={lineStyle}>
-                <MapPin style={iconStyle} strokeWidth={1.8} aria-hidden />
-                <div style={{ fontSize: '14px', lineHeight: 1.35 }}>{appointment.location}</div>
+                <MapPinIcon style={iconStyle} aria-hidden />
+                <div style={{ ...lineValueStyle, fontSize: '14px', lineHeight: 1.35 }}>{appointment.location}</div>
               </div>
             ) : null}
           </div>
 
           {appointment.notes ? (
-            <div style={{ padding: '16px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '12px' }}>
+            <div style={{ padding: '16px 18px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '12px' }}>
               <div style={lineStyle}>
-                <Link2 style={iconStyle} strokeWidth={1.8} aria-hidden />
-                <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{appointment.notes}</div>
+                <LinkIcon style={iconStyle} aria-hidden />
+                <div style={{ ...lineValueStyle, fontSize: '14px', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
+                  {appointment.notes}
+                </div>
               </div>
             </div>
           ) : null}
 
-          <div style={{ padding: '14px 20px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '12px' }}>
+          <div style={{ padding: '14px 18px', borderTop: `1px solid ${hairline}`, display: 'grid', gap: '12px' }}>
             <div style={lineStyle}>
-              <CalendarDays style={{ ...iconStyle, color: 'var(--neutral)' }} strokeWidth={1.8} aria-hidden />
-              <div style={{ fontSize: '14px' }}>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '4px',
-                    background: appointment.status === 'confirmed' ? 'var(--green)' : 'var(--neutral)',
-                    marginRight: '10px',
-                    verticalAlign: '-1px',
-                  }}
-                />
-                Workspace calendar
+              <CalendarDaysIcon style={{ ...iconStyle, color: 'var(--neutral)' }} aria-hidden />
+              <div style={{ ...lineValueStyle, fontSize: '14px' }}>
+                {canEdit ? (
+                  <button
+                    type="button"
+                    onClick={() => setQuickColorOpen ((v) => !v)}
+                    aria-expanded={quickColorOpen}
+                    aria-label="Change color category"
+                    title="Change color"
+                    disabled={savingQuickColor}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      background: 'transparent',
+                      border: 'none',
+                      padding: '2px 6px',
+                      margin: '-2px -6px',
+                      borderRadius: '6px',
+                      color: text,
+                      cursor: savingQuickColor ? 'default' : 'pointer',
+                      font: 'inherit',
+                      fontSize: '14px',
+                      textAlign: 'left',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.045)';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        width: '12px',
+                        height: '12px',
+                        borderRadius: '4px',
+                        background: colorDot (appointment.color),
+                        verticalAlign: '-1px',
+                      }}
+                      aria-hidden
+                    />
+                    <span>
+                      {appointment.color
+                        ? APPOINTMENT_COLOR_PALETTE[appointment.color].label
+                        : 'Workspace calendar'}
+                    </span>
+                    <span style={{ color: muted, fontSize: '12px', marginLeft: '4px' }}>
+                      {quickColorOpen ? '▴' : '▾'}
+                    </span>
+                  </button>
+                ) : (
+                  <>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        width: '12px',
+                        height: '12px',
+                        borderRadius: '4px',
+                        background: colorDot (appointment.color),
+                        marginRight: '10px',
+                        verticalAlign: '-1px',
+                      }}
+                    />
+                    {appointment.color
+                      ? APPOINTMENT_COLOR_PALETTE[appointment.color].label
+                      : 'Workspace calendar'}
+                  </>
+                )}
+                {canEdit && quickColorOpen ? (
+                  <div style={{ marginTop: '10px' }}>
+                    <AppointmentColorPicker
+                      value={appointment.color}
+                      onChange={(next) => {
+                        if (!savingQuickColor) void handleQuickColorChange (next);
+                      }}
+                      hairline={hairline}
+                      muted={muted}
+                    />
+                    {savingQuickColor ? (
+                      <div style={{ fontSize: '12px', color: muted, marginTop: '6px' }}>Saving…</div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
             <div style={lineStyle}>
-              <Bell style={iconStyle} strokeWidth={1.8} aria-hidden />
-              <div style={{ fontSize: '14px', color: muted }}>Reminders</div>
+              <BellIcon style={iconStyle} aria-hidden />
+              <div style={{ ...lineValueStyle, fontSize: '14px', color: muted }}>Reminders</div>
             </div>
           </div>
         </>

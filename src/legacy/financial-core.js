@@ -454,6 +454,15 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
     }
   }
 
+  window.bizDashReloadUserUiPreferences = async function () {
+    var rawUiPayload = await fetchUserUiPreferencesPayload();
+    userUiPrefsCache = normalizeUserUiPayload(rawUiPayload);
+    if (userUiPrefsCache.preferences != null && userUiPrefsCache.preferences !== undefined) {
+      applyPreferencesToForm(userUiPrefsCache.preferences);
+      applyPreferencesRuntime(userUiPrefsCache.preferences);
+    }
+  };
+
   var SIDEBAR_NAV_PAGE_DEFS = [
     { id: 'customers', label: 'Customers' },
     { id: 'scheduling', label: 'Calendar' },
@@ -2537,6 +2546,30 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
     }
   }
 
+  /** Browser-reported IANA timezone (e.g. "America/New_York"). Falls back to the workspace default. */
+  function detectBrowserTimezone() {
+    try {
+      if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (isValidTimeZone(tz)) return tz;
+      }
+    } catch (_) {}
+    return getDefaultPreferences().timezone;
+  }
+
+  /** Effective IANA timezone for scheduled features. Honors `timezoneAuto` from preferences. */
+  function getEffectiveTimezoneFromPrefs(prefs) {
+    var p = prefs && typeof prefs === 'object' ? prefs : (window.__bizdashPreferences || getDefaultPreferences());
+    if (p.timezoneAuto) return detectBrowserTimezone();
+    if (isValidTimeZone(p.timezone)) return p.timezone;
+    return getDefaultPreferences().timezone;
+  }
+
+  window.bizDashDetectBrowserTimezone = detectBrowserTimezone;
+  window.bizDashGetEffectiveTimezone = function () {
+    return getEffectiveTimezoneFromPrefs(window.__bizdashPreferences);
+  };
+
   function normalizePreferences(inP) {
     var d = getDefaultPreferences();
     var p = inP && typeof inP === 'object' ? inP : {};
@@ -2615,8 +2648,29 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
     if (tz) {
       setTimezoneComboboxFromHiddenId('pref-timezone', prefs.timezone);
       setPrefTimezoneComboboxInteractive(!prefs.timezoneAuto);
+      updatePrefTimezoneAutoDisplay(prefs.timezoneAuto);
     }
     syncProfileWeekSelectFromMainCheckbox();
+  }
+
+  /**
+   * When `timezoneAuto` is on we keep the saved manual TZ in the hidden input
+   * (so toggling auto off restores the user's choice) but overlay the
+   * browser-detected TZ in the visible combobox input so the user can see
+   * what's actually being applied.
+   */
+  function updatePrefTimezoneAutoDisplay(autoOn) {
+    var hid = document.getElementById('pref-timezone');
+    var inp = document.getElementById('pref-timezone-input');
+    if (!hid || !inp) return;
+    if (autoOn) {
+      var detected = detectBrowserTimezone();
+      inp.value = detected;
+      inp.setAttribute('placeholder', detected);
+    } else {
+      inp.value = hid.value || '';
+      inp.removeAttribute('placeholder');
+    }
   }
 
   /** Keep Profile "Start week on" aligned with General → Calendar toggle (same settings modal). */
@@ -2671,6 +2725,19 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
       root.lang = prefs.language;
     }
     setPrefTimezoneComboboxInteractive(!prefs.timezoneAuto);
+    updatePrefTimezoneAutoDisplay(prefs.timezoneAuto);
+    var effectiveTz = getEffectiveTimezoneFromPrefs(prefs);
+    var previousEffectiveTz = window.__bizdashEffectiveTimezone || '';
+    window.__bizdashEffectiveTimezone = effectiveTz;
+    root.dataset.effectiveTimezone = effectiveTz;
+    if (effectiveTz !== previousEffectiveTz) {
+      try {
+        window.dispatchEvent(new CustomEvent('bizdash:effective-timezone', {
+          detail: { timezone: effectiveTz, auto: !!prefs.timezoneAuto },
+        }));
+      } catch (_) {}
+    }
+    try { refreshSidebarBrandLogoSlot(); } catch (_) {}
   }
 
   function getFallbackTimeZones() {
@@ -3118,6 +3185,12 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
     renderWorkspaceIconPreview();
   }
 
+  function bizdashToHeroiconsKebab(kebab) {
+    var br = window.bizDashIconBranding;
+    if (br && typeof br.toHeroiconsKebab === 'function') return br.toHeroiconsKebab(kebab);
+    return String(kebab || '').trim().toLowerCase();
+  }
+
   function parseWorkspaceIconIconify(raw) {
     var s = String(raw || '').trim();
     if (!s) return '';
@@ -3125,15 +3198,32 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
     if (idx < 1) return '';
     var pre = s.slice(0, idx).toLowerCase();
     var name = s.slice(idx + 1).trim().toLowerCase();
-    if (pre !== 'lucide' || !name) return '';
+    if ((pre !== 'lucide' && pre !== 'heroicons') || !name) return '';
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) return '';
-    return 'lucide:' + name;
+    if (pre === 'lucide') name = bizdashToHeroiconsKebab(name);
+    return 'heroicons:' + name;
   }
 
-  function lucideIconifySvgImgSrc(iconName) {
-    var n = String(iconName || '').trim().toLowerCase();
+  function heroiconIconifyCollection(token, iconStyle, icon) {
+    var br = window.bizDashIconBranding;
+    var variant =
+      br && typeof br.resolveHeroiconsVariant === 'function'
+        ? br.resolveHeroiconsVariant(token, iconStyle, icon)
+        : 'solid';
+    return variant === 'outline' ? 'heroicons-outline' : 'heroicons-solid';
+  }
+
+  function heroiconIconifySvgImgSrc(iconName, token, iconStyle, icon) {
+    var n = bizdashToHeroiconsKebab(iconName);
     if (!n) return '';
-    return 'https://api.iconify.design/lucide/' + encodeURIComponent(n) + '.svg';
+    var col = heroiconIconifyCollection(token, iconStyle, icon);
+    return 'https://api.iconify.design/' + col + '/' + encodeURIComponent(n) + '.svg';
+  }
+
+  function heroiconIconifySvgImgSrcSimple(iconName) {
+    var n = bizdashToHeroiconsKebab(iconName);
+    if (!n) return '';
+    return 'https://api.iconify.design/heroicons-solid/' + encodeURIComponent(n) + '.svg';
   }
 
   async function renderWorkspaceIconPreview() {
@@ -3153,11 +3243,11 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
       img.src = resolved || url;
       prev.appendChild(img);
     } else if (iconify) {
-      var nm = iconify.slice('lucide:'.length);
+      var nm = iconify.indexOf(':') >= 0 ? iconify.slice(iconify.indexOf(':') + 1) : iconify;
       var imgI = document.createElement('img');
       imgI.alt = '';
       imgI.loading = 'lazy';
-      imgI.src = lucideIconifySvgImgSrc(nm);
+      imgI.src = heroiconIconifySvgImgSrcSimple(nm);
       imgI.width = 22;
       imgI.height = 22;
       prev.appendChild(imgI);
@@ -3459,9 +3549,44 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
     if (nextSrc) img.src = nextSrc;
     if (light) img.setAttribute('data-logo-light', light);
     if (dark) img.setAttribute('data-logo-dark', dark);
+    try { refreshSidebarBrandLogoSlot(); } catch (_) {}
   }
 
   window.bizdashApplyBrandLogoToShell = applyBrandLogo;
+
+  function bizdashEffectiveColorScheme() {
+    try {
+      var ds = document.documentElement && document.documentElement.dataset;
+      var declared = ds && ds.colorScheme ? String(ds.colorScheme).toLowerCase() : '';
+      if (declared === 'dark') return 'dark';
+      if (declared === 'light') return 'light';
+    } catch (_) {}
+    try {
+      var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+      if (mq && mq.matches) return 'dark';
+    } catch (_) {}
+    return 'light';
+  }
+
+  function currentBrandLogoUrl() {
+    var holder = document.getElementById('sb-brand-img');
+    if (!holder) return '';
+    var light = String(holder.getAttribute('data-logo-light') || '').trim();
+    var dark = String(holder.getAttribute('data-logo-dark') || '').trim();
+    var scheme = bizdashEffectiveColorScheme();
+    if (scheme === 'dark') return dark || light;
+    return light || dark;
+  }
+
+  /**
+   * Re-run the unified workspace-monogram pipeline. When a brand logo is set,
+   * it preempts the per-workspace icon (URL / iconify / emoji / fallback letter).
+   */
+  function refreshSidebarBrandLogoSlot() {
+    try { void refreshWorkspaceSidebarMonogramFromPrefs(); } catch (_) {}
+  }
+
+  window.bizdashRefreshSidebarBrandLogoSlot = refreshSidebarBrandLogoSlot;
 
   /** Signed URL lifetime for private brand-assets bucket (see supabase/brand_assets_org_rls.sql). */
   var BRAND_LOGO_SIGNED_URL_TTL_SEC = 60 * 60 * 24 * 7;
@@ -4411,44 +4536,10 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
     if (!root || root.getAttribute('data-emails-wired') === '1') return;
     root.setAttribute('data-emails-wired', '1');
 
-    var modal = document.getElementById('eml-compose-modal');
-    var inpTo = document.getElementById('eml-compose-to');
-    var inpSub = document.getElementById('eml-compose-subject');
-    var inpBody = document.getElementById('eml-compose-body');
-    var errEl = document.getElementById('eml-compose-err');
-    var btnSend = document.getElementById('eml-compose-send');
-    var btnCancel = document.getElementById('eml-compose-cancel');
-    var btnSaveTpl = document.getElementById('eml-compose-save-template');
-    var selTpl = document.getElementById('eml-compose-template');
-    var composeTemplateById = {};
-
-    function outboxStorageKey() {
-      var org = getCurrentOrgId();
-      return 'bizdash:emails:outbox:' + String(org || 'default');
-    }
-    function loadOutboxEntries() {
-      try {
-        var raw = localStorage.getItem(outboxStorageKey());
-        var arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr : [];
-      } catch (_) {
-        return [];
-      }
-    }
-    function saveOutboxEntries(entries) {
-      try {
-        localStorage.setItem(outboxStorageKey(), JSON.stringify(Array.isArray(entries) ? entries : []));
-      } catch (_) {}
-    }
-    function outboxWhenLabel(iso) {
-      var d = iso ? new Date(iso) : null;
-      if (!d || isNaN(d.getTime())) return 'Just now';
-      return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-    }
     function animateEmailsPanelContent(panel) {
       if (!panel || prefersReducedMotion()) return;
       var nodes = panel.querySelectorAll(
-        '.eml-empty > .eml-empty-illus-wrap, .eml-empty > .eml-empty-title, .eml-empty > .eml-empty-sub, .eml-empty > .eml-btn-compose, .eml-empty > .bizdash-advisor-cta-wrap, .eml-list > article',
+        '.eml-empty > .eml-empty-illus-wrap, .eml-empty > .eml-empty-title, .eml-empty > .eml-empty-sub, .eml-empty > .eml-btn-compose, .eml-empty > .bizdash-advisor-cta-wrap, .eml-list > article, .eml-list-card',
       );
       var cap = Math.min(nodes.length, 14);
       for (var i = 0; i < cap; i += 1) {
@@ -4460,352 +4551,21 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
         node.classList.add('motion-in');
       }
     }
-    function renderOutboxPanel() {
-      var panel = root.querySelector('[data-eml-panel="outbox"]');
-      if (!panel) return;
-      var countEl = root.querySelector('[data-eml-count="outbox"]');
-      var entries = loadOutboxEntries();
-      if (countEl) countEl.textContent = String(entries.length);
-      if (!entries.length) {
-        panel.innerHTML =
-          '<div class="eml-empty">' +
-          '<div class="eml-empty-illus-wrap" aria-hidden="true">' +
-          '<svg class="eml-empty-illus" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-          '<path d="M12 40 L32 22 L52 40 L52 52 L12 52 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>' +
-          '<path d="M32 22 L32 52" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.45"/>' +
-          '<path d="M22 36 L42 36" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.45"/>' +
-          '</svg>' +
-          '</div>' +
-          '<h2 class="eml-empty-title">Outbox</h2>' +
-          '<p class="eml-empty-sub">Nothing in your outbox yet. Sent messages will appear here.</p>' +
-          '<button type="button" class="eml-btn-compose" data-eml-compose>Compose email</button>' +
-          '<p class="bizdash-advisor-cta-wrap"><button type="button" class="btn bizdash-advisor-cta" data-bizdash-advisor-cta="1" data-advisor-prefill="Suggest subject lines and a short email I can send after a meeting.">Draft with Advisor</button></p>' +
-          '</div>';
-        panel.querySelectorAll('[data-eml-compose]').forEach(function (btn) {
-          btn.addEventListener('click', openComposeModal);
-        });
+
+    window.bizDashOpenEmailComposer = function (prefill) {
+      if (window.__emailCompose && typeof window.__emailCompose.open === 'function') {
+        window.__emailCompose.open(prefill);
         return;
       }
-      panel.innerHTML =
-        '<div class="eml-list" style="display:flex;flex-direction:column;gap:10px;">' +
-        entries
-          .map(function (m) {
-            var to = esc(String(m.to || ''));
-            var subject = esc(String(m.subject || '(No subject)'));
-            var body = esc(String(m.body || ''));
-            var when = esc(outboxWhenLabel(m.sentAt));
-            var link = m.gmailUrl
-              ? '<a href="' +
-                esc(String(m.gmailUrl)) +
-                '" target="_blank" rel="noopener noreferrer" style="font-size:12px;text-decoration:underline;color:inherit;">Open in Gmail</a>'
-              : '';
-            return (
-              '<article style="border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--bg2);">' +
-              '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">' +
-              '<div style="min-width:0;">' +
-              '<div style="font-size:13px;font-weight:600;line-height:1.35;word-break:break-word;">' +
-              subject +
-              '</div>' +
-              '<div style="font-size:12px;color:var(--text3);margin-top:3px;word-break:break-word;">To: ' +
-              to +
-              '</div>' +
-              '</div>' +
-              '<div style="font-size:11px;color:var(--text3);white-space:nowrap;">' +
-              when +
-              '</div>' +
-              '</div>' +
-              (body
-                ? '<div style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.45;white-space:pre-wrap;word-break:break-word;">' +
-                  body +
-                  '</div>'
-                : '') +
-              (link ? '<div style="margin-top:8px;">' + link + '</div>' : '') +
-              '</article>'
-            );
-          })
-          .join('') +
-        '</div>';
-    }
-
-    function showComposeErr(msg) {
-      if (!errEl) return;
-      if (msg) {
-        errEl.textContent = msg;
-        errEl.style.display = 'block';
-      } else {
-        errEl.textContent = '';
-        errEl.style.display = 'none';
+      alert('Email composer is not ready yet. Open the Emails page once and try again.');
+    };
+    window.__bizdashCloseEmlComposeModal = function () {
+      if (window.__emailCompose && typeof window.__emailCompose.close === 'function') {
+        window.__emailCompose.close();
       }
-    }
-
-    function closeComposeModal() {
-      if (modal) modal.classList.remove('on');
-      showComposeErr('');
-    }
-    window.__bizdashCloseEmlComposeModal = closeComposeModal;
-
-    async function refreshComposeTemplateSelect() {
-      composeTemplateById = {};
-      if (!selTpl) return;
-      selTpl.innerHTML = '';
-      var opt0 = document.createElement('option');
-      opt0.value = '';
-      opt0.textContent = '— Load template —';
-      selTpl.appendChild(opt0);
-      supabase = window.supabaseClient || supabase;
-      if (!supabase || !getCurrentOrgId() || isDemoDashboardUser()) return;
-      try {
-        var row = await fetchAppSettingsFromSupabase();
-        var list =
-          row &&
-          row.dashboard_settings &&
-          Array.isArray(row.dashboard_settings.email_templates)
-            ? row.dashboard_settings.email_templates
-            : [];
-        list.forEach(function (t) {
-          if (!t || !t.id) return;
-          composeTemplateById[t.id] = t;
-          var o = document.createElement('option');
-          o.value = String(t.id);
-          o.textContent = String(t.name || t.subject || 'Template').slice(0, 120);
-          selTpl.appendChild(o);
-        });
-      } catch (_) {}
-      selTpl.value = '';
-    }
-
-    function openComposeModal() {
-      if (!modal) return;
-      if (inpTo) inpTo.value = '';
-      if (inpSub) inpSub.value = '';
-      if (inpBody) inpBody.value = '';
-      showComposeErr('');
-      if (btnSend) {
-        btnSend.disabled = false;
-        btnSend.textContent = 'Send';
-      }
-      modal.classList.add('on');
-      void refreshComposeTemplateSelect();
-      if (inpTo) inpTo.focus();
-    }
-    function openComposeModalWithPrefill(prefill) {
-      openComposeModal();
-      var p = prefill && typeof prefill === 'object' ? prefill : {};
-      if (inpTo && p.to != null) inpTo.value = String(p.to || '');
-      if (inpSub && p.subject != null) inpSub.value = String(p.subject || '');
-      if (inpBody && p.body != null) inpBody.value = String(p.body || '');
-      if (inpTo && String(inpTo.value || '').trim()) inpTo.focus();
-      else if (inpSub) inpSub.focus();
-    }
-    window.bizDashOpenEmailComposer = openComposeModalWithPrefill;
-
-    if (selTpl && selTpl.getAttribute('data-eml-template-wired') !== '1') {
-      selTpl.setAttribute('data-eml-template-wired', '1');
-      selTpl.addEventListener('change', function () {
-        var id = String(selTpl.value || '').trim();
-        var t = composeTemplateById[id];
-        if (!t) return;
-        if (inpTo) inpTo.value = t.to != null ? String(t.to) : '';
-        if (inpSub) inpSub.value = t.subject != null ? String(t.subject) : '';
-        if (inpBody) inpBody.value = t.body != null ? String(t.body) : '';
-      });
-    }
-
-    root.querySelectorAll('[data-eml-compose]').forEach(function (btn) {
-      btn.addEventListener('click', openComposeModal);
-    });
-    renderOutboxPanel();
-
-    if (btnCancel) {
-      btnCancel.addEventListener('click', closeComposeModal);
-    }
-
-    if (btnSaveTpl && btnSaveTpl.getAttribute('data-eml-save-template-wired') !== '1') {
-      btnSaveTpl.setAttribute('data-eml-save-template-wired', '1');
-      btnSaveTpl.addEventListener('click', async function () {
-        var supa = window.supabaseClient;
-        var sessRes = supa ? await supa.auth.getSession() : null;
-        var sess = sessRes && sessRes.data ? sessRes.data.session : null;
-        if (!sess || !sess.access_token) {
-          showComposeErr('Sorry, we could not complete your request.');
-          return;
-        }
-        if (!getCurrentOrgId() || isDemoDashboardUser()) {
-          alert('Open a workspace first.');
-          return;
-        }
-        var subject = inpSub ? String(inpSub.value || '').trim() : '';
-        var body = inpBody ? String(inpBody.value || '').trim() : '';
-        if (!subject && !body) {
-          showComposeErr('Add a subject or message before saving as a template.');
-          return;
-        }
-        showComposeErr('');
-        var defaultName = subject ? subject.slice(0, 80) : 'Template';
-        var name = window.prompt('Template name', defaultName);
-        if (name == null) return;
-        name = String(name).trim();
-        if (!name) {
-          alert('Name is required.');
-          return;
-        }
-        var toVal = inpTo ? String(inpTo.value || '').trim() : '';
-        supabase = window.supabaseClient || supabase;
-        try {
-          var row = await fetchAppSettingsFromSupabase();
-          var dash =
-            row && row.dashboard_settings && typeof row.dashboard_settings === 'object'
-              ? JSON.parse(JSON.stringify(row.dashboard_settings))
-              : {};
-          var list = Array.isArray(dash.email_templates) ? dash.email_templates.slice() : [];
-          var id = 'et_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
-          list.push({
-            id: id,
-            name: name,
-            subject: subject,
-            body: body,
-            to: toVal,
-            updated_at: new Date().toISOString(),
-          });
-          while (list.length > 50) list.shift();
-          dash.email_templates = list;
-          var ps = row && row.project_statuses != null ? row.project_statuses : projectStatuses;
-          var up = await supabase.from('app_settings').upsert(
-            {
-              organization_id: getCurrentOrgId(),
-              project_statuses: ps,
-              dashboard_settings: dash,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'organization_id' }
-          );
-          if (up.error) {
-            console.error('save email template', up.error);
-            alert('Could not save template. Try again.');
-            return;
-          }
-          await refreshComposeTemplateSelect();
-          if (selTpl) selTpl.value = id;
-          composeTemplateById[id] = list[list.length - 1];
-          var bar = document.getElementById('app-invite-flash');
-          if (bar) {
-            bar.textContent = 'Template saved for this workspace.';
-            bar.style.display = 'block';
-            window.setTimeout(function () {
-              bar.style.display = 'none';
-              bar.textContent = '';
-            }, 5000);
-          }
-        } catch (e) {
-          console.warn('save email template', e);
-          alert('Could not save template.');
-        }
-      });
-    }
-
-    if (btnSend && btnSend.getAttribute('data-eml-compose-send-wired') !== '1') {
-      btnSend.setAttribute('data-eml-compose-send-wired', '1');
-      btnSend.addEventListener('click', async function () {
-        var supa = window.supabaseClient;
-        var sessRes = supa ? await supa.auth.getSession() : null;
-        var sess = sessRes && sessRes.data ? sessRes.data.session : null;
-        if (!sess || !sess.access_token) {
-          alert('Sign in first.');
-          return;
-        }
-        var base = typeof window.__bizdashSupabaseUrl === 'string' ? window.__bizdashSupabaseUrl.trim().replace(/\/$/, '') : '';
-        var anon = typeof window.__bizdashSupabaseAnonKey === 'string' ? window.__bizdashSupabaseAnonKey.trim() : '';
-        if (!base || !anon) {
-          showComposeErr('Sorry, we could not complete your request.');
-          return;
-        }
-        var orgId = getCurrentOrgId();
-        if (!orgId || !String(orgId).trim()) {
-          showComposeErr('Sorry, we could not complete your request.');
-          return;
-        }
-        var to = inpTo ? String(inpTo.value || '').trim() : '';
-        var subject = inpSub ? String(inpSub.value || '').trim() : '';
-        var body = inpBody ? String(inpBody.value || '').trim() : '';
-        if (!to || !subject || !body) {
-          showComposeErr('Fill in To, Subject, and Message.');
-          return;
-        }
-        showComposeErr('');
-        btnSend.disabled = true;
-        var origLabel = btnSend.textContent;
-        btnSend.textContent = 'Sending…';
-        try {
-          var res = await fetch(base + '/functions/v1/gmail-send', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: 'Bearer ' + sess.access_token,
-              apikey: anon,
-            },
-            body: JSON.stringify({
-              organization_id: orgId,
-              to: to,
-              subject: subject,
-              body: body,
-            }),
-          });
-          var j = {};
-          try {
-            j = await res.json();
-          } catch (_) {}
-          if (!res.ok || (j && j.error)) {
-            var err = j.error ? String(j.error) : 'send_failed';
-            var det = j.detail ? String(j.detail) : '';
-            if (err === 'not_connected') {
-              showComposeErr('Connect Gmail first: open Settings → Connections, then use Get started.');
-            } else {
-              showComposeErr(det || 'Sorry, we could not complete your request.');
-            }
-            btnSend.disabled = false;
-            btnSend.textContent = origLabel;
-            return;
-          }
-          var tid = j.threadId ? String(j.threadId) : '';
-          var gurl = tid
-            ? 'https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(tid)
-            : 'https://mail.google.com/mail/u/0/#sent';
-          var sent = {
-            id: 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
-            to: to,
-            subject: subject,
-            body: body,
-            sentAt: new Date().toISOString(),
-            threadId: tid,
-            gmailUrl: gurl,
-          };
-          var outbox = loadOutboxEntries();
-          outbox.unshift(sent);
-          while (outbox.length > 200) outbox.pop();
-          saveOutboxEntries(outbox);
-          renderOutboxPanel();
-          closeComposeModal();
-          var bar = document.getElementById('app-invite-flash');
-          if (bar) {
-            bar.innerHTML =
-              'Message sent. <a href="' +
-              gurl +
-              '" target="_blank" rel="noopener noreferrer" style="color:inherit;font-weight:600;text-decoration:underline;">Open in Gmail</a>';
-            bar.style.display = 'block';
-            window.setTimeout(function () {
-              bar.style.display = 'none';
-              bar.textContent = '';
-            }, 14000);
-          } else {
-            alert('Message sent.');
-          }
-        } catch (e) {
-          console.warn('gmail-send', e);
-          showComposeErr('Sorry, we could not complete your request.');
-        }
-        btnSend.disabled = false;
-        btnSend.textContent = origLabel;
-      });
+    };
+    if (typeof window.bizDashMountEmailCompose === 'function') {
+      window.bizDashMountEmailCompose();
     }
 
     root.querySelectorAll('[data-eml-tab]').forEach(function (tab) {
@@ -4837,14 +4597,6 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
       p.setAttribute('aria-hidden', on ? 'false' : 'true');
     });
 
-    var help = root.querySelector('[data-eml-help]');
-    if (help) {
-      help.addEventListener('click', function (ev) {
-        ev.preventDefault();
-        var learn = root.querySelector('.eml-learn');
-        if (learn) learn.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
   }
 
   function wireWorkflowAutomation() {
@@ -5267,7 +5019,7 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl,
     }
     var selectors =
       '.ph, .kg .kc, .card, .ts-kpi, .bva-row, .spend-chart-wrap, .dt tbody tr, ' +
-      '.eml-topbar, .eml-panel.on, .eml-learn, ' +
+      '.eml-topbar, .eml-panel.on, ' +
       /* Scheduling (React island): stagger header → subnav → body like other tabs */
       '.scheduling-root > .ph, .scheduling-root > nav, .scheduling-root > p, .scheduling-root > div:not(.pointer-events-none), ' +
       /* Meeting Notes (React island): animate top-level blocks like other tabs */
@@ -5574,7 +5326,11 @@ var incomePowerState = {
       if (def.id === 'chat') {
         setOrder(document.getElementById('nav-lbl-chats'), base);
         setOrder(document.getElementById('chats-sb-wrap'), base + 1);
-        setOrder(sb.querySelector('.ni[data-nav="chat"]'), base + 2);
+        return;
+      }
+      if (def.id === 'meeting-notes') {
+        setOrder(document.getElementById('nav-lbl-meeting-notes'), base);
+        setOrder(document.getElementById('mnotes-sb-wrap'), base + 1);
         return;
       }
       setOrder(sb.querySelector('.ni[data-nav="' + def.id + '"]'), base);
@@ -5607,7 +5363,9 @@ var incomePowerState = {
       } else if (id === 'chat') {
         setSbNavDisplay(document.getElementById('nav-lbl-chats'), h);
         setSbNavDisplay(document.getElementById('chats-sb-wrap'), h);
-        setSbNavDisplay(sb.querySelector('.ni[data-nav="chat"]'), h);
+      } else if (id === 'meeting-notes') {
+        setSbNavDisplay(document.getElementById('nav-lbl-meeting-notes'), h);
+        setSbNavDisplay(document.getElementById('mnotes-sb-wrap'), h);
       } else {
         setSbNavDisplay(sb.querySelector('.ni[data-nav="' + id + '"]'), h);
       }
@@ -6452,7 +6210,7 @@ var incomePowerState = {
           '<div>' +
             '<div style="font-size:13px;color:var(--text2);line-height:1.5;">' +
               'No monthly budgets set yet. ' +
-              '<a href="#" onclick="window.nav(\'settings\');return false;" style="color:var(--coral);text-decoration:none;font-weight:500;">Set budgets in Settings →</a>' +
+              '<a href="#" data-nav="settings" data-nav-prevent-default style="color:var(--coral);text-decoration:none;font-weight:500;">Set budgets in Settings →</a>' +
             '</div>' +
           '</div>' +
           '<div style="font-size:12px;color:var(--text3);">' + monthLabel + ' · ' + fmtCurrency(totalActual) + ' spent</div>' +
@@ -7615,8 +7373,9 @@ var incomePowerState = {
       if (dirLink) dirLink.style.display = panelId === 'people' ? 'inline-flex' : 'none';
       if (panelId === 'account') refreshAccountSecurityUiFromServer();
       if (panelId === 'workspace') hydrateWorkspaceSettingsFields();
-      if (panelId === 'people' && typeof window.refreshTeamPage === 'function') {
-        window.refreshTeamPage();
+      if (panelId === 'people') {
+        if (typeof wirePeopleSettingsUi === 'function') wirePeopleSettingsUi();
+        if (typeof window.refreshTeamPage === 'function') window.refreshTeamPage();
       }
       if (panelId === 'refer-earn' && typeof window.refreshReferEarnPanel === 'function') {
         window.refreshReferEarnPanel();
@@ -9471,7 +9230,7 @@ var incomePowerState = {
     // Budget alerts → spending
     var hasAnyBudget = (budgets.lab + budgets.sw + budgets.ads + budgets.oth) > 0;
     if (!hasAnyBudget && allTxs.length > 0) {
-      spendAlerts.push({ type: 'info', msg: 'No monthly budgets set. <a href="#" onclick="window.nav(\'settings\');return false;" style="color:var(--blue);font-weight:500;text-decoration:none;">Set budgets in Settings</a> to track spending targets.' });
+      spendAlerts.push({ type: 'info', msg: 'No monthly budgets set. <a href="#" data-nav="settings" data-nav-prevent-default style="color:var(--blue);font-weight:500;text-decoration:none;">Set budgets in Settings</a> to track spending targets.' });
     } else if (hasAnyBudget) {
       var budgetActual = { lab: 0, sw: 0, ads: 0, oth: 0 };
       allTxs.forEach(function (tx) {
@@ -16475,12 +16234,35 @@ var incomePowerState = {
       populateProjectClientOptions();
       populateProjectStatusOptions();
       m.classList.add('on');
+      if (typeof window.__bizdashProjectModalEscHandler === 'function') {
+        document.removeEventListener('keydown', window.__bizdashProjectModalEscHandler);
+      }
+      window.__bizdashProjectModalEscHandler = function (ev) {
+        if (ev.key === 'Escape' && m.classList.contains('on')) {
+          ev.stopPropagation();
+          closeProjectModal();
+        }
+      };
+      document.addEventListener('keydown', window.__bizdashProjectModalEscHandler);
     }
 
     function closeProjectModal() {
       var m = $('projectModal');
       if (m) m.classList.remove('on');
+      if (typeof window.__bizdashProjectModalEscHandler === 'function') {
+        document.removeEventListener('keydown', window.__bizdashProjectModalEscHandler);
+        window.__bizdashProjectModalEscHandler = null;
+      }
     }
+
+    (function wireProjectModalDismissOnce() {
+      var m = $('projectModal');
+      if (!m || m.getAttribute('data-dismiss-wired') === '1') return;
+      m.setAttribute('data-dismiss-wired', '1');
+      m.addEventListener('mousedown', function (ev) {
+        if (ev.target === m) closeProjectModal();
+      });
+    })();
 
     function openStatusModal() {
       var m = $('statusModal');
@@ -17195,6 +16977,9 @@ var incomePowerState = {
       renderListsSidebar();
       renderListsPageGrid();
       renderChatsSidebar();
+      recentMeetingNotesCache = [];
+      recentMeetingNotesFetchedKey = '';
+      renderMeetingNotesSidebar();
     }
     if (typeof window.refreshSidebarWorkspaceChrome === 'function') {
       window.refreshSidebarWorkspaceChrome();
@@ -17565,6 +17350,39 @@ var incomePowerState = {
       if (stBody) stBody.innerHTML = teamMemberRowsHtml(members || [], canManage, myRole);
       if (sh) sh.textContent = hintLine || '';
       if (tha) tha.style.display = canManage ? '' : 'none';
+      // Toggle invite controls visibility based on caller's permissions.
+      var inviteCard = document.querySelector('.settings-people-invite-card');
+      var addBtn = document.getElementById('settings-people-add-main');
+      if (inviteCard) inviteCard.style.display = canManage ? '' : 'none';
+      if (addBtn) addBtn.style.display = canManage ? '' : 'none';
+    }
+    function syncSettingsPeoplePendingInvites(invitations, canManage) {
+      var card = document.getElementById('settings-people-pending-card');
+      var body = document.getElementById('settings-people-pending-body');
+      if (!card || !body) return;
+      if (!canManage || !invitations || !invitations.length) {
+        card.hidden = true;
+        body.innerHTML = '';
+        return;
+      }
+      card.hidden = false;
+      body.innerHTML = invitations
+        .map(function (inv) {
+          return (
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">' +
+            '<span>' +
+            esc(inv.email) +
+            ' · ' +
+            esc(roleLabel(inv.role)) +
+            ' · expires ' +
+            esc(String(inv.expires_at || '').slice(0, 10)) +
+            '</span>' +
+            '<button type="button" class="btn settings-people-revoke-invite" data-invite-id="' +
+            esc(inv.id) +
+            '" style="font-size:11px;">Revoke</button></div>'
+          );
+        })
+        .join('');
     }
     /** Supabase FunctionsFetchError = fetch never completed (not a 4xx/5xx from the function). */
     function formatTeamInvokeError(err) {
@@ -17703,34 +17521,43 @@ var incomePowerState = {
       tbody.innerHTML = teamMemberRowsHtml(members, canManage, myRole);
       syncSettingsPeopleFromTeamState(members, canManage, myRole, hintLine);
 
-      if (canManage && pendingCard) {
+      if (canManage) {
         var pi = await invokeTeam({ action: 'pending_invites' });
+        var invitations = !pi.error && Array.isArray(pi.invitations) ? pi.invitations : [];
         var pb = document.getElementById('team-pending-invites-body');
-        if (!pi.error && pi.invitations && pi.invitations.length && pb) {
-          pendingCard.style.display = 'block';
-          pb.innerHTML = pi.invitations
-            .map(function (inv) {
-              return (
-                '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">' +
-                '<span>' +
-                esc(inv.email) +
-                ' · ' +
-                esc(roleLabel(inv.role)) +
-                ' · expires ' +
-                esc(String(inv.expires_at || '').slice(0, 10)) +
-                '</span>' +
-                '<button type="button" class="btn team-revoke-invite" data-invite-id="' +
-                esc(inv.id) +
-                '" style="font-size:11px;">Revoke</button></div>'
-              );
-            })
-            .join('');
-        } else {
-          pendingCard.style.display = 'none';
-          if (pb) pb.innerHTML = '';
+        if (pendingCard) {
+          if (invitations.length && pb) {
+            pendingCard.style.display = 'block';
+            pb.innerHTML = invitations
+              .map(function (inv) {
+                return (
+                  '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">' +
+                  '<span>' +
+                  esc(inv.email) +
+                  ' · ' +
+                  esc(roleLabel(inv.role)) +
+                  ' · expires ' +
+                  esc(String(inv.expires_at || '').slice(0, 10)) +
+                  '</span>' +
+                  '<button type="button" class="btn team-revoke-invite" data-invite-id="' +
+                  esc(inv.id) +
+                  '" style="font-size:11px;">Revoke</button></div>'
+                );
+              })
+              .join('');
+          } else {
+            pendingCard.style.display = 'none';
+            if (pb) pb.innerHTML = '';
+          }
         }
-      } else if (pendingCard) {
-        pendingCard.style.display = 'none';
+        syncSettingsPeoplePendingInvites(invitations, true);
+      } else {
+        if (pendingCard) pendingCard.style.display = 'none';
+        syncSettingsPeoplePendingInvites([], false);
+      }
+
+      if (canManage && typeof window.bizdashRefreshSharedInviteLink === 'function') {
+        window.bizdashRefreshSharedInviteLink();
       }
 
       if (!teamWired) {
@@ -17828,11 +17655,13 @@ var incomePowerState = {
         }
         wireTeamMemberTable(tbody);
         wireTeamMemberTable(document.getElementById('settings-people-members-tbody'));
-        var pendingHost = document.getElementById('team-pending-invites-body');
-        if (pendingHost) {
-          pendingHost.addEventListener('click', async function (ev) {
+
+        function wirePendingHost(host, selector) {
+          if (!host || host.getAttribute('data-pending-wired') === '1') return;
+          host.setAttribute('data-pending-wired', '1');
+          host.addEventListener('click', async function (ev) {
             var t = ev.target;
-            if (!t || !t.classList || !t.classList.contains('team-revoke-invite')) return;
+            if (!t || !t.classList || !t.classList.contains(selector)) return;
             var id = t.getAttribute('data-invite-id');
             if (!id || !confirm('Revoke this invitation?')) return;
             var r = await invokeTeam({ action: 'revoke_invite', inviteId: id });
@@ -17843,19 +17672,21 @@ var incomePowerState = {
             await refreshTeamPage();
           });
         }
+        wirePendingHost(document.getElementById('team-pending-invites-body'), 'team-revoke-invite');
+        wirePendingHost(document.getElementById('settings-people-pending-body'), 'settings-people-revoke-invite');
       }
     }
     window.bizdashInvokeTeam = invokeTeam;
     window.refreshTeamPage = refreshTeamPage;
   }
 
-  var __bizdashLucideIconNames = null;
-  var __bizdashLucideIconFetchPromise = null;
+  var __bizdashHeroiconNames = null;
+  var __bizdashHeroiconFetchPromise = null;
 
-  function loadLucideIconNamesFromIconify() {
-    if (__bizdashLucideIconNames) return Promise.resolve(__bizdashLucideIconNames);
-    if (!__bizdashLucideIconFetchPromise) {
-      __bizdashLucideIconFetchPromise = fetch('https://api.iconify.design/collection?prefix=lucide')
+  function loadHeroiconsIconNamesFromIconify() {
+    if (__bizdashHeroiconNames) return Promise.resolve(__bizdashHeroiconNames);
+    if (!__bizdashHeroiconFetchPromise) {
+      __bizdashHeroiconFetchPromise = fetch('https://api.iconify.design/collection?prefix=heroicons-outline')
         .then(function (res) {
           if (!res.ok) throw new Error(String(res.status));
           return res.json();
@@ -17868,16 +17699,16 @@ var incomePowerState = {
             });
           }
           arr.sort();
-          __bizdashLucideIconNames = arr;
+          __bizdashHeroiconNames = arr;
           return arr;
         })
         .catch(function (err) {
-          console.error('loadLucideIconNamesFromIconify', err);
-          __bizdashLucideIconNames = [];
+          console.error('loadHeroiconsIconNamesFromIconify', err);
+          __bizdashHeroiconNames = [];
           return [];
         });
     }
-    return __bizdashLucideIconFetchPromise;
+    return __bizdashHeroiconFetchPromise;
   }
 
   function wireWorkspaceIconPickerModal() {
@@ -17911,13 +17742,13 @@ var incomePowerState = {
         btn.className = 'ws-icon-picker-cell';
         btn.setAttribute('role', 'listitem');
         btn.setAttribute('aria-label', 'Icon ' + name);
-        btn.setAttribute('data-lucide-icon', name);
+        btn.setAttribute('data-heroicon', name);
         var img = document.createElement('img');
         img.alt = '';
         img.loading = 'lazy';
         img.width = 22;
         img.height = 22;
-        img.src = lucideIconifySvgImgSrc(name);
+        img.src = heroiconIconifySvgImgSrcSimple(name);
         btn.appendChild(img);
         grid.appendChild(btn);
       });
@@ -17950,7 +17781,7 @@ var incomePowerState = {
             } catch (_) {}
           }, 30);
         }
-        loadLucideIconNamesFromIconify().then(function (names) {
+        loadHeroiconsIconNamesFromIconify().then(function (names) {
           renderIconGrid(names, '');
         });
       }
@@ -17986,16 +17817,16 @@ var incomePowerState = {
     }
     if (grid) {
       grid.addEventListener('click', async function (ev) {
-        var btn = ev.target && ev.target.closest ? ev.target.closest('[data-lucide-icon]') : null;
+        var btn = ev.target && ev.target.closest ? ev.target.closest('[data-heroicon]') : null;
         if (!btn) return;
-        var name = btn.getAttribute('data-lucide-icon');
+        var name = btn.getAttribute('data-heroicon');
         if (!name) return;
         var ur = document.getElementById('setting-ws-icon-url-value');
         var em = document.getElementById('setting-ws-icon-emoji-value');
         var ic = document.getElementById('setting-ws-icon-iconify-value');
         if (ur) ur.value = '';
         if (em) em.value = '';
-        if (ic) ic.value = 'lucide:' + name;
+        if (ic) ic.value = 'heroicons:' + name;
         await renderWorkspaceIconPreview();
         setOpen(false);
         var rGrid = window.currentOrganizationRole || '';
@@ -18009,9 +17840,9 @@ var incomePowerState = {
         if (debTimer) clearTimeout(debTimer);
         debTimer = setTimeout(function () {
           debTimer = null;
-          var names = __bizdashLucideIconNames;
+          var names = __bizdashHeroiconNames;
           if (!names || !names.length) {
-            loadLucideIconNamesFromIconify().then(function (n) {
+            loadHeroiconsIconNamesFromIconify().then(function (n) {
               renderIconGrid(n, search.value);
             });
           } else {
@@ -19112,15 +18943,20 @@ var incomePowerState = {
       host.appendChild(sp);
       return;
     }
-    if (parsed.kind === 'lucide') {
+    if (parsed.kind === 'icon' || parsed.kind === 'lucide') {
+      var heroName =
+        parsed.kind === 'icon' ? parsed.value : bizdashToHeroiconsKebab(parsed.value);
+      var col = heroiconIconifyCollection(token, iconStyle, icon);
       var img = document.createElement('img');
       img.setAttribute('alt', '');
       img.width = 16;
       img.height = 16;
-      img.className = 'bizdash-ico-lucide';
+      img.className = 'bizdash-ico-heroicon';
       img.src =
-        'https://api.iconify.design/lucide/' +
-        encodeURIComponent(parsed.value) +
+        'https://api.iconify.design/' +
+        col +
+        '/' +
+        encodeURIComponent(heroName) +
         '.svg?color=' +
         encodeURIComponent(color);
       host.appendChild(img);
@@ -20641,6 +20477,198 @@ var incomePowerState = {
     saveWorkspaceChats(chats);
     renderChatsSidebar();
   };
+
+  /* --- Meeting Notes sidebar (Notion-style dropdown over Supabase meeting_notes) --- */
+  var recentMeetingNotesCache = [];
+  var recentMeetingNotesFetchedKey = '';
+  var recentMeetingNotesFetchInFlight = null;
+
+  function meetingNoteSidebarTitle(row) {
+    var title = row && typeof row.title === 'string' ? row.title.trim() : '';
+    if (title) return title;
+    var notes = row && typeof row.raw_notes === 'string' ? row.raw_notes.trim() : '';
+    if (notes) return notes.split(/\r?\n/)[0].slice(0, 60);
+    var transcript = row && typeof row.transcript === 'string' ? row.transcript.trim() : '';
+    if (transcript) return transcript.split(/\r?\n/)[0].slice(0, 60);
+    var scheduled = row && row.scheduled_at ? row.scheduled_at : (row && row.updated_at);
+    if (scheduled) {
+      try {
+        var d = new Date(scheduled);
+        if (!isNaN(d.getTime())) return d.toLocaleDateString(undefined, { dateStyle: 'medium' });
+      } catch (_) {}
+    }
+    return 'Untitled meeting';
+  }
+
+  function renderMeetingNotesSidebar() {
+    var host = document.getElementById('mnotes-sb-items');
+    if (!host) return;
+    var sb = window.supabaseClient || supabase;
+    var orgId = getCurrentOrgId();
+    if (!sb || !orgId) {
+      host.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:4px 10px;">Sign in to see notes</div>';
+      return;
+    }
+    var rows = Array.isArray(recentMeetingNotesCache) ? recentMeetingNotesCache : [];
+    if (!rows.length) {
+      host.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:4px 10px;">No saved notes</div>';
+      return;
+    }
+    host.innerHTML = rows
+      .slice(0, 8)
+      .map(function (row) {
+        var id = escList(row.id);
+        var title = escList(meetingNoteSidebarTitle(row));
+        return (
+          '<div class="lists-sb-item-row chats-sb-item-row">' +
+          '<button type="button" class="lists-sb-item chats-sb-item-main" data-mnote-id="' +
+          id +
+          '">' +
+          title +
+          '</button>' +
+          '<button type="button" class="chats-sb-del" data-mnote-delete="' +
+          id +
+          '" title="Delete note" aria-label="Delete note">' +
+          listsTrashIconSvg() +
+          '</button></div>'
+        );
+      })
+      .join('');
+  }
+
+  function refreshRecentMeetingNotes(force) {
+    var sb = window.supabaseClient || supabase;
+    var orgId = getCurrentOrgId();
+    var userId = window.currentUser && window.currentUser.id ? String(window.currentUser.id) : '';
+    if (!sb || !orgId) {
+      recentMeetingNotesCache = [];
+      recentMeetingNotesFetchedKey = '';
+      renderMeetingNotesSidebar();
+      return Promise.resolve([]);
+    }
+    var key = orgId + '|' + userId;
+    if (!force && recentMeetingNotesFetchedKey === key && recentMeetingNotesCache.length) {
+      renderMeetingNotesSidebar();
+      return Promise.resolve(recentMeetingNotesCache);
+    }
+    if (recentMeetingNotesFetchInFlight) return recentMeetingNotesFetchInFlight;
+    recentMeetingNotesFetchInFlight = (async function () {
+      try {
+        var resp = await sb
+          .from('meeting_notes')
+          .select('id, title, raw_notes, transcript, scheduled_at, updated_at')
+          .eq('organization_id', orgId)
+          .order('updated_at', { ascending: false })
+          .limit(20);
+        if (resp && resp.data) {
+          recentMeetingNotesCache = resp.data;
+          recentMeetingNotesFetchedKey = key;
+        }
+      } catch (_) {}
+      renderMeetingNotesSidebar();
+      recentMeetingNotesFetchInFlight = null;
+      return recentMeetingNotesCache;
+    })();
+    return recentMeetingNotesFetchInFlight;
+  }
+  window.bizDashRefreshMeetingNotesSidebar = function () { return refreshRecentMeetingNotes(true); };
+
+  function openMeetingNoteFromSidebar(noteId) {
+    var id = String(noteId || '').trim();
+    if (!id) return;
+    try {
+      sessionStorage.setItem('meeting-notes-active-id', id);
+      sessionStorage.removeItem('meeting-notes-mode');
+    } catch (_) {}
+    try {
+      window.dispatchEvent(new CustomEvent('meeting-note-open', { detail: { id: id } }));
+    } catch (_) {}
+    window.nav('meeting-notes', null);
+    document.body.classList.remove('mobile-nav-open');
+  }
+
+  function startNewMeetingNoteFromSidebar() {
+    try {
+      sessionStorage.setItem('meeting-notes-mode', 'new');
+      sessionStorage.removeItem('meeting-notes-active-id');
+    } catch (_) {}
+    try {
+      window.dispatchEvent(new CustomEvent('meeting-note-open', { detail: { mode: 'new' } }));
+    } catch (_) {}
+    window.nav('meeting-notes', null);
+    document.body.classList.remove('mobile-nav-open');
+  }
+
+  async function deleteMeetingNoteFromSidebar(noteId) {
+    var id = String(noteId || '').trim();
+    if (!id) return;
+    var sb = window.supabaseClient || supabase;
+    var orgId = getCurrentOrgId();
+    if (!sb || !orgId) return;
+    try {
+      await sb.from('meeting_notes').delete().eq('id', id).eq('organization_id', orgId);
+    } catch (_) {}
+    recentMeetingNotesCache = recentMeetingNotesCache.filter(function (r) { return String(r.id) !== id; });
+    renderMeetingNotesSidebar();
+    try {
+      var activeId = sessionStorage.getItem('meeting-notes-active-id');
+      if (activeId && String(activeId) === id) {
+        sessionStorage.removeItem('meeting-notes-active-id');
+        window.dispatchEvent(new CustomEvent('meeting-note-open', { detail: { mode: 'latest' } }));
+      }
+    } catch (_) {}
+  }
+
+  function wireMeetingNotesSidebar() {
+    var wrap = document.getElementById('mnotes-sb-wrap');
+    if (!wrap || wrap._mnotesWired) return;
+    wrap._mnotesWired = true;
+
+    var toggle = document.getElementById('mnotes-sb-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        wrap.classList.toggle('collapsed');
+        toggle.setAttribute('aria-expanded', wrap.classList.contains('collapsed') ? 'false' : 'true');
+        if (!wrap.classList.contains('collapsed')) refreshRecentMeetingNotes(true);
+      });
+    }
+    var btnNew = document.getElementById('mnotes-btn-sidebar-new');
+    if (btnNew) btnNew.addEventListener('click', startNewMeetingNoteFromSidebar);
+    var browse = document.getElementById('mnotes-sb-browse');
+    if (browse) {
+      browse.addEventListener('click', function () {
+        try {
+          sessionStorage.removeItem('meeting-notes-active-id');
+          sessionStorage.removeItem('meeting-notes-mode');
+        } catch (_) {}
+        window.nav('meeting-notes', null);
+        document.body.classList.remove('mobile-nav-open');
+      });
+    }
+    var host = document.getElementById('mnotes-sb-items');
+    if (host && !host._mnotesDelegated) {
+      host._mnotesDelegated = true;
+      host.addEventListener('click', function (ev) {
+        var del = ev.target.closest && ev.target.closest('[data-mnote-delete]');
+        if (del && host.contains(del)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          var did = del.getAttribute('data-mnote-delete');
+          if (!did) return;
+          var row = recentMeetingNotesCache.find(function (r) { return String(r.id) === String(did); });
+          var label = row ? meetingNoteSidebarTitle(row) : 'this note';
+          if (!window.confirm('Delete “' + String(label).slice(0, 120) + '”? This cannot be undone.')) return;
+          void deleteMeetingNoteFromSidebar(did);
+          return;
+        }
+        var openBtn = ev.target.closest && ev.target.closest('[data-mnote-id]');
+        if (openBtn && host.contains(openBtn)) {
+          var oid = openBtn.getAttribute('data-mnote-id');
+          if (oid) openMeetingNoteFromSidebar(oid);
+        }
+      });
+    }
+  }
 
   function listDetailTabSortOrder(L, tabId) {
     var v = listDetailTabToView(L, tabId);
@@ -24561,6 +24589,8 @@ var incomePowerState = {
     renderListsSidebar();
     renderListsPageGrid();
     renderChatsSidebar();
+    wireMeetingNotesSidebar();
+    void refreshRecentMeetingNotes(true);
   }
 
   // ---------- Sidebar top chrome (workspace label + quick actions / search pills) ----------
@@ -24592,6 +24622,9 @@ var incomePowerState = {
     var url = ws.workspaceIconUrl != null ? String(ws.workspaceIconUrl).trim() : '';
     var iconify = parseWorkspaceIconIconify(ws.workspaceIconIconify != null ? String(ws.workspaceIconIconify) : '');
     var emo = ws.workspaceIconEmoji != null ? String(ws.workspaceIconEmoji).trim() : '';
+    /* Uploaded brand logo (light/dark) wins over the per-workspace icon when set. */
+    var brandLogoUrl = '';
+    try { brandLogoUrl = currentBrandLogoUrl() || ''; } catch (_) { brandLogoUrl = ''; }
     var pairs = [
       ['sb-ws-avatar-img', 'sb-ws-mono-letter'],
       ['sb-menu-ws-avatar-img', 'sb-menu-ws-mono-letter'],
@@ -24602,26 +24635,41 @@ var incomePowerState = {
       var le = document.getElementById(pairs[i][1]);
       if (!im || !le) continue;
       le.classList.remove('sb-ws-mono-emoji');
-      if (url) {
+      if (brandLogoUrl) {
+        im.src = brandLogoUrl;
+        im.alt = 'Workspace logo';
+        im.style.objectFit = 'contain';
+        im.style.display = 'block';
+        im.setAttribute('data-brand-logo-applied', '1');
+        le.style.display = 'none';
+      } else if (url) {
         var resolved = await resolveBrandLogoStorageUrl(url);
         im.src = resolved || url;
         im.alt = '';
+        im.style.objectFit = '';
+        im.removeAttribute('data-brand-logo-applied');
         im.style.display = 'block';
         le.style.display = 'none';
       } else if (iconify) {
-        var nm = iconify.slice('lucide:'.length);
-        im.src = lucideIconifySvgImgSrc(nm);
+        var nm = iconify.indexOf(':') >= 0 ? iconify.slice(iconify.indexOf(':') + 1) : iconify;
+        im.src = heroiconIconifySvgImgSrcSimple(nm);
         im.alt = '';
+        im.style.objectFit = '';
+        im.removeAttribute('data-brand-logo-applied');
         im.style.display = 'block';
         le.style.display = 'none';
       } else if (emo) {
         im.removeAttribute('src');
+        im.style.objectFit = '';
+        im.removeAttribute('data-brand-logo-applied');
         im.style.display = 'none';
         le.style.display = '';
         le.textContent = emo.slice(0, 10);
         le.classList.add('sb-ws-mono-emoji');
       } else {
         im.removeAttribute('src');
+        im.style.objectFit = '';
+        im.removeAttribute('data-brand-logo-applied');
         im.style.display = 'none';
         le.style.display = '';
         le.textContent = fbLetter;
@@ -25307,7 +25355,7 @@ var incomePowerState = {
   function wirePeopleSettingsUi() {
     var root = document.getElementById('page-settings');
     if (!root || root.getAttribute('data-people-ui-wired') === '1') return;
-    if (!document.getElementById('settings-people-tab-guests')) return;
+    if (!document.getElementById('settings-people-tab-members')) return;
     root.setAttribute('data-people-ui-wired', '1');
 
     function goTeam() {
@@ -25315,87 +25363,132 @@ var incomePowerState = {
       if (typeof window.nav === 'function') window.nav('team', t || null);
     }
 
+    // Delegated: "Learn more" is reinjected on each panel switch via activeDesc.innerHTML.
     root.addEventListener('click', function (ev) {
       var t = ev.target;
-      if (t && t.id === 'settings-people-learn-inline') {
+      if (t && (t.id === 'settings-people-learn-inline' || t.id === 'settings-people-directory-link' || (t.closest && t.closest('#settings-people-directory-link')))) {
         ev.preventDefault();
         goTeam();
       }
     });
 
-    var dir = document.getElementById('settings-people-directory-link');
-    if (dir) {
-      dir.addEventListener('click', function (ev) {
-        ev.preventDefault();
-        goTeam();
-      });
+    // Local copy of the shared-link state, owned entirely by the edge function (no localStorage).
+    var sharedLinkState = { token: '', enabled: false, role: 'member', url: '', canManage: false };
+
+    function describeRoleForCopy(r) {
+      if (r === 'admin') return 'admin';
+      if (r === 'viewer') return 'viewer';
+      return 'member';
     }
+    function renderSharedLinkUi() {
+      var toggle = document.getElementById('settings-people-invite-enabled');
+      var copyBtn = document.getElementById('settings-people-copy-link');
+      var regen = document.getElementById('settings-people-regen-link');
+      var roleLabelEl = document.getElementById('settings-people-invite-role-label');
+      var status = document.getElementById('settings-people-invite-status');
+      if (toggle) {
+        toggle.checked = !!sharedLinkState.enabled;
+        toggle.disabled = !sharedLinkState.canManage;
+      }
+      if (copyBtn) copyBtn.disabled = !sharedLinkState.canManage || !sharedLinkState.url;
+      if (regen) regen.disabled = !sharedLinkState.canManage;
+      if (roleLabelEl) roleLabelEl.textContent = describeRoleForCopy(sharedLinkState.role);
+      if (status) {
+        if (!sharedLinkState.canManage) {
+          status.textContent = '';
+        } else if (!sharedLinkState.enabled) {
+          status.textContent = 'Link is currently turned off — flip the toggle to let people join with this URL.';
+        } else {
+          status.textContent = 'Link is live. Anyone signed in can click it to join as a ' + describeRoleForCopy(sharedLinkState.role) + '.';
+        }
+      }
+    }
+    async function loadSharedInviteLink() {
+      if (typeof window.bizdashInvokeTeam !== 'function') return;
+      var out = await window.bizdashInvokeTeam({ action: 'shared_link_get' });
+      if (out && !out.error && out.ok) {
+        sharedLinkState.token = String(out.token || '');
+        sharedLinkState.enabled = !!out.enabled;
+        sharedLinkState.role = String(out.role || 'member');
+        sharedLinkState.url = String(out.url || '');
+        sharedLinkState.canManage = true;
+      } else {
+        sharedLinkState.canManage = false;
+      }
+      renderSharedLinkUi();
+    }
+    window.bizdashRefreshSharedInviteLink = loadSharedInviteLink;
 
     var regen = document.getElementById('settings-people-regen-link');
     if (regen) {
-      regen.addEventListener('click', function (ev) {
+      regen.addEventListener('click', async function (ev) {
         ev.preventDefault();
-        goTeam();
+        if (!sharedLinkState.canManage) return;
+        if (!confirm('Generate a new invite link? The current link will stop working immediately.')) return;
+        var prev = regen.textContent;
+        regen.textContent = 'Generating…';
+        regen.disabled = true;
+        var out = await window.bizdashInvokeTeam({ action: 'shared_link_rotate' });
+        regen.textContent = prev;
+        if (out && out.error) {
+          alert(out.error);
+          regen.disabled = !sharedLinkState.canManage;
+          return;
+        }
+        sharedLinkState.token = String(out.token || '');
+        sharedLinkState.enabled = !!out.enabled;
+        sharedLinkState.role = String(out.role || 'member');
+        sharedLinkState.url = String(out.url || '');
+        renderSharedLinkUi();
       });
     }
 
     var invToggle = document.getElementById('settings-people-invite-enabled');
-    var LS_KEY = 'bizdash.settings.inviteLinkEnabled';
     if (invToggle) {
-      var saved = localStorage.getItem(LS_KEY);
-      if (saved === '0') invToggle.checked = false;
-      invToggle.addEventListener('change', function () {
-        localStorage.setItem(LS_KEY, invToggle.checked ? '1' : '0');
+      invToggle.addEventListener('change', async function () {
+        if (!sharedLinkState.canManage) {
+          invToggle.checked = !!sharedLinkState.enabled;
+          return;
+        }
+        var desired = !!invToggle.checked;
+        invToggle.disabled = true;
+        var out = await window.bizdashInvokeTeam({ action: 'shared_link_set_enabled', enabled: desired });
+        if (out && out.error) {
+          alert(out.error);
+          invToggle.checked = !!sharedLinkState.enabled;
+          invToggle.disabled = false;
+          return;
+        }
+        sharedLinkState.enabled = !!out.enabled;
+        sharedLinkState.token = String(out.token || sharedLinkState.token);
+        sharedLinkState.url = String(out.url || sharedLinkState.url);
+        renderSharedLinkUi();
       });
     }
 
     var copyBtn = document.getElementById('settings-people-copy-link');
     if (copyBtn) {
       copyBtn.addEventListener('click', async function () {
-        if (invToggle && !invToggle.checked) {
-          alert('Turn on the invite link toggle to copy a shareable link.');
+        if (!sharedLinkState.canManage) return;
+        if (!sharedLinkState.enabled) {
+          alert('Turn on the invite link toggle first so the link is active.');
           return;
         }
-        var u = typeof window.__bizdashLastInviteShareUrl === 'string' ? window.__bizdashLastInviteShareUrl.trim() : '';
+        var u = sharedLinkState.url || '';
         if (!u) {
-          alert(
-            'No invite link yet. On Your team, enter an email and choose Create invite link—then you can copy that URL here.'
-          );
+          alert('No shared link yet — generate one and try again.');
           return;
         }
         try {
           await navigator.clipboard.writeText(u);
           var orig = copyBtn.textContent;
           copyBtn.textContent = 'Copied!';
-          setTimeout(function () {
-            copyBtn.textContent = orig;
-          }, 1500);
+          setTimeout(function () { copyBtn.textContent = orig; }, 1500);
         } catch (_) {
           prompt('Copy this link:', u);
         }
       });
     }
-
-    var pills = root.querySelectorAll('.settings-people-pill[data-people-sub]');
-    var subGuests = document.getElementById('settings-people-sub-guests');
-    var subMembers = document.getElementById('settings-people-sub-members');
-    var subGroups = document.getElementById('settings-people-sub-groups');
-    var subContacts = document.getElementById('settings-people-sub-contacts');
-    var subs = { guests: subGuests, members: subMembers, groups: subGroups, contacts: subContacts };
-    pills.forEach(function (p) {
-      p.addEventListener('click', function () {
-        var id = p.getAttribute('data-people-sub');
-        pills.forEach(function (x) {
-          var on = x === p;
-          x.classList.toggle('on', on);
-          x.setAttribute('aria-selected', on ? 'true' : 'false');
-        });
-        Object.keys(subs).forEach(function (k) {
-          var el = subs[k];
-          if (el) el.hidden = k !== id;
-        });
-      });
-    });
 
     var searchBtn = document.getElementById('settings-people-search-trigger');
     var searchWrap = document.getElementById('settings-people-search-wrap');
@@ -25406,8 +25499,6 @@ var incomePowerState = {
           searchWrap.style.display === 'none' ||
           (searchWrap.style.display === '' && window.getComputedStyle(searchWrap).display === 'none');
         searchWrap.style.display = hidden ? 'block' : 'none';
-        var memTab = document.getElementById('settings-people-tab-members');
-        if (memTab) memTab.click();
         if (hidden && searchInp) searchInp.focus();
       });
     }
@@ -25423,37 +25514,64 @@ var incomePowerState = {
       });
     }
 
+    // "Add members" expands the inline invite-by-email form.
     var addBtn = document.getElementById('settings-people-add-main');
-    var menu = document.getElementById('settings-people-add-menu');
-    if (addBtn && menu) {
-      addBtn.addEventListener('click', function (ev) {
-        ev.stopPropagation();
-        var next = menu.hasAttribute('hidden');
-        if (next) menu.removeAttribute('hidden');
-        else menu.setAttribute('hidden', '');
-        addBtn.setAttribute('aria-expanded', next ? 'true' : 'false');
-      });
-      menu.querySelectorAll('.settings-people-menu-item').forEach(function (item) {
-        item.addEventListener('click', function (ev) {
-          ev.preventDefault();
-          menu.setAttribute('hidden', '');
-          addBtn.setAttribute('aria-expanded', 'false');
-          goTeam();
-        });
-      });
-      document.addEventListener('click', function (ev) {
-        if (!menu.hasAttribute('hidden') && addBtn && !addBtn.contains(ev.target) && !menu.contains(ev.target)) {
-          menu.setAttribute('hidden', '');
-          addBtn.setAttribute('aria-expanded', 'false');
-        }
+    var inviteForm = document.getElementById('settings-people-invite-form');
+    var inviteEmail = document.getElementById('settings-people-invite-email');
+    var inviteRoleSel = document.getElementById('settings-people-invite-role-select');
+    var inviteSendBtn = document.getElementById('settings-people-invite-send');
+    var inviteCancelBtn = document.getElementById('settings-people-invite-cancel');
+    var inviteMsg = document.getElementById('settings-people-invite-msg');
+    function setInviteFormOpen(open) {
+      if (!inviteForm) return;
+      inviteForm.hidden = !open;
+      if (addBtn) addBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && inviteEmail) {
+        inviteEmail.value = '';
+        if (inviteMsg) inviteMsg.textContent = '';
+        setTimeout(function () { inviteEmail.focus(); }, 0);
+      }
+    }
+    if (addBtn) {
+      addBtn.addEventListener('click', function () {
+        setInviteFormOpen(!!inviteForm && inviteForm.hidden);
       });
     }
-
-    var imp = document.getElementById('settings-people-import-contacts');
-    if (imp) imp.addEventListener('click', function () { goTeam(); });
-
-    var openFromContacts = document.getElementById('settings-people-open-team-from-contacts');
-    if (openFromContacts) openFromContacts.addEventListener('click', function () { goTeam(); });
+    if (inviteCancelBtn) {
+      inviteCancelBtn.addEventListener('click', function () { setInviteFormOpen(false); });
+    }
+    if (inviteSendBtn) {
+      inviteSendBtn.addEventListener('click', async function () {
+        var email = inviteEmail && inviteEmail.value ? String(inviteEmail.value).trim() : '';
+        var role = inviteRoleSel && inviteRoleSel.value ? inviteRoleSel.value : 'member';
+        if (!email) {
+          if (inviteMsg) inviteMsg.textContent = 'Enter an email address.';
+          return;
+        }
+        if (inviteMsg) inviteMsg.textContent = 'Sending…';
+        inviteSendBtn.disabled = true;
+        var r = await window.bizdashInvokeTeam({ action: 'invite', email: email, role: role });
+        inviteSendBtn.disabled = false;
+        if (r && r.error) {
+          if (inviteMsg) inviteMsg.textContent = String(r.error);
+          return;
+        }
+        var url = r && r.inviteUrl ? String(r.inviteUrl) : (r && r.token && typeof window.bizDashInviteShareUrl === 'function' ? window.bizDashInviteShareUrl(r.token) : '');
+        if (url) {
+          window.__bizdashLastInviteShareUrl = url;
+          try {
+            await navigator.clipboard.writeText(url);
+            if (inviteMsg) inviteMsg.textContent = 'Invite sent · link copied to clipboard';
+          } catch (_) {
+            if (inviteMsg) inviteMsg.textContent = 'Invite sent · ' + url;
+          }
+        } else if (inviteMsg) {
+          inviteMsg.textContent = 'Invite sent.';
+        }
+        if (inviteEmail) inviteEmail.value = '';
+        if (typeof window.refreshTeamPage === 'function') window.refreshTeamPage();
+      });
+    }
   }
 
   /** Click dimmed backdrop (the `.mo` root) to close any open modal without running Save actions. */
@@ -25477,7 +25595,7 @@ var incomePowerState = {
         closeListPreviewModal();
         return;
       }
-      if (id === 'eml-compose-modal') {
+      if (typeof window.__emailCompose !== 'undefined') {
         if (typeof window.__bizdashCloseEmlComposeModal === 'function') window.__bizdashCloseEmlComposeModal();
         return;
       }
@@ -25868,12 +25986,21 @@ var incomePowerState = {
       items.forEach(function (n) { n.classList.remove('active'); });
       var listsBrowseEl = document.getElementById('lists-sb-browse');
       if (listsBrowseEl) listsBrowseEl.classList.remove('active');
+      var chatsBrowseEl = document.getElementById('chats-sb-browse');
+      if (chatsBrowseEl) chatsBrowseEl.classList.remove('active');
+      var mnotesBrowseEl = document.getElementById('mnotes-sb-browse');
+      if (mnotesBrowseEl) mnotesBrowseEl.classList.remove('active');
       if (el && el.classList) {
         el.classList.add('active');
       } else {
         var sideItem = document.querySelector('.ni[data-nav="' + pageId + '"]');
         if (sideItem) sideItem.classList.add('active');
         else if (pageId === 'lists' && listsBrowseEl) listsBrowseEl.classList.add('active');
+        else if (pageId === 'chat' && chatsBrowseEl) chatsBrowseEl.classList.add('active');
+        else if (pageId === 'meeting-notes' && mnotesBrowseEl) mnotesBrowseEl.classList.add('active');
+      }
+      if (pageId === 'meeting-notes' && typeof window.bizDashRefreshMeetingNotesSidebar === 'function') {
+        try { window.bizDashRefreshMeetingNotesSidebar(); } catch (_) {}
       }
 
       var mobileTitle = document.getElementById('mobile-title');

@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.101.1";
 import { serveWithEdgeRequestLogging } from "../_shared/withEdgeRequestLogging.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
-import { linkTokenCreate } from "../_shared/plaidClient.ts";
+import { linkTokenCreate, readPlaidClientName } from "../_shared/plaidClient.ts";
 
 type Body = { organizationId?: string };
 
@@ -71,6 +71,7 @@ serveWithEdgeRequestLogging("plaid-link-token", async (req, _ctx) => {
   const webhookUrl = (Deno.env.get("PLAID_WEBHOOK_URL") ?? "").trim();
 
   const link = await linkTokenCreate({
+    client_name: readPlaidClientName(),
     client_user_id: `${organizationId}|${user.id}`,
     webhook: webhookUrl || null,
     products: ["transactions"],

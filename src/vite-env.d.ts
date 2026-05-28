@@ -42,6 +42,21 @@ declare global {
     ) => Promise<{ ok: boolean; error?: string }>;
     /** Navigate to Advisor with optional composer prefill (see financial-core.js). */
     bizDashGoToAdvisor?: (opts?: { prefill?: string; newThread?: boolean }) => void;
+    /** Gmail compose React island (email-compose-react-mount.tsx). */
+    __emailCompose?: import('./components/email/EmailComposeApp').EmailComposeApi;
+    bizDashOpenEmailComposer?: (prefill?: import('./lib/email/types').ComposePrefill) => void;
+    bizDashOpenEmailReply?: (opts: Parameters<import('./lib/email/reply').buildReplyPrefill>[0]) => void;
+    bizDashMountEmailCompose?: () => void;
+    bizDashMountVoiceAgent?: () => void;
+    bizDashAdvisorAsk?: (text: string, opts?: { voice?: boolean }) => void;
+    bizDashAdvisorSpeak?: (text: string) => void;
+    bizDashReloadUserUiPreferences?: () => Promise<void>;
+    __bizdashCloseEmlComposeModal?: () => void;
+    bizDashGetCurrentOrgId?: () => string | null;
+    isDemoDashboardUser?: () => boolean;
+    __bizdashSupabaseUrl?: string;
+    __bizdashSupabaseAnonKey?: string;
+    currentOrganizationId?: string;
   }
 }
 

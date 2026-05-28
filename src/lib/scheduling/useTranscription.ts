@@ -119,7 +119,7 @@ async function hasTranscriptionSession (): Promise<boolean> {
 
 /** True when signed in (session) or workspace org is on window — either is enough to start mic/streaming. */
 export function useTranscriptionReady (): boolean {
-  const [ready, setReady] = useState (() => isDemoMode () || !!readOrganizationIdFromWindow ());
+  const [ready, setReady] = useState (() => !isDemoMode () && !!readOrganizationIdFromWindow ());
 
   useEffect (() => {
     let cancelled = false;
@@ -127,7 +127,7 @@ export function useTranscriptionReady (): boolean {
     const sync = async () => {
       if (cancelled) return;
       if (isDemoMode ()) {
-        setReady (true);
+        setReady (false);
         return;
       }
       if (readOrganizationIdFromWindow ()) {
@@ -608,35 +608,16 @@ export function useTranscription (): UseTranscriptionResult {
       return;
     }
 
-    const demo = isDemoMode ();
+    if (isDemoMode ()) {
+      setError ('Meeting transcription is disabled in demo mode. Sign in to a real workspace to record.');
+      setStatus ('idle');
+      return;
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia ({ audio: true });
       permissionKnownRef.current = 'granted';
       streamRef.current = stream;
-
-      if (demo) {
-        const audioContext = new AudioContext ();
-        audioContextRef.current = audioContext;
-        const source = audioContext.createMediaStreamSource (stream);
-        sourceRef.current = source;
-        const analyser = audioContext.createAnalyser ();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.7;
-        analyserRef.current = analyser;
-        source.connect (analyser);
-        const started = startSpeechRecognition ();
-        if (!started) {
-          teardownAudioGraph ();
-          stopTracks ();
-          setStatus ('idle');
-          return;
-        }
-        sessionReadyRef.current = true;
-        setStatus ('recording');
-        startTimer ();
-        return;
-      }
 
       const token = await fetchAssemblyAiToken ();
       const models = speechModelsToTry ();

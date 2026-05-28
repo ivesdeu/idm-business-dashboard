@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import type { SchedulingAppointment } from '@/components/scheduling/types';
 import { SyncBadge } from '@/components/scheduling/SyncBadge';
 
@@ -37,7 +37,7 @@ export function AppointmentDetailDrawer ({ appointment, onClose, onEdit }: Props
             <p className="mt-1 text-sm text-[var(--sched-muted,#64748b)]">{appointment.clientName}</p>
           </div>
           <button type="button" className="shrink-0 rounded-md p-1 text-[var(--sched-muted)] hover:bg-black/5" aria-label="Close" onClick={onClose}>
-            <X className="h-5 w-5" />
+            <XMarkIcon className="h-5 w-5" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4 text-sm">

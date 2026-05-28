@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 
 type Props = {
   open: boolean;
@@ -33,7 +33,7 @@ export function GoogleCalendarModal ({ open, onClose }: Props) {
           aria-label="Close"
           onClick={onClose}
         >
-          <X className="h-5 w-5" strokeWidth={2} />
+          <XMarkIcon className="h-5 w-5" />
         </button>
         <h2 id="gcal-modal-title" className="pr-8 text-lg font-semibold text-[var(--sched-text,#0f172a)]">
           Connect Google Calendar

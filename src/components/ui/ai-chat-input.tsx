@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, type FormEvent, type KeyboardEvent } from 'react';
-import { ArrowUp, Mic, Plus, SlidersHorizontal } from 'lucide-react';
+import { ArrowUpIcon, MicrophoneIcon, PlusIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 
 export type AdvisorComposerApi = {
   send: (text: string) => void;
@@ -103,7 +103,7 @@ function AIChatInput({ composerApi }: Props) {
                 aria-label="Attach image"
                 onClick={onAttach}
               >
-                <Plus size={20} strokeWidth={1.75} />
+                <PlusIcon className="h-5 w-5" />
               </button>
               <button
                 type="button"
@@ -117,7 +117,7 @@ function AIChatInput({ composerApi }: Props) {
                 aria-pressed={toolsActive}
                 onClick={() => setToolsActive((v) => !v)}
               >
-                <SlidersHorizontal size={18} strokeWidth={1.75} aria-hidden />
+                <AdjustmentsHorizontalIcon className="h-[18px] w-[18px]" aria-hidden />
                 <span className="pr-0.5">Tools</span>
               </button>
             </div>
@@ -129,7 +129,7 @@ function AIChatInput({ composerApi }: Props) {
                 title="Voice input"
                 aria-label="Voice input (not available yet)"
               >
-                <Mic size={20} strokeWidth={1.75} />
+                <MicrophoneIcon className="h-5 w-5" />
               </button>
               <button
                 type="submit"
@@ -138,7 +138,7 @@ function AIChatInput({ composerApi }: Props) {
                 title="Send"
                 aria-label="Send message"
               >
-                <ArrowUp size={18} strokeWidth={2.25} />
+                <ArrowUpIcon className="h-[18px] w-[18px]" />
               </button>
             </div>
           </div>

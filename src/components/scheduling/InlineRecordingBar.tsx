@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { AudioLines, Mic, Play, Settings2 } from 'lucide-react';
+import { SpeakerWaveIcon, MicrophoneIcon, PlayIcon, Cog6ToothIcon } from '@heroicons/react/24/solid';
 import { AudioWaveform } from '@/components/scheduling/AudioWaveform';
 import type { TranscriptionStatus } from '@/components/scheduling/types';
 import { Button } from '@/components/ui/button';
@@ -30,11 +30,11 @@ export function InlineRecordingBar ({
     <div className="flex w-full min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg3)] px-3 py-1 text-xs font-medium text-[var(--text2)]">
-          <AudioLines className="h-3.5 w-3.5 text-[var(--text3)]" strokeWidth={1.8} aria-hidden />
+          <SpeakerWaveIcon className="h-3.5 w-3.5 text-[var(--text3)]" aria-hidden />
           Notes
         </span>
         <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-[var(--text)]">
-          <Mic className="h-4 w-4 text-[var(--text3)]" aria-hidden />
+          <MicrophoneIcon className="h-4 w-4 text-[var(--text3)]" aria-hidden />
           Transcript
         </span>
 
@@ -51,7 +51,7 @@ export function InlineRecordingBar ({
           className="h-8 w-8 shrink-0 rounded-xl border-[var(--border)] text-[var(--text3)] shadow-none"
           aria-label="Meeting transcription settings"
         >
-          <Settings2 className="h-4 w-4" aria-hidden />
+          <Cog6ToothIcon className="h-4 w-4" aria-hidden />
         </Button>
 
         {isRecording ? (
@@ -71,7 +71,7 @@ export function InlineRecordingBar ({
             className="h-8 shrink-0 rounded-xl border-[var(--border)] bg-[var(--bg)] px-3 text-sm shadow-none"
             onClick={onResume}
           >
-            <Play className="mr-1 h-3.5 w-3.5" aria-hidden />
+            <PlayIcon className="mr-1 h-3.5 w-3.5" aria-hidden />
             Resume
           </Button>
         ) : null}

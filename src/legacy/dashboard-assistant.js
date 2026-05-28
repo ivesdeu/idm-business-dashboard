@@ -26,8 +26,22 @@
     followup_draft: 'followup_draft',
     variance_explain: 'variance_explain',
     weekly_recap: 'weekly_recap',
+    advisor_query: 'advisor_query',
+    advisor_execute_action: 'advisor_execute_action',
     general: 'general',
   };
+
+  var lastEntities = {
+    appointmentId: null,
+    clientId: null,
+    transactionId: null,
+    meetingNoteId: null,
+  };
+
+  var pendingTier2Action = null;
+  var advisorVoiceMode = false;
+  /** Failed compound step payloads for inline retry (step id -> { type, payload, label }). */
+  var lastCompoundRetrySteps = {};
 
   function mkUuid() {
     try {
@@ -235,6 +249,7 @@
     div.textContent = text;
     logEl.appendChild(div);
     logEl.scrollTop = logEl.scrollHeight;
+    return div;
   }
 
   function delay(ms) {
@@ -415,14 +430,222 @@
     return o;
   }
 
+  function isAdvisorQueryWrite(message) {
+    var q = norm(message || '');
+    if (!q) return false;
+    if (/\b(schedule|book|cancel|reschedule|move)\b/.test(q) && /\b(appointment|meeting|calendar|event|3\s*pm|2\s*pm)\b/.test(q)) {
+      return true;
+    }
+    if (/\b(mark|complete|done)\b/.test(q) && /\b(task|todo|item|contract)\b/.test(q)) return true;
+    if (/\b(add|create)\b/.test(q) && /\b(task|todo|to-?do)\b/.test(q)) return true;
+    if (/\b(change|set|update)\b/.test(q) && /\b(status|priority|client|customer)\b/.test(q)) return true;
+    if (/\b(add)\b/.test(q) && /\b(contact|client|customer)\b/.test(q)) return true;
+    if (/\b(hide|review|approve|recategorize|categorize|mark)\b/.test(q) && /\b(transaction|charge|expense|starbucks)\b/.test(q)) {
+      return true;
+    }
+    if (/\b(meeting note|action items?|email this|email the)\b/.test(q)) return true;
+    if (/\b(dark mode|light mode|timezone)\b/.test(q)) return true;
+    if (/\b(make it|color)\b/.test(q) && /\b(red|blue|green|amber|purple|rose|slate|teal|pink)\b/.test(q)) {
+      return true;
+    }
+    if (/\b(switch to)\b/.test(q) && /\b(dark|light)\b/.test(q)) return true;
+    return false;
+  }
+
+  function isReadQuery(message) {
+    var raw = String(message || '').trim();
+    var q = norm(raw);
+    if (!q) return false;
+    if (isAdvisorQueryWrite(message)) return false;
+    if (/\b(add this|add to (my )?crm|create a (new )?)\b/.test(q)) return false;
+    if (/^(what|when|who|where|how|which|any|show|list|tell|read|summarize|give me)\b/.test(q)) return true;
+    if (/\?$/.test(raw)) return true;
+    if (
+      /\b(how much|how many|on my calendar|my calendar|my week|free for|available|overdue|uncategorized|unreviewed|at risk|haven'?t talked|action items? i owe|bring in|revenue|expenses?|invoices?|meeting notes?|last (met|meeting)|next meeting)\b/.test(
+        q,
+      )
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   function normalizeTask(task, message) {
     if (task && ADVISOR_TASKS[task]) return task;
+    if (isReadQuery(message) || isAdvisorQueryWrite(message)) return ADVISOR_TASKS.advisor_query;
     var q = norm(message || '');
-    if (/brief|today|priority|action/.test(q)) return ADVISOR_TASKS.daily_brief;
-    if (/follow|outreach|draft|email|message/.test(q)) return ADVISOR_TASKS.followup_draft;
+    if (/brief|priority/.test(q) && !/\bcalendar\b/.test(q)) return ADVISOR_TASKS.daily_brief;
+    if (/follow|outreach|draft|email|message/.test(q) && !isReadQuery(message)) return ADVISOR_TASKS.followup_draft;
     if (/variance|month[-\s]?over[-\s]?month|mo[m]?/.test(q)) return ADVISOR_TASKS.variance_explain;
-    if (/week|recap|summary/.test(q)) return ADVISOR_TASKS.weekly_recap;
+    if (/week|recap/.test(q) && /\b(business|recap|summary)\b/.test(q) && !/\bcalendar\b/.test(q)) {
+      return ADVISOR_TASKS.weekly_recap;
+    }
     return ADVISOR_TASKS.general;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function miniMarkdownToHtml(text) {
+    var lines = String(text || '').split('\n');
+    var html = '';
+    var inList = false;
+    lines.forEach(function (line) {
+      var trimmed = line.trim();
+      if (/^[-*]\s+/.test(trimmed)) {
+        if (!inList) {
+          html += '<ul>';
+          inList = true;
+        }
+        html += '<li>' + escapeHtml(trimmed.replace(/^[-*]\s+/, '')).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') + '</li>';
+      } else {
+        if (inList) {
+          html += '</ul>';
+          inList = false;
+        }
+        if (trimmed) {
+          html +=
+            '<p>' +
+            escapeHtml(trimmed).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') +
+            '</p>';
+        }
+      }
+    });
+    if (inList) html += '</ul>';
+    return html || '<p></p>';
+  }
+
+  function updateLastEntitiesFromPayload(payload) {
+    if (!payload || typeof payload !== 'object') return;
+    var p = payload.proposal && typeof payload.proposal === 'object' ? payload.proposal.payload : null;
+    var sd = payload.structuredData;
+    var blob = p || sd;
+    if (!blob || typeof blob !== 'object') return;
+    if (blob.appointment_id) lastEntities.appointmentId = String(blob.appointment_id);
+    if (blob.client_id) lastEntities.clientId = String(blob.client_id);
+    if (blob.transaction_id) lastEntities.transactionId = String(blob.transaction_id);
+    if (blob.meeting_note_id) lastEntities.meetingNoteId = String(blob.meeting_note_id);
+    if (Array.isArray(blob.appointments) && blob.appointments[0] && blob.appointments[0].id) {
+      lastEntities.appointmentId = String(blob.appointments[0].id);
+    }
+    if (Array.isArray(blob.clients) && blob.clients[0] && blob.clients[0].id) {
+      lastEntities.clientId = String(blob.clients[0].id);
+    }
+    var execResult = payload.result;
+    if (execResult && typeof execResult === 'object') {
+      if (execResult.appointment_id) lastEntities.appointmentId = String(execResult.appointment_id);
+      if (execResult.client_id) lastEntities.clientId = String(execResult.client_id);
+      if (execResult.meeting_note_id) lastEntities.meetingNoteId = String(execResult.meeting_note_id);
+      if (execResult.id && payload.type && String(payload.type).indexOf('appointment') === 0) {
+        lastEntities.appointmentId = String(execResult.id);
+      }
+      if (execResult.id && String(payload.type || '').indexOf('meeting_note') === 0) {
+        lastEntities.meetingNoteId = String(execResult.id);
+      }
+    }
+    if (Array.isArray(payload.steps)) {
+      payload.steps.forEach(function (st) {
+        if (st && st.status === 'ok' && st.result) {
+          if (st.result.appointment_id) lastEntities.appointmentId = String(st.result.appointment_id);
+          if (st.result.client_id) lastEntities.clientId = String(st.result.client_id);
+          if (st.result.meeting_note_id) lastEntities.meetingNoteId = String(st.result.meeting_note_id);
+          if (st.result.id && st.type && String(st.type).indexOf('meeting_note') === 0) {
+            lastEntities.meetingNoteId = String(st.result.id);
+          }
+        }
+      });
+    }
+  }
+
+  function isCompoundProposal(proposal) {
+    return proposal && typeof proposal.type === 'string' && proposal.type.indexOf('compound.') === 0;
+  }
+
+  function applyAdvisorClientAction(clientAction, result, proposalPayload) {
+    if (!clientAction) return;
+    if (clientAction === 'open_meeting_note') {
+      try {
+        if (result && result.id) {
+          sessionStorage.setItem('meeting-notes-mode', 'existing');
+          sessionStorage.setItem('meeting-notes-active-id', String(result.id));
+        } else {
+          sessionStorage.setItem('meeting-notes-mode', 'new');
+        }
+      } catch (_) {}
+      if (typeof window.nav === 'function') window.nav('meeting-notes', null);
+      try {
+        window.dispatchEvent(
+          new CustomEvent('meeting-note-open', {
+            detail: result && result.id ? { id: String(result.id) } : { mode: 'new' },
+          }),
+        );
+      } catch (_) {}
+      return;
+    }
+    if (clientAction === 'open_email_composer') {
+      var prefill = {
+        to: (proposalPayload && proposalPayload.to) || (result && result.to) || [],
+        subject: (proposalPayload && proposalPayload.subject) || (result && result.subject) || '',
+        html_body: (proposalPayload && proposalPayload.html_body) || (result && result.html_body) || '',
+      };
+      if (typeof window.bizDashOpenEmailComposer === 'function') {
+        window.bizDashOpenEmailComposer(prefill);
+      }
+      if (typeof window.nav === 'function') window.nav('emails', null);
+      return;
+    }
+    if (clientAction === 'apply_preferences_runtime') {
+      if (typeof window.bizDashReloadUserUiPreferences === 'function') {
+        void window.bizDashReloadUserUiPreferences();
+      } else if (result && result.preferences && typeof window.applyPreferencesRuntime === 'function') {
+        try {
+          var prefs = window.__bizdashPreferences || { preferences: {} };
+          prefs.preferences = Object.assign({}, prefs.preferences || {}, result.preferences);
+          window.applyPreferencesRuntime(prefs);
+        } catch (_) {}
+      }
+    }
+  }
+
+  function appendStructuredDataCard(el, data) {
+    if (!el || !data || typeof data !== 'object') return;
+    var card = document.createElement('div');
+    card.className = 'chat-asst-structured';
+    card.style.marginTop = '10px';
+    card.style.fontSize = '12px';
+    card.style.color = 'var(--text2)';
+
+    if (Array.isArray(data.appointments) && data.appointments.length && data.appointments.length <= 8) {
+      var ul = document.createElement('ul');
+      ul.style.margin = '0';
+      ul.style.paddingLeft = '18px';
+      data.appointments.forEach(function (a) {
+        var li = document.createElement('li');
+        var when = a.start_time ? new Date(a.start_time).toLocaleString() : '';
+        li.textContent = (a.title || 'Event') + (when ? ' — ' + when : '') + (a.client_name ? ' (' + a.client_name + ')' : '');
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+      el.appendChild(card);
+      return;
+    }
+    if (Array.isArray(data.clients) && data.clients.length && data.clients.length <= 8) {
+      var ul2 = document.createElement('ul');
+      ul2.style.margin = '0';
+      ul2.style.paddingLeft = '18px';
+      data.clients.forEach(function (c) {
+        var li2 = document.createElement('li');
+        li2.textContent = (c.company_name || c.contact_name || 'Client') + (c.status ? ' — ' + c.status : '');
+        ul2.appendChild(li2);
+      });
+      card.appendChild(ul2);
+      el.appendChild(card);
+    }
   }
 
   function advisorPayloadToPlainText(payload) {
@@ -461,12 +684,369 @@
     if (p.draft) {
       var draft = document.createElement('div');
       draft.className = 'chat-asst-draft';
-      draft.textContent = String(p.draft);
+      if (p.meta && Array.isArray(p.meta.toolCalls) && p.meta.toolCalls.length) {
+        draft.innerHTML = miniMarkdownToHtml(p.draft);
+      } else {
+        draft.textContent = String(p.draft);
+      }
       el.appendChild(draft);
+    }
+    if (p.structuredData && !p.proposal) {
+      appendStructuredDataCard(el, p.structuredData);
+    }
+    if (p.proposal && p.proposal.payload && p.proposal.payload.preview_rows) {
+      appendStructuredDataCard(el, { appointments: p.proposal.payload.preview_rows });
     }
     if ((!p.title && (!p.bullets || !p.bullets.length) && !p.draft) && p.text) {
       el.textContent = String(p.text);
     }
+  }
+
+  function appendTier2ProposalControls(messageEl, usageMeta, proposal) {
+    var prop = proposal && typeof proposal === 'object' ? proposal : null;
+    if (!prop || !prop.type || !messageEl || !usageMeta || !usageMeta.usageEventId) return;
+
+    pendingTier2Action = {
+      id: prop.id,
+      type: prop.type,
+      payload: prop.payload || {},
+      summary_human: prop.summary_human || '',
+      summary_voice: prop.summary_voice || '',
+      usageEventId: usageMeta.usageEventId,
+      isCompound: isCompoundProposal(prop),
+    };
+
+    var wrap = document.createElement('div');
+    wrap.className = 'advisor-tier2-proposal';
+    wrap.style.marginTop = '10px';
+    var summary = document.createElement('div');
+    summary.style.fontSize = '12px';
+    summary.style.color = 'var(--text2)';
+    summary.style.marginBottom = '8px';
+    summary.style.lineHeight = '1.45';
+    if (prop.summary_human) {
+      summary.innerHTML = miniMarkdownToHtml(prop.summary_human);
+    }
+    if (isCompoundProposal(prop) && prop.payload && Array.isArray(prop.payload.steps)) {
+      var stepsOl = document.createElement('ol');
+      stepsOl.style.margin = '8px 0 0 0';
+      stepsOl.style.paddingLeft = '20px';
+      stepsOl.style.fontSize = '12px';
+      stepsOl.style.color = 'var(--text2)';
+      prop.payload.steps.forEach(function (st) {
+        var li = document.createElement('li');
+        li.textContent = st.label || st.type || 'Step';
+        stepsOl.appendChild(li);
+      });
+      summary.appendChild(stepsOl);
+    }
+    var row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.gap = '6px';
+    row.style.flexWrap = 'wrap';
+    var confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn btn-p';
+    confirmBtn.textContent = 'Confirm';
+    var cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+
+    confirmBtn.addEventListener('click', function () {
+      void executePendingTier2Action(confirmBtn, cancelBtn);
+    });
+    cancelBtn.addEventListener('click', function () {
+      void cancelPendingTier2Action(cancelBtn, confirmBtn);
+    });
+
+    row.appendChild(confirmBtn);
+    row.appendChild(cancelBtn);
+    wrap.appendChild(summary);
+    wrap.appendChild(row);
+    messageEl.appendChild(wrap);
+  }
+
+  function stepStatusIcon(status) {
+    if (status === 'ok') return '✓';
+    if (status === 'error') return '✗';
+    if (status === 'skipped_due_to_error') return '–';
+    return '○';
+  }
+
+  function resolveCompoundStepRefsClient(value, outputs) {
+    if (value === null || value === undefined) return value;
+    if (Array.isArray(value)) {
+      return value.map(function (v) {
+        return resolveCompoundStepRefsClient(v, outputs);
+      });
+    }
+    if (typeof value === 'object') {
+      if (value.ref && typeof value.ref === 'string' && value.ref.indexOf('step.') === 0) {
+        var parts = value.ref.slice(5).split('.');
+        var stepId = parts.shift();
+        var bag = outputs[stepId];
+        if (!bag) return undefined;
+        var cur = bag;
+        parts.forEach(function (p) {
+          if (cur && typeof cur === 'object') cur = cur[p];
+        });
+        return cur;
+      }
+      var out = {};
+      Object.keys(value).forEach(function (k) {
+        out[k] = resolveCompoundStepRefsClient(value[k], outputs);
+      });
+      return out;
+    }
+    return value;
+  }
+
+  function appendCompoundResultPanel(messageEl, steps, compoundPayload) {
+    if (!messageEl || !Array.isArray(steps) || !steps.length) return;
+    lastCompoundRetrySteps = {};
+    var stepOutputs = {};
+    steps.forEach(function (s) {
+      if (s.status === 'ok' && s.result) stepOutputs[s.id] = s.result;
+    });
+    var wrap = document.createElement('div');
+    wrap.className = 'advisor-compound-results';
+    wrap.style.marginTop = '10px';
+    wrap.style.fontSize = '12px';
+    wrap.style.color = 'var(--text2)';
+
+    steps.forEach(function (st, idx) {
+      var row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      row.style.marginBottom = '6px';
+      row.style.flexWrap = 'wrap';
+
+      var icon = document.createElement('span');
+      icon.textContent = stepStatusIcon(st.status);
+      icon.setAttribute('aria-hidden', 'true');
+
+      var label = document.createElement('span');
+      label.textContent = (st.label || st.type || 'Step') + (st.error ? ' — ' + st.error : '');
+
+      row.appendChild(icon);
+      row.appendChild(label);
+
+      if (st.status === 'error' && compoundPayload && Array.isArray(compoundPayload.steps)) {
+        var stepDef = compoundPayload.steps.find(function (s) {
+          return s.id === st.id;
+        });
+        if (stepDef) {
+          lastCompoundRetrySteps[st.id] = {
+            type: stepDef.type,
+            payload: resolveCompoundStepRefsClient(stepDef.payload, stepOutputs),
+            label: stepDef.label,
+          };
+          var retryBtn = document.createElement('button');
+          retryBtn.type = 'button';
+          retryBtn.className = 'btn';
+          retryBtn.textContent = 'Retry';
+          retryBtn.addEventListener('click', function () {
+            void executeSingleCompoundStepRetry(st.id, retryBtn);
+          });
+          row.appendChild(retryBtn);
+        }
+      }
+
+      wrap.appendChild(row);
+    });
+
+    messageEl.appendChild(wrap);
+  }
+
+  async function executeSingleCompoundStepRetry(stepId, btn) {
+    var step = lastCompoundRetrySteps[stepId];
+    if (!step) return;
+    if (btn) btn.disabled = true;
+
+    var orgId = typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null;
+    if (!orgId) orgId = await ensureAdvisorOrganizationId();
+
+    var effectiveTz =
+      (typeof window.__bizdashEffectiveTimezone === 'string' && window.__bizdashEffectiveTimezone) ||
+      (typeof window.bizDashGetEffectiveTimezone === 'function' && window.bizDashGetEffectiveTimezone()) ||
+      'America/New_York';
+
+    var out = await invokeAdvisorTask({
+      organizationId: orgId || undefined,
+      task: ADVISOR_TASKS.advisor_execute_action,
+      message: 'retry step',
+      action: {
+        id: mkUuid(),
+        type: step.type,
+        payload: step.payload,
+      },
+      context: { page: 'advisor', effectiveTimezone: effectiveTz, last_entities: lastEntities },
+    });
+
+    var resp = out && out.response ? out.response : {};
+    var logEl = document.getElementById('chat-log');
+    if (logEl) {
+      var msg = resp.summary_human || (resp.ok ? 'Step completed.' : resp.error || 'Retry failed.');
+      appendBubble(logEl, 'asst', msg);
+      if (typeof window.bizDashAdvisorSpeak === 'function' && advisorVoiceMode) {
+        window.bizDashAdvisorSpeak(resp.summary_voice || msg);
+      }
+      updateLastEntitiesFromPayload({ type: step.type, result: resp.result });
+      applyAdvisorClientAction(resp.client_action, resp.result, step.payload);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    if (btn && !resp.ok) btn.disabled = false;
+  }
+
+  async function executePendingTier2Action(confirmBtn, cancelBtn) {
+    if (!pendingTier2Action) return;
+    var action = pendingTier2Action;
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    var orgId = typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null;
+    if (!orgId) orgId = await ensureAdvisorOrganizationId();
+
+    var effectiveTz =
+      (typeof window.__bizdashEffectiveTimezone === 'string' && window.__bizdashEffectiveTimezone) ||
+      (typeof window.bizDashGetEffectiveTimezone === 'function' && window.bizDashGetEffectiveTimezone()) ||
+      'America/New_York';
+
+    var usageEventId = mkUuid();
+    var t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    var out = await invokeAdvisorTask({
+      organizationId: orgId || undefined,
+      task: ADVISOR_TASKS.advisor_execute_action,
+      message: 'execute',
+      action: {
+        id: action.id,
+        type: action.type,
+        payload: action.payload,
+      },
+      context: {
+        page: 'advisor',
+        effectiveTimezone: effectiveTz,
+        last_entities: lastEntities,
+      },
+    });
+    var t1 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+
+    await logAdvisorUsage({
+      id: usageEventId,
+      user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+      organization_id: orgId,
+      task: ADVISOR_TASKS.advisor_execute_action,
+      request_payload: { action: action },
+      response_payload: out && out.response ? out.response : {},
+      status: out && out.ok ? 'ok' : 'error',
+      latency_ms: Math.max(0, Math.round(t1 - t0)),
+      created_at: new Date().toISOString(),
+    });
+
+    var resp = out && out.response ? out.response : {};
+    var applied = !!(resp.ok);
+    await logAdvisorActionOutcome({
+      id: mkUuid(),
+      user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+      organization_id: orgId,
+      usage_event_id: action.usageEventId,
+      task: ADVISOR_TASKS.advisor_query,
+      action_id: 'tier2.' + action.type,
+      action_label: action.summary_human || action.type,
+      outcome: applied ? 'applied' : 'error',
+      details: {
+        proposal_id: action.id,
+        error: resp.error || null,
+        result: resp.result || null,
+        step_results: resp.steps || null,
+        workflow_run_id: resp.workflow_run_id || null,
+        compound: !!action.isCompound,
+      },
+      created_at: new Date().toISOString(),
+    });
+
+    pendingTier2Action = null;
+
+    var logEl = document.getElementById('chat-log');
+    if (logEl) {
+      var reply = resp.summary_human || (applied ? 'Done.' : resp.error || 'Could not apply that change.');
+      var statusBubble = appendBubble(logEl, 'asst', reply);
+      if (action.isCompound && Array.isArray(resp.steps) && statusBubble) {
+        appendCompoundResultPanel(statusBubble, resp.steps, action.payload);
+      }
+      if (typeof window.bizDashAdvisorSpeak === 'function' && advisorVoiceMode) {
+        window.bizDashAdvisorSpeak(resp.summary_voice || reply);
+      }
+      updateLastEntitiesFromPayload({
+        type: action.type,
+        result: resp.result,
+        steps: resp.steps,
+      });
+      applyAdvisorClientAction(resp.client_action, resp.result, action.payload);
+      if (typeof window.bizDashAdvisorChatOnAssistantMessage === 'function') {
+        try {
+          window.bizDashAdvisorChatOnAssistantMessage(reply);
+        } catch (_) {}
+      }
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    if (!applied && confirmBtn) confirmBtn.disabled = false;
+  }
+
+  async function cancelPendingTier2Action(cancelBtn, confirmBtn) {
+    if (!pendingTier2Action) return;
+    var action = pendingTier2Action;
+    pendingTier2Action = null;
+    if (cancelBtn) cancelBtn.disabled = true;
+    if (confirmBtn) confirmBtn.disabled = true;
+    await logAdvisorActionOutcome({
+      id: mkUuid(),
+      user_id: window.currentUser && window.currentUser.id ? window.currentUser.id : null,
+      organization_id: typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null,
+      usage_event_id: action.usageEventId,
+      task: ADVISOR_TASKS.advisor_query,
+      action_id: 'tier2.' + action.type,
+      action_label: action.summary_human || action.type,
+      outcome: 'cancelled',
+      details: { proposal_id: action.id },
+      created_at: new Date().toISOString(),
+    });
+    var logEl = document.getElementById('chat-log');
+    if (logEl) {
+      appendBubble(logEl, 'asst', 'Cancelled — no changes were made.');
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  }
+
+  function tryResolvePendingTier2FromMessage(text) {
+    var msg = String(text || '').trim();
+    if (!msg) return false;
+
+    if (/^retry(\s+step)?\s*(\d+)?\b/i.test(msg) && Object.keys(lastCompoundRetrySteps).length) {
+      var match = msg.match(/^retry(?:\s+step)?\s*(\d+)?\b/i);
+      var stepNum = match && match[1] ? parseInt(match[1], 10) : 1;
+      var keys = Object.keys(lastCompoundRetrySteps);
+      var stepId = keys[Math.max(0, Math.min(keys.length - 1, stepNum - 1))];
+      if (stepId) {
+        void executeSingleCompoundStepRetry(stepId);
+        return true;
+      }
+    }
+
+    if (!pendingTier2Action) return false;
+    if (/^(yes|yeah|yep|sure|save|go|do it|confirm|sounds good|ok|okay)\b/i.test(msg)) {
+      void executePendingTier2Action();
+      return true;
+    }
+    if (/^(no|nope|cancel|nevermind|never mind|skip|stop|don't|do not)\b/i.test(msg)) {
+      void cancelPendingTier2Action();
+      return true;
+    }
+    pendingTier2Action = null;
+    return false;
   }
 
   async function logAdvisorUsage(entry) {
@@ -1389,11 +1969,18 @@
       messageEl.appendChild(row);
     }
 
-    async function handleSend(text) {
+    async function handleSend(text, opts) {
       if (isThinking) return;
       var t = (text || '').trim();
       var hadImage = !!imagePreview;
       if (!t && !hadImage) return;
+
+      if (tryResolvePendingTier2FromMessage(t)) {
+        appendBubble(logEl, 'user', t);
+        syncAdvisorComposerLayout();
+        return;
+      }
+
       seedWelcome();
 
       var userLine = t || '(Image attached)';
@@ -1460,6 +2047,10 @@
         var orgId = typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : null;
         if (!orgId && window.currentOrganizationId) orgId = String(window.currentOrganizationId).trim() || null;
         if (!orgId) orgId = await ensureAdvisorOrganizationId();
+        var effectiveTz =
+          (typeof window.__bizdashEffectiveTimezone === 'string' && window.__bizdashEffectiveTimezone) ||
+          (typeof window.bizDashGetEffectiveTimezone === 'function' && window.bizDashGetEffectiveTimezone()) ||
+          'America/New_York';
         var request = {
           organizationId: orgId || undefined,
           task: task,
@@ -1471,9 +2062,17 @@
             contactRequest: contactSnapshot,
             clientsDigest: clientsDigest,
             workspaceListsDigest: workspaceListsDigest,
+            effectiveTimezone: effectiveTz,
+            last_entities: {
+              appointmentId: lastEntities.appointmentId,
+              clientId: lastEntities.clientId,
+              transactionId: lastEntities.transactionId,
+              meetingNoteId: lastEntities.meetingNoteId,
+            },
           },
           constraints: { maxBullets: 5, tone: 'concise' },
         };
+        if (opts && opts.voice) advisorVoiceMode = true;
         out = await invokeAdvisorTask(request, {
           onStreamDelta: function (chunk) {
             ensureStreamDraft();
@@ -1511,6 +2110,17 @@
         thinkingEl.removeChild(thinkingEl.firstChild);
       }
       renderAdvisorPayload(thinkingEl, out && out.response ? out.response : { text: 'No response.' });
+      if (out && out.response) {
+        updateLastEntitiesFromPayload(out.response);
+      }
+      if (out && out.response && out.response.proposal && usageMeta) {
+        appendTier2ProposalControls(thinkingEl, usageMeta, out.response.proposal);
+        if (advisorVoiceMode && typeof window.bizDashAdvisorSpeak === 'function') {
+          window.bizDashAdvisorSpeak(
+            out.response.proposal.summary_voice || out.response.proposal.summary_human || 'Please confirm.',
+          );
+        }
+      }
       if (out && out.response && out.response.crmProposal && usageMeta) {
         appendCrmProposalControls(thinkingEl, usageMeta, out.response.crmProposal, contactSnapshot);
       }
@@ -1584,6 +2194,7 @@
       seeded = false;
       isThinking = false;
       pendingTask = null;
+      pendingTier2Action = null;
       setImagePreview(null);
       setSelectedTool(null);
       setToolsOpen(false);
@@ -1612,6 +2223,24 @@
       syncAdvisorComposerLayout();
     };
     syncAdvisorComposerLayout();
+
+    window.bizDashAdvisorAsk = function (text, opts) {
+      var t = text != null ? String(text) : '';
+      if (opts && opts.voice) advisorVoiceMode = true;
+      if (typeof window.nav === 'function') window.nav('chat', null);
+      handleSend(t, opts || {});
+    };
+
+    window.bizDashAdvisorSpeak = function (text) {
+      var line = String(text || '').trim();
+      if (!line || typeof window.speechSynthesis === 'undefined') return;
+      try {
+        window.speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance(line.replace(/\*\*/g, ''));
+        u.rate = 1;
+        window.speechSynthesis.speak(u);
+      } catch (_) {}
+    };
 
     window.bizDashAdvisorGetComposerApi = function () {
       return {

@@ -12,6 +12,8 @@ import {
 } from '@/lib/scheduling/meetingSummary';
 import { isDemoMode } from '@/lib/demoMode';
 
+type SummaryStyle = 'auto' | 'bullets' | 'actions' | 'decisions';
+
 function splitSentences (text: string): string[] {
   return text
     .split (/(?<=[.!?])\s+|\n+/)
@@ -19,7 +21,7 @@ function splitSentences (text: string): string[] {
     .filter (Boolean);
 }
 
-function buildDemoSummary (transcript: string): {
+function buildDemoSummary (transcript: string, summaryStyle: SummaryStyle): {
   summary: string;
   actionItemsRaw: Array<{ task: string; owner: string; due_date: string | null }>;
   topics: string[];
@@ -40,6 +42,7 @@ function buildDemoSummary (transcript: string): {
     .map ((s) => ({
       task: s.replace (/^\s*[-*]\s*/, '').replace (/^action item:?\s*/i, '').trim (),
       owner: '',
+      owner_user_id: null as string | null,
       due_date: null,
     }));
 
@@ -51,10 +54,31 @@ function buildDemoSummary (transcript: string): {
   const headlineBullets = sentences.slice (0, Math.min (8, sentences.length))
     .map ((s) => `- ${s.replace (/^\s*[-*]\s*/, '').trim ()}`);
 
-  const summary =
-    '### Meeting Recap (demo)\n\n' +
-    'This is an on-device summary of your live transcript. Sign in to get a full Advisor summary.\n\n' +
-    headlineBullets.join ('\n');
+  if (summaryStyle === 'actions') {
+    return {
+      summary: '',
+      actionItemsRaw,
+      topics: [],
+      decisions: [],
+    };
+  }
+
+  if (summaryStyle === 'decisions') {
+    return {
+      summary: '',
+      actionItemsRaw: [],
+      topics: [],
+      decisions,
+    };
+  }
+
+  const summary = summaryStyle === 'bullets'
+    ? headlineBullets.join ('\n')
+    : (
+      '### Meeting Recap (demo)\n\n' +
+      'This is an on-device summary of your live transcript. Sign in to get a full Advisor summary.\n\n' +
+      headlineBullets.join ('\n')
+    );
 
   return {
     summary,
@@ -73,6 +97,12 @@ type UseMeetingNoteOptions = {
   transcript: string;
   duration: number;
   setTranscript: (value: string) => void;
+  /**
+   * When set to a real note id, loads that note instead of the latest.
+   * When set to '__new', force-creates a fresh draft note.
+   * When null/undefined, falls back to the most recently updated note (legacy behavior).
+   */
+  selectedNoteId?: string | null;
 };
 
 type UseMeetingNoteResult = {
@@ -87,16 +117,23 @@ type UseMeetingNoteResult = {
   summarizing: boolean;
   summaryError: string | null;
   hasSummarized: boolean;
-  summarize: (transcriptOverride?: string) => Promise<void>;
+  summarize: (transcriptOverride?: string, opts?: { summaryStyle?: SummaryStyle }) => Promise<void>;
   clearSummary: () => void;
 };
 
 function actionItemsToRows (
   items: MeetingActionItem[],
-): Array<{ task: string; owner: string; due_date: string | null; completed: boolean }> {
+): Array<{
+  task: string;
+  owner: string;
+  owner_user_id: string | null;
+  due_date: string | null;
+  completed: boolean;
+}> {
   return items.map ((item) => ({
     task: item.task,
     owner: item.owner,
+    owner_user_id: item.ownerUserId,
     due_date: item.dueDate,
     completed: item.completed,
   }));
@@ -109,6 +146,7 @@ export function useMeetingNote ({
   transcript,
   duration,
   setTranscript,
+  selectedNoteId,
 }: UseMeetingNoteOptions): UseMeetingNoteResult {
   const [note, setNote] = useState<MeetingNote | null> (null);
   const [loading, setLoading] = useState (false);
@@ -138,10 +176,125 @@ export function useMeetingNote ({
     if (!supabase || !organizationId) return;
     let cancelled = false;
     const localTranscript = transcript;
-    const preserveLocalTranscript = !!(localTranscript.trim () || duration > 0);
+    const forceNew = selectedNoteId === '__new';
+    const specificId =
+      !forceNew && typeof selectedNoteId === 'string' && selectedNoteId.trim ()
+        ? selectedNoteId.trim ()
+        : null;
+    // Preserve in-progress recording only when staying on the "latest" view.
+    const preserveLocalTranscript =
+      !forceNew && !specificId && !!(localTranscript.trim () || duration > 0);
+
     setLoading (true);
     setSaveError (null);
+
+    const applyMappedNote = (mapped: MeetingNote, opts: { resetIfEmpty: boolean }) => {
+      setNote (mapped);
+      const initial = mapped.transcript || mapped.rawNotes || '';
+      if (preserveLocalTranscript) {
+        setRawNotes (localTranscript);
+        prevTranscriptRef.current = localTranscript;
+      } else if (opts.resetIfEmpty && !initial) {
+        setRawNotes ('');
+        prevTranscriptRef.current = '';
+        setTranscript ('');
+      } else {
+        setRawNotes (initial);
+        prevTranscriptRef.current = initial;
+        setTranscript (initial);
+      }
+      setSummary (mapped.summary || '');
+      setActionItems (mapped.actionItems || []);
+      setTopics (mapped.topics || []);
+      setDecisions (
+        mapped.decisions
+          ? mapped.decisions
+              .split (/\r?\n/)
+              .map ((s) => s.trim ())
+              .filter (Boolean)
+          : [],
+      );
+      setHasSummarized (
+        !!(mapped.summary
+          || (mapped.actionItems && mapped.actionItems.length)
+          || (mapped.topics && mapped.topics.length)),
+      );
+    };
+
+    const createFreshNote = async () => {
+      const insertBody = {
+        organization_id: organizationId,
+        contact_id: appointment?.clientId ?? null,
+        title: appointment?.title || 'Untitled meeting',
+        attendees: [],
+        scheduled_at: appointment?.startTime || null,
+        raw_notes: '',
+        manual_notes: '',
+        action_items: [],
+        decisions: '',
+        summary: '',
+        topics: [],
+        transcript_duration: 0,
+        status: 'draft',
+      };
+      const { data: created, error: createErr } = await supabase
+        .from ('meeting_notes')
+        .insert (insertBody)
+        .select ('*')
+        .single ();
+      if (cancelled) return;
+      if (createErr || !created) {
+        setSaveError ('Sorry, we could not complete your request.');
+        setLoading (false);
+        return;
+      }
+      const mapped = rowToMeetingNote (created as MeetingNoteRow);
+      setNote (mapped);
+      if (preserveLocalTranscript) {
+        setRawNotes (localTranscript);
+        prevTranscriptRef.current = localTranscript;
+      } else {
+        setRawNotes ('');
+        prevTranscriptRef.current = '';
+        setTranscript ('');
+      }
+      setSummary ('');
+      setActionItems ([]);
+      setDecisions ([]);
+      setTopics ([]);
+      setHasSummarized (false);
+    };
+
     void (async () => {
+      if (forceNew) {
+        await createFreshNote ();
+        setLoading (false);
+        return;
+      }
+
+      if (specificId) {
+        const { data, error } = await supabase
+          .from ('meeting_notes')
+          .select ('*')
+          .eq ('organization_id', organizationId)
+          .eq ('id', specificId)
+          .limit (1);
+        if (cancelled) return;
+        if (error) {
+          setLoading (false);
+          setSaveError ('Sorry, we could not complete your request.');
+          return;
+        }
+        if (data && data.length > 0) {
+          applyMappedNote (rowToMeetingNote (data[0] as MeetingNoteRow), { resetIfEmpty: true });
+        } else {
+          // Selected id no longer exists — fall through to latest as a safe default.
+          await createFreshNote ();
+        }
+        setLoading (false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from ('meeting_notes')
         .select ('*')
@@ -155,82 +308,16 @@ export function useMeetingNote ({
         return;
       }
       if (data && data.length > 0) {
-        const mapped = rowToMeetingNote (data[0] as MeetingNoteRow);
-        setNote (mapped);
-        const initial = mapped.transcript || mapped.rawNotes || '';
-        if (preserveLocalTranscript) {
-          setRawNotes (localTranscript);
-          prevTranscriptRef.current = localTranscript;
-        } else {
-          setRawNotes (initial);
-          prevTranscriptRef.current = initial;
-          setTranscript (initial);
-        }
-        setSummary (mapped.summary || '');
-        setActionItems (mapped.actionItems || []);
-        setTopics (mapped.topics || []);
-        setDecisions (
-          mapped.decisions
-            ? mapped.decisions
-                .split (/\r?\n/)
-                .map ((s) => s.trim ())
-                .filter (Boolean)
-            : [],
-        );
-        setHasSummarized (
-          !!(mapped.summary
-            || (mapped.actionItems && mapped.actionItems.length)
-            || (mapped.topics && mapped.topics.length)),
-        );
+        applyMappedNote (rowToMeetingNote (data[0] as MeetingNoteRow), { resetIfEmpty: false });
       } else {
-        const insertBody = {
-          organization_id: organizationId,
-          contact_id: appointment?.clientId ?? null,
-          title: appointment?.title || 'Untitled meeting',
-          attendees: [],
-          scheduled_at: appointment?.startTime || null,
-          raw_notes: '',
-          manual_notes: '',
-          action_items: [],
-          decisions: '',
-          summary: '',
-          topics: [],
-          transcript_duration: 0,
-          status: 'draft',
-        };
-        const { data: created, error: createErr } = await supabase
-          .from ('meeting_notes')
-          .insert (insertBody)
-          .select ('*')
-          .single ();
-        if (cancelled) return;
-        if (createErr || !created) {
-          setSaveError ('Sorry, we could not complete your request.');
-          setLoading (false);
-          return;
-        }
-        const mapped = rowToMeetingNote (created as MeetingNoteRow);
-        setNote (mapped);
-        if (preserveLocalTranscript) {
-          setRawNotes (localTranscript);
-          prevTranscriptRef.current = localTranscript;
-        } else {
-          setRawNotes ('');
-          prevTranscriptRef.current = '';
-          setTranscript ('');
-        }
-        setSummary ('');
-        setActionItems ([]);
-        setDecisions ([]);
-        setTopics ([]);
-        setHasSummarized (false);
+        await createFreshNote ();
       }
       setLoading (false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [supabase, organizationId, appointment?.clientId, appointment?.startTime, appointment?.title, setTranscript]);
+  }, [supabase, organizationId, appointment?.clientId, appointment?.startTime, appointment?.title, setTranscript, selectedNoteId]);
 
   useEffect (() => {
     if (!transcript) return;
@@ -273,7 +360,11 @@ export function useMeetingNote ({
     };
   }, [note, supabase, organizationId, rawNotes, transcript, duration]);
 
-  const summarize = useCallback (async (transcriptOverride?: string) => {
+  const summarize = useCallback (async (
+    transcriptOverride?: string,
+    opts?: { summaryStyle?: SummaryStyle },
+  ) => {
+    const summaryStyle = opts?.summaryStyle ?? 'auto';
     const demo = isDemoMode ();
     console.info ('[meeting-notes] summarize() called', {
       demo,
@@ -300,7 +391,7 @@ export function useMeetingNote ({
       setSummarizing (true);
       setSummaryError (null);
       await new Promise ((r) => window.setTimeout (r, 600));
-      const built = buildDemoSummary (currentTranscript);
+      const built = buildDemoSummary (currentTranscript, summaryStyle);
       setSummary (built.summary);
       setActionItems (normalizeActionItems (built.actionItemsRaw));
       setTopics (built.topics);
@@ -332,6 +423,7 @@ export function useMeetingNote ({
         attendees: '',
         transcript: currentTranscript,
         manualNotes: '',
+        summaryStyle,
       });
       const nextActionItems = normalizeActionItems (parsed.action_items);
       const nextTopics = (parsed.topics || [])
