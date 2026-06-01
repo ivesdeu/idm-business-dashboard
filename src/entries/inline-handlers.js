@@ -136,6 +136,39 @@
         }
         return;
       }
+
+      // Dashboard / modal controls — delegated so they work even when
+      // financial-core init() aborts before direct listeners attach.
+      if (t.closest('#btn-open-transaction, #btn-open-transaction-2')) {
+        if (typeof window.bizDashOpenTransactionModal === 'function') {
+          window.bizDashOpenTransactionModal();
+        } else {
+          var txMo = document.getElementById('transactionModal');
+          if (txMo) txMo.classList.add('on');
+        }
+        return;
+      }
+      if (t.closest('#btn-open-input')) {
+        if (typeof window.bizDashOpenInputModal === 'function') {
+          window.bizDashOpenInputModal();
+        } else {
+          var inMo = document.getElementById('inputModal');
+          if (inMo) inMo.classList.add('on');
+        }
+        return;
+      }
+      if (t.closest('#btn-close-input, #btn-tx-cancel')) {
+        if (t.closest('#btn-close-input') && typeof window.bizDashCloseInputModal === 'function') {
+          window.bizDashCloseInputModal();
+        } else if (typeof window.bizDashCloseTransactionModal === 'function') {
+          window.bizDashCloseTransactionModal();
+        }
+        return;
+      }
+      if (t.closest('#btn-apply-input')) {
+        if (typeof window.updateData === 'function') window.updateData();
+        return;
+      }
     });
   }
 

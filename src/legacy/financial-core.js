@@ -12630,6 +12630,18 @@ var incomePowerState = {
     if (modal) modal.classList.remove('on');
   }
 
+  window.bizDashOpenTransactionModal = openTransactionModal;
+  window.bizDashCloseTransactionModal = closeTransactionModal;
+  window.bizDashDeleteTransaction = deleteTransaction;
+  window.bizDashOpenInputModal = function () {
+    var modal = $('inputModal');
+    if (modal) modal.classList.add('on');
+  };
+  window.bizDashCloseInputModal = function () {
+    var modal = $('inputModal');
+    if (modal) modal.classList.remove('on');
+  };
+
   function wireTransactionForm() {
     var btnOpen1 = $('btn-open-transaction');
     var btnOpen2 = $('btn-open-transaction-2');
@@ -25937,8 +25949,9 @@ var incomePowerState = {
       if (btnOpenInput && btnOpenInput.getAttribute('data-wired-open-input') !== '1') {
         btnOpenInput.setAttribute('data-wired-open-input', '1');
         btnOpenInput.addEventListener('click', function () {
-          var modal = document.getElementById('inputModal');
-          if (modal) modal.classList.add('on');
+          if (typeof window.bizDashOpenInputModal === 'function') {
+            window.bizDashOpenInputModal();
+          }
         });
       }
     });
