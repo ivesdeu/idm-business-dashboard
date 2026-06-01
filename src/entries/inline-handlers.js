@@ -130,10 +130,26 @@
       var proxyEl = t.closest('[data-proxy-click]');
       if (proxyEl) {
         var targetId = proxyEl.getAttribute('data-proxy-click');
-        if (targetId) {
-          var target = document.getElementById(targetId);
-          if (target) target.click();
+        if (!targetId) return;
+        var target = document.getElementById(targetId);
+        if (!target) return;
+        // If the proxy target lives on another page, navigate there first so
+        // any visible effect (modal opens, inline row appears) is actually seen
+        // by the user. Without this, the click fires on a `display:none` page
+        // and the user perceives the button as broken.
+        var navTarget = proxyEl.getAttribute('data-proxy-nav');
+        if (navTarget && typeof window.nav === 'function') {
+          var alreadyOn = document.getElementById('page-' + navTarget)
+            && document.getElementById('page-' + navTarget).classList.contains('on');
+          if (!alreadyOn) {
+            window.nav(navTarget);
+            // Defer the click until after the page becomes visible so any
+            // handler that touches geometry / focus has the right layout.
+            window.setTimeout(function () { target.click(); }, 60);
+            return;
+          }
         }
+        target.click();
         return;
       }
 
