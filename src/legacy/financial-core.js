@@ -12,6 +12,7 @@ import {
   selectOptionsForColumn,
 } from '../lib/crm-customers-schema.ts';
 import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin, inviteShareUrl, paymentReturnUrl } from '../lib/appUrl.js';
+import { humanizePasswordError } from '../lib/authMessages.ts';
 
 (function () {
   'use strict';
@@ -15508,7 +15509,7 @@ var incomePowerState = {
             options: { emailRedirectTo: redirectTo },
           });
           if (res.error) {
-            alert(res.error.message || 'Sign-up failed.');
+            alert(humanizePasswordError(res.error.message) || 'Sign-up failed.');
             return;
           }
           var nu = res.data && res.data.user;
@@ -15518,7 +15519,13 @@ var incomePowerState = {
               await supabase.auth.signOut();
             } catch (_) {}
           }
-          if (nu && nu.email_confirmed_at) {
+          // Supabase v2 anti-enumeration: existing-and-confirmed accounts come
+          // back as a shadow user with `identities: []`. Without this check the
+          // user is told to "check your email" forever.
+          var alreadyRegistered = !!(nu && Array.isArray(nu.identities) && nu.identities.length === 0);
+          if (alreadyRegistered) {
+            alert('An account already exists for this email and is confirmed. Sign in with your password, or use "Forgot password" to reset it.');
+          } else if (nu && nu.email_confirmed_at) {
             alert('Account created. Sign in with your email and password.');
           } else {
             alert('Check your email to confirm your account, then sign in.');
@@ -15691,7 +15698,7 @@ var incomePowerState = {
         try {
           var res = await supa.auth.updateUser({ password: pw });
           if (res.error) {
-            showInlineErr('account-password-modal-err', res.error.message || 'Could not update password.');
+            showInlineErr('account-password-modal-err', humanizePasswordError(res.error.message) || 'Could not update password.');
             return;
           }
           if (res.data && res.data.user) {
@@ -25854,35 +25861,56 @@ var incomePowerState = {
   function init() {
     state.filter = { mode: 'all', start: null, end: null };
     state.expensesUnreviewedOnly = false;
-    wireTransactionForm();
-    wireCsvImportAndJournalExport();
-    wireIncomeExpenseForms();
-    wireTimesheet();
-    wireDeleteHandlers();
-    wireExpensesTableSort();
-    wireExpensesReviewButtons();
-    wireCustomersTableSort();
-    wireClientForm();
-    wireInvoiceModal();
-    wireInvoiceFullEditor();
-    wireInvoicePreviewModal();
-    wireProjectsAndStatuses();
-    wireFilter();
-    wireCustomersColumnsPicker();
-    wireCrmInlineCustomers();
-    wireIncomePowerTable();
-    wireSpendingReport();
-    wireSettingsSave();
-    wireSettingsShell();
-    wireReferEarnSettingsUi();
-    wirePeopleSettingsUi();
-    wireProfileSettings();
-    wireAccountSecuritySettings();
-    wireGoogleOAuthInSettings();
-    updateGoogleOAuthRedirectHint();
-    wireStripeConnectInSettings();
-    wirePlaidConnectInSettings();
-    (function wireUnreviewedChips() {
+
+    /**
+     * Each wire* call walks unrelated DOM and can throw for unrelated reasons
+     * (a missing element on a page the user hasn't visited, a Supabase race,
+     * a third-party script that hasn't loaded yet). Without isolation, the
+     * first failure strands every later wire AND prevents `window.nav` from
+     * being installed at the bottom of init() — which is exactly how the
+     * home screen ends up with most buttons unresponsive on mobile.
+     */
+    function safeWire(name, fn) {
+      try {
+        fn();
+      } catch (err) {
+        try {
+          if (typeof console !== 'undefined' && console.error) {
+            console.error('[financial-core init] ' + name + ' failed:', err);
+          }
+        } catch (_) {}
+      }
+    }
+
+    safeWire('wireTransactionForm', wireTransactionForm);
+    safeWire('wireCsvImportAndJournalExport', wireCsvImportAndJournalExport);
+    safeWire('wireIncomeExpenseForms', wireIncomeExpenseForms);
+    safeWire('wireTimesheet', wireTimesheet);
+    safeWire('wireDeleteHandlers', wireDeleteHandlers);
+    safeWire('wireExpensesTableSort', wireExpensesTableSort);
+    safeWire('wireExpensesReviewButtons', wireExpensesReviewButtons);
+    safeWire('wireCustomersTableSort', wireCustomersTableSort);
+    safeWire('wireClientForm', wireClientForm);
+    safeWire('wireInvoiceModal', wireInvoiceModal);
+    safeWire('wireInvoiceFullEditor', wireInvoiceFullEditor);
+    safeWire('wireInvoicePreviewModal', wireInvoicePreviewModal);
+    safeWire('wireProjectsAndStatuses', wireProjectsAndStatuses);
+    safeWire('wireFilter', wireFilter);
+    safeWire('wireCustomersColumnsPicker', wireCustomersColumnsPicker);
+    safeWire('wireCrmInlineCustomers', wireCrmInlineCustomers);
+    safeWire('wireIncomePowerTable', wireIncomePowerTable);
+    safeWire('wireSpendingReport', wireSpendingReport);
+    safeWire('wireSettingsSave', wireSettingsSave);
+    safeWire('wireSettingsShell', wireSettingsShell);
+    safeWire('wireReferEarnSettingsUi', wireReferEarnSettingsUi);
+    safeWire('wirePeopleSettingsUi', wirePeopleSettingsUi);
+    safeWire('wireProfileSettings', wireProfileSettings);
+    safeWire('wireAccountSecuritySettings', wireAccountSecuritySettings);
+    safeWire('wireGoogleOAuthInSettings', wireGoogleOAuthInSettings);
+    safeWire('updateGoogleOAuthRedirectHint', updateGoogleOAuthRedirectHint);
+    safeWire('wireStripeConnectInSettings', wireStripeConnectInSettings);
+    safeWire('wirePlaidConnectInSettings', wirePlaidConnectInSettings);
+    safeWire('wireUnreviewedChips', function () {
       var btnInc = document.getElementById('income-power-unreviewed');
       if (btnInc && btnInc.getAttribute('data-wired-unrev') !== '1') {
         btnInc.setAttribute('data-wired-unrev', '1');
@@ -25901,31 +25929,53 @@ var incomePowerState = {
           renderAll();
         });
       }
-    })();
-    wirePersonableActions();
-    wireCloudSyncPanel();
-    wireMarketingCampaign();
-    wireWorkflowAutomation();
-    if (typeof window.wireDashboardAssistant === 'function') {
-      window.wireDashboardAssistant();
-    }
-    wireTeamPage();
-    wireWorkspaceSettingsPanel();
-    wireEmailsPage();
-    wireListsFeature();
-    wireResizableTables();
-    if (typeof requestAnimationFrame !== 'undefined') {
-      requestAnimationFrame(function () {
+    });
+    safeWire('wireOpenInputModal', function () {
+      // "Update totals" on the dashboard opens #inputModal. The old inline
+      // onclick was removed for CSP; without this re-wire the button is dead.
+      var btnOpenInput = document.getElementById('btn-open-input');
+      if (btnOpenInput && btnOpenInput.getAttribute('data-wired-open-input') !== '1') {
+        btnOpenInput.setAttribute('data-wired-open-input', '1');
+        btnOpenInput.addEventListener('click', function () {
+          var modal = document.getElementById('inputModal');
+          if (modal) modal.classList.add('on');
+        });
+      }
+    });
+    safeWire('wirePersonableActions', wirePersonableActions);
+    safeWire('wireCloudSyncPanel', wireCloudSyncPanel);
+    safeWire('wireMarketingCampaign', wireMarketingCampaign);
+    safeWire('wireWorkflowAutomation', wireWorkflowAutomation);
+    safeWire('wireDashboardAssistant', function () {
+      if (typeof window.wireDashboardAssistant === 'function') {
+        window.wireDashboardAssistant();
+      }
+    });
+    safeWire('wireTeamPage', wireTeamPage);
+    safeWire('wireWorkspaceSettingsPanel', wireWorkspaceSettingsPanel);
+    safeWire('wireEmailsPage', wireEmailsPage);
+    safeWire('wireListsFeature', wireListsFeature);
+    safeWire('wireResizableTables', wireResizableTables);
+    safeWire('wireBrandedNavIconsOnce', function () {
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(function () {
+          try { wireBrandedNavIconsOnce(); } catch (_) {}
+          try {
+            if (typeof window.bizDashRepaintAllBrandedIcons === 'function') {
+              window.bizDashRepaintAllBrandedIcons();
+            }
+          } catch (_) {}
+        });
+      } else {
         wireBrandedNavIconsOnce();
-        if (typeof window.bizDashRepaintAllBrandedIcons === 'function') window.bizDashRepaintAllBrandedIcons();
-      });
-    } else {
-      wireBrandedNavIconsOnce();
-      if (typeof window.bizDashRepaintAllBrandedIcons === 'function') window.bizDashRepaintAllBrandedIcons();
-    }
-    wireQuickActionsPalette();
-    wireSidebarChrome();
-    wireModalBackdropDismissAll();
+        if (typeof window.bizDashRepaintAllBrandedIcons === 'function') {
+          window.bizDashRepaintAllBrandedIcons();
+        }
+      }
+    });
+    safeWire('wireQuickActionsPalette', wireQuickActionsPalette);
+    safeWire('wireSidebarChrome', wireSidebarChrome);
+    safeWire('wireModalBackdropDismissAll', wireModalBackdropDismissAll);
 
     /**
      * Safety net: a stray capture-phase listener / blocked delegated click handler can leave
@@ -26093,29 +26143,35 @@ var incomePowerState = {
       }
     };
 
-    consumeStripeSettingsReturnFromUrl();
-    consumeOAuthReturnFromUrl();
-    consumeListIdFromUrl();
-    wireBizdashAdvisorCtasOnce();
+    safeWire('consumeStripeSettingsReturnFromUrl', consumeStripeSettingsReturnFromUrl);
+    safeWire('consumeOAuthReturnFromUrl', consumeOAuthReturnFromUrl);
+    safeWire('consumeListIdFromUrl', consumeListIdFromUrl);
+    safeWire('wireBizdashAdvisorCtasOnce', wireBizdashAdvisorCtasOnce);
 
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape') document.body.classList.remove('mobile-nav-open');
     });
 
-    stagePageMotion(document.querySelector('.pg.on'));
+    safeWire('stagePageMotion', function () {
+      stagePageMotion(document.querySelector('.pg.on'));
+    });
 
     // Load data only when session is already present (auth calls init after login from showApp).
     // Do not run while signed in but workspace id is still resolving — otherwise the first init
     // completes without org, skips remote fetch, and the user can stay on empty local state.
-    if (typeof initDataFromSupabase === 'function' && window.currentUser && window.supabaseClient) {
-      var demoUid = window.DEMO_DASHBOARD_USER_ID || '00000000-0000-4000-8000-000000000001';
-      var isDemoUser = window.currentUser.id === demoUid;
-      var orgReady =
-        typeof window.bizDashGetCurrentOrgId === 'function' ? window.bizDashGetCurrentOrgId() : window.currentOrganizationId;
-      if (isDemoUser || (orgReady && String(orgReady).trim())) {
-        initDataFromSupabase();
+    safeWire('initDataFromSupabase', function () {
+      if (typeof initDataFromSupabase === 'function' && window.currentUser && window.supabaseClient) {
+        var demoUid = window.DEMO_DASHBOARD_USER_ID || '00000000-0000-4000-8000-000000000001';
+        var isDemoUser = window.currentUser.id === demoUid;
+        var orgReady =
+          typeof window.bizDashGetCurrentOrgId === 'function'
+            ? window.bizDashGetCurrentOrgId()
+            : window.currentOrganizationId;
+        if (isDemoUser || (orgReady && String(orgReady).trim())) {
+          initDataFromSupabase();
+        }
       }
-    }
+    });
   }
 
   window.bizDashCrmCustomersTableBuildPayload = crmBuildCustomersTableSyncPayload;

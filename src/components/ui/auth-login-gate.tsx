@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
-import { ArrowLeftIcon, LockClosedIcon, EnvelopeIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowLeftIcon,
+  EnvelopeIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  LockClosedIcon,
+} from '@heroicons/react/24/outline';
 
 import { authFormDefaultGooglePrimary, authFormDefaultSecondaryGithub } from '@/components/ui/sign-in-1';
 import { Button } from '@/components/ui/button';
@@ -8,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { authEmailRedirectTo } from '@/lib/appUrl';
+import { humanizePasswordError } from '@/lib/authMessages';
 import { cn } from '@/lib/utils';
 
 type Step = 'signin' | 'signup';
@@ -42,6 +49,55 @@ function syncSignupEmailToMainGate(email: string) {
   if (main) main.value = email;
 }
 
+// Supabase v2 returns a "shadow" user object with an empty identities array when
+// /signup is called for an email that is already registered. This is intentional
+// (anti-enumeration) but means a plain success message ("check your email…")
+// misleads users whose account already exists and is already confirmed.
+// See: https://github.com/supabase/auth-js/issues/296
+type MinimalSignUpUser = { identities?: Array<unknown> | null } | null | undefined;
+function isRepeatedSignupResponse(user: MinimalSignUpUser): boolean {
+  if (!user) return false;
+  const identities = user.identities;
+  return Array.isArray(identities) && identities.length === 0;
+}
+
+function focusMainSigninPassword() {
+  const pw = document.getElementById('gate-password') as HTMLInputElement | null;
+  if (pw) {
+    try {
+      pw.focus();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function PasswordVisibilityToggle({
+  visible,
+  onToggle,
+  controls,
+}: {
+  visible: boolean;
+  onToggle: () => void;
+  controls: string;
+}) {
+  const Icon = visible ? EyeSlashIcon : EyeIcon;
+  const label = visible ? 'Hide password' : 'Show password';
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={label}
+      aria-pressed={visible}
+      aria-controls={controls}
+      title={label}
+      className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground shadow-none transition-colors hover:bg-neutral-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/12"
+    >
+      <Icon className="h-4 w-4" aria-hidden />
+    </button>
+  );
+}
+
 export function AuthLoginGate() {
   const [step, setStep] = useState<Step>('signin');
   const [recoveryMode, setRecoveryMode] = useState(readRecoveryFlag);
@@ -55,6 +111,11 @@ export function AuthLoginGate() {
   const [signupError, setSignupError] = useState('');
   const [signupSubmitting, setSignupSubmitting] = useState(false);
   const [marketingOptIn, setMarketingOptIn] = useState(true);
+
+  const [showSigninPw, setShowSigninPw] = useState(false);
+  const [showSigninConfirmPw, setShowSigninConfirmPw] = useState(false);
+  const [showSignupPw, setShowSignupPw] = useState(false);
+  const [showSignupConfirmPw, setShowSignupConfirmPw] = useState(false);
 
   useLayoutEffect(() => {
     if (readRecoveryFlag()) setStep('signin');
@@ -157,7 +218,7 @@ export function AuthLoginGate() {
         },
       });
       if (res.error) {
-        setSignupError(res.error.message || 'Could not sign up.');
+        setSignupError(humanizePasswordError(res.error.message) || 'Could not sign up.');
         return;
       }
       const newUser = res.data?.user;
@@ -169,6 +230,25 @@ export function AuthLoginGate() {
           /* ignore */
         }
       }
+
+      if (isRepeatedSignupResponse(newUser)) {
+        syncSignupEmailToMainGate(em);
+        setStep('signin');
+        setSignupEmailDeliverabilityHint(false);
+        setMainAuthError(
+          'An account already exists for this email and is confirmed. Sign in below, or use "Forgot password" if you need to reset it.',
+        );
+        setSignupFirst('');
+        setSignupLast('');
+        setSignupCompany('');
+        setSignupEmail('');
+        setSignupPassword('');
+        setSignupConfirm('');
+        setMarketingOptIn(true);
+        setTimeout(focusMainSigninPassword, 0);
+        return;
+      }
+
       syncSignupEmailToMainGate(em);
       setStep('signin');
       setSignupEmailDeliverabilityHint(false);
@@ -301,10 +381,15 @@ export function AuthLoginGate() {
                 <LockClosedIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <Input
                   id="gate-password"
-                  type="password"
+                  type={showSigninPw ? 'text' : 'password'}
                   autoComplete={recoveryMode ? 'new-password' : 'current-password'}
                   placeholder={recoveryMode ? 'New password' : 'Enter your password'}
                   className="h-10 border-0 bg-transparent px-0 text-[15px] shadow-none focus-visible:ring-0"
+                />
+                <PasswordVisibilityToggle
+                  visible={showSigninPw}
+                  onToggle={() => setShowSigninPw((v) => !v)}
+                  controls="gate-password"
                 />
               </div>
             </div>
@@ -321,10 +406,15 @@ export function AuthLoginGate() {
                 <LockClosedIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <Input
                   id="gate-confirm-password"
-                  type="password"
+                  type={showSigninConfirmPw ? 'text' : 'password'}
                   autoComplete="new-password"
                   placeholder="••••••••"
                   className="h-10 border-0 bg-transparent px-0 text-[15px] shadow-none focus-visible:ring-0"
+                />
+                <PasswordVisibilityToggle
+                  visible={showSigninConfirmPw}
+                  onToggle={() => setShowSigninConfirmPw((v) => !v)}
+                  controls="gate-confirm-password"
                 />
               </div>
             </div>
@@ -517,12 +607,17 @@ export function AuthLoginGate() {
                   <LockClosedIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     id="gate-signup-modal-password"
-                    type="password"
+                    type={showSignupPw ? 'text' : 'password'}
                     autoComplete="new-password"
                     value={signupPassword}
                     onChange={(ev) => setSignupPassword(ev.target.value)}
                     placeholder="••••••••"
                     className="h-10 border-0 bg-transparent px-0 text-[15px] shadow-none focus-visible:ring-0"
+                  />
+                  <PasswordVisibilityToggle
+                    visible={showSignupPw}
+                    onToggle={() => setShowSignupPw((v) => !v)}
+                    controls="gate-signup-modal-password"
                   />
                 </div>
               </div>
@@ -534,12 +629,17 @@ export function AuthLoginGate() {
                   <LockClosedIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     id="gate-signup-modal-confirm"
-                    type="password"
+                    type={showSignupConfirmPw ? 'text' : 'password'}
                     autoComplete="new-password"
                     value={signupConfirm}
                     onChange={(ev) => setSignupConfirm(ev.target.value)}
                     placeholder="••••••••"
                     className="h-10 border-0 bg-transparent px-0 text-[15px] shadow-none focus-visible:ring-0"
+                  />
+                  <PasswordVisibilityToggle
+                    visible={showSignupConfirmPw}
+                    onToggle={() => setShowSignupConfirmPw((v) => !v)}
+                    controls="gate-signup-modal-confirm"
                   />
                 </div>
               </div>

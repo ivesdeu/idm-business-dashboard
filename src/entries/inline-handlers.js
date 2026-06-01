@@ -10,23 +10,70 @@
 (function wireInlineReplacementHandlers () {
   if (typeof document === 'undefined') return;
 
-  /** Toggle/remove the mobile sidebar by id. */
+  /**
+   * Toggle/remove the mobile sidebar.
+   *
+   * We attach BOTH a direct listener (when the element is found) AND a
+   * delegated document-level listener as a failsafe. The delegated handler
+   * means the hamburger works even if:
+   *   - the button is briefly out of the DOM during React mounts,
+   *   - this module ran before #btn-mobile-menu was parsed,
+   *   - a stale cached bundle never finished initializing.
+   */
+  function toggleMobileNav () {
+    document.body.classList.toggle('mobile-nav-open');
+  }
+  function closeMobileNav () {
+    document.body.classList.remove('mobile-nav-open');
+  }
   function wireMobileNav () {
     var menuBtn = document.getElementById('btn-mobile-menu');
     if (menuBtn && menuBtn.getAttribute('data-wired-mobile-menu') !== '1') {
       menuBtn.setAttribute('data-wired-mobile-menu', '1');
-      menuBtn.addEventListener('click', function () {
-        document.body.classList.toggle('mobile-nav-open');
-      });
+      menuBtn.addEventListener('click', toggleMobileNav);
     }
     var overlay = document.getElementById('mobile-nav-overlay');
     if (overlay && overlay.getAttribute('data-wired-mobile-overlay') !== '1') {
       overlay.setAttribute('data-wired-mobile-overlay', '1');
-      overlay.addEventListener('click', function () {
-        document.body.classList.remove('mobile-nav-open');
-      });
+      overlay.addEventListener('click', closeMobileNav);
     }
   }
+
+  /**
+   * Delegated failsafe — guarantees the hamburger responds to taps even when
+   * the direct listeners never attached. Only fires if the direct listener
+   * isn't wired (otherwise both would fire on the same event and toggle twice,
+   * netting zero). Runs on bubble phase so the direct listener gets first crack.
+   */
+  function wireDelegatedMobileNav () {
+    if (window.__bizdashMobileNavDelegated) return;
+    window.__bizdashMobileNavDelegated = true;
+    document.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (!t || typeof t.closest !== 'function') return;
+      var btn = t.closest('#btn-mobile-menu');
+      if (btn) {
+        // Try wiring direct now; if it was already wired, the direct listener
+        // already toggled — return so we don't double-toggle.
+        var wasWired = btn.getAttribute('data-wired-mobile-menu') === '1';
+        if (wasWired) return;
+        wireMobileNav();
+        toggleMobileNav();
+        return;
+      }
+      var ov = t.closest('#mobile-nav-overlay');
+      if (ov) {
+        var ovWired = ov.getAttribute('data-wired-mobile-overlay') === '1';
+        if (ovWired) return;
+        wireMobileNav();
+        closeMobileNav();
+      }
+    });
+  }
+
+  // Expose so other code (e.g. financial-core.js) can re-run wiring after
+  // DOM rewrites without re-implementing the logic.
+  window.bizDashWireMobileNav = wireMobileNav;
 
   /** Wire `inputModal` close + apply buttons that used to live in an inline script. */
   function wireInputModalButtons () {
@@ -94,6 +141,7 @@
 
   function wireAll () {
     wireMobileNav();
+    wireDelegatedMobileNav();
     wireInputModalButtons();
     wireDelegatedClicks();
   }

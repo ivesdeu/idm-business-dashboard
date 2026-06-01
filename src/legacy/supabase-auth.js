@@ -2,6 +2,7 @@
 // Supabase auth gate + organization slug routing (path /:slug/…).
 
 import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin } from '../lib/appUrl.js';
+import { humanizePasswordError } from '../lib/authMessages.ts';
 
 (function () {
   'use strict';
@@ -2304,6 +2305,7 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin } from '../lib/a
     if (loading) loading.style.display = 'none';
     if (shell) shell.style.display = 'none';
     if (app) app.classList.add('on');
+    if (typeof window.bizDashWireMobileNav === 'function') window.bizDashWireMobileNav();
     markStableAppUser(demoUser);
     var nameEl = $('user-name');
     var roleEl = $('user-role');
@@ -2381,6 +2383,7 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin } from '../lib/a
     if (loading) loading.style.display = 'none';
     if (shell) shell.style.display = 'none';
     if (app) app.classList.add('on');
+    if (typeof window.bizDashWireMobileNav === 'function') window.bizDashWireMobileNav();
     markStableAppUser(user);
 
     if (user && !isDemoDashboardUserId(user.id) && !dashboardWarmBoot) {
@@ -2655,7 +2658,7 @@ import { authEmailRedirectTo, authOAuthRedirectTo, appWebOrigin } from '../lib/a
         try {
           var upd = await supabase.auth.updateUser({ password: password });
           if (upd.error) {
-            setGateAuthError(upd.error.message || 'Could not update password.');
+            setGateAuthError(humanizePasswordError(upd.error.message) || 'Could not update password.');
             return;
           }
           setAuthRecoveryMode(false);
